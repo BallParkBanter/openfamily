@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' hide Circle;
 
@@ -114,6 +115,31 @@ class _MapScreenState extends State<MapScreen>
   // Camera animation controller for smooth recentering.
   AnimationController? _cameraAnim;
 
+  /// Id of the member the camera keeps centred on, or null when the map is
+  /// free. Set by the locate button (self) or by tapping a member bubble.
+  String? _followId;
+
+  /// While following, a gesture on the map does not stop the follow - it
+  /// pauses it, so the user can look around and the camera picks them back up
+  /// on its own. Life360 behaves this way; a follow that dies on the first
+  /// accidental drag is one the user has to keep re-arming.
+  DateTime? _followPausedUntil;
+  static const Duration _followYield = Duration(seconds: 20);
+
+  /// How far a followed member may drift from the centre before the camera
+  /// re-centres, as a fraction of the half-width/half-height. 0.5 keeps them
+  /// inside the middle half of the screen, so they visibly travel along the
+  /// road and the map only jumps when they would otherwise leave the frame.
+  static const double _followSlack = 0.5;
+
+  /// Positions arrive every few seconds; a bubble that teleports between them
+  /// reads as broken. Each update is glided from where the bubble was drawn
+  /// to where it now is over [_glideDuration], and the camera follows the
+  /// glided position, so the bubble moves down the road rather than hopping.
+  static const Duration _glideDuration = Duration(seconds: 4);
+  final Map<String, _Glide> _glides = <String, _Glide>{};
+  Ticker? _glideTicker;
+
   @override
   void initState() {
     super.initState();
@@ -137,12 +163,130 @@ class _MapScreenState extends State<MapScreen>
 
   void _onMembersChanged(List<Member> members) {
     if (!mounted) return;
+    final DateTime now = DateTime.now();
+    for (final Member m in members) {
+      final LatLng? to = m.position;
+      if (to == null) continue;
+      final LatLng? from = _drawnPosition(m.id, now);
+      if (from == null || from == to) continue;
+      // Do not glide a jump of more than ~2 km; that is a stale-to-fresh fix,
+      // not movement, and a 4 s slide across town would look absurd.
+      if (const Distance().as(LengthUnit.Meter, from, to) > 2000) {
+        _glides.remove(m.id);
+        continue;
+      }
+      _glides[m.id] = _Glide(from: from, to: to, start: now);
+    }
     setState(() {
       _members = members;
       _membersListenable.value = members;
       // Re-collapse expanded clusters whose members have moved apart.
       _pruneExpandedClusters();
     });
+    if (_glides.isNotEmpty) _startGlideTicker();
+    _keepFollowing();
+  }
+
+  /// Where [memberId]'s bubble is currently drawn: mid-glide if one is
+  /// running, otherwise its last known position.
+  LatLng? _drawnPosition(String memberId, DateTime now) {
+    final _Glide? g = _glides[memberId];
+    if (g != null) return g.at(now, _glideDuration);
+    for (final Member m in _members) {
+      if (m.id == memberId) return m.position;
+    }
+    return null;
+  }
+
+  void _startGlideTicker() {
+    if (_glideTicker?.isActive ?? false) return;
+    _glideTicker ??= createTicker(_onGlideTick);
+    _glideTicker!.start();
+  }
+
+  void _onGlideTick(Duration _) {
+    if (!mounted) return;
+    final DateTime now = DateTime.now();
+    _glides.removeWhere((_, g) => g.done(now, _glideDuration));
+    setState(() {});
+    _keepFollowing();
+    if (_glides.isEmpty) _glideTicker?.stop();
+  }
+
+  /// Re-centres the camera on the followed member after a position update.
+  /// Keeps the current zoom and does not animate: updates arrive every few
+  /// seconds while driving, and a 600 ms tween on each one would never settle.
+  void _keepFollowing() {
+    final String? id = _followId;
+    if (id == null || !_mapReady) return;
+    if (_cameraAnim?.isAnimating ?? false) return;
+    final DateTime now = DateTime.now();
+    if (_followPausedUntil != null) {
+      if (now.isBefore(_followPausedUntil!)) return;
+      setState(() => _followPausedUntil = null);
+    }
+    final LatLng? pos = _drawnPosition(id, now);
+    if (pos == null) {
+      if (!_members.any((Member m) => m.id == id)) {
+        setState(() => _followId = null);   // left the roster
+      }
+      return;
+    }
+    // "Contains" rule: only re-centre when the bubble leaves the middle of
+    // the screen. Between re-centres it travels visibly across the map.
+    final MapCamera cam = _mapController.camera;
+    final p = cam.latLngToScreenPoint(pos);
+    final double dx = (p.x - cam.size.x / 2).abs();
+    final double dy = (p.y - cam.size.y / 2).abs();
+    if (dx > cam.size.x / 2 * _followSlack || dy > cam.size.y / 2 * _followSlack) {
+      _animateTo(pos, cam.zoom);
+    }
+  }
+
+  bool get _followPaused =>
+      _followPausedUntil != null && DateTime.now().isBefore(_followPausedUntil!);
+
+  /// Starts following [member]: centres on them now and keeps the camera on
+  /// them as their position updates, until the user touches the map.
+  void _followMember(Member member) {
+    setState(() {
+      _followId = member.id;
+      _followPausedUntil = null;
+    });
+    if (member.position != null) {
+      final double zoom = _mapController.camera.zoom;
+      _animateTo(member.position!, zoom < 14 ? 15 : zoom);
+    }
+  }
+
+  void _stopFollowing() {
+    if (_followId != null) {
+      setState(() {
+        _followId = null;
+        _followPausedUntil = null;
+      });
+    }
+  }
+
+  /// A gesture while following pauses the follow for [_followYield] rather
+  /// than ending it - the user is looking around, not giving up.
+  void _pauseFollowing() {
+    if (_followId == null) return;
+    final DateTime until = DateTime.now().add(_followYield);
+    setState(() => _followPausedUntil = until);
+    // Make sure something wakes us up to resume even if no fix arrives.
+    Future<void>.delayed(_followYield + const Duration(milliseconds: 50), () {
+      if (mounted) _keepFollowing();
+    });
+  }
+
+  Member? get _followedMember {
+    final String? id = _followId;
+    if (id == null) return null;
+    for (final Member m in _members) {
+      if (m.id == id) return m;
+    }
+    return null;
   }
 
   void _onUserId(String userId) {
@@ -290,6 +434,7 @@ class _MapScreenState extends State<MapScreen>
 
   @override
   void dispose() {
+    _glideTicker?.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _connectivitySub?.cancel();
     LocationSharingService.enabled.removeListener(_onSharingChanged);
@@ -371,10 +516,16 @@ class _MapScreenState extends State<MapScreen>
 
   /// Members with the caller's own member relabeled as "You".
   List<Member> _liveMembers() {
-    if (_userId == null) return _members;
-    return _members
-        .map((Member m) => m.id == _userId ? m.copyWith(name: 'You') : m)
-        .toList();
+    final DateTime now = DateTime.now();
+    return _members.map((Member m) {
+      Member out = m;
+      final _Glide? g = _glides[m.id];
+      if (g != null && m.position != null) {
+        out = out.copyWith(position: g.at(now, _glideDuration));
+      }
+      if (_userId != null && m.id == _userId) out = out.copyWith(name: 'You');
+      return out;
+    }).toList();
   }
 
   /// Whether to draw the blue accuracy/range circle around this member: when
@@ -427,7 +578,7 @@ class _MapScreenState extends State<MapScreen>
     if (uid != null) {
       for (final Member m in _members) {
         if (m.id == uid && m.position != null) {
-          _animateTo(m.position!, 15);
+          _followMember(m);
           return;
         }
       }
@@ -453,6 +604,7 @@ class _MapScreenState extends State<MapScreen>
     final double? prev = _lastZoom;
     _lastZoom = camera.zoom;
     _camera = camera;
+    if (hasGesture) _pauseFollowing();
     if (hasGesture &&
         _expandedClusters.isNotEmpty &&
         prev != null &&
@@ -685,7 +837,7 @@ class _MapScreenState extends State<MapScreen>
               _MemberMarkerLayer(
                 members: members,
                 expandedClusters: _expandedClusters,
-                onMemberTap: _openMemberDetails,
+                onMemberTap: _followMember,
                 onClusterTap: _expandCluster,
               ),
             ],
@@ -740,6 +892,30 @@ class _MapScreenState extends State<MapScreen>
             ),
           ),
 
+          // Top-centre: who the camera is following, with a way to open their
+          // profile (which a bubble tap used to do) and a way to let go.
+          if (_followedMember != null)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Center(
+                    child: _FollowingPill(
+                      member: _followedMember!,
+                      isSelf: _followedMember!.id == _userId,
+                      paused: _followPaused,
+                      onProfile: () => _openMemberDetails(_followedMember!),
+                      onStop: _stopFollowing,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
           // Top-right: satellite / standard layer toggle, with a "center on
           // me" button stacked beneath it.
           Positioned(
@@ -757,7 +933,10 @@ class _MapScreenState extends State<MapScreen>
                     ),
                   ),
                   const SizedBox(height: 8),
-                  _LocateButton(onTap: _centerOnUser),
+                  _LocateButton(
+                    onTap: _centerOnUser,
+                    active: _followId != null && _followId == _userId,
+                  ),
                 ],
               ),
             ),
@@ -905,19 +1084,83 @@ class _LayerToggle extends StatelessWidget {
   }
 }
 
-/// A small circular "center on me" button that recenters the map on the
-/// caller's current location.
+/// The pill shown while the camera is following someone. Names who, opens
+/// their profile, and lets the user stop without having to drag the map.
+class _FollowingPill extends StatelessWidget {
+  const _FollowingPill({
+    required this.member,
+    required this.isSelf,
+    required this.onProfile,
+    required this.onStop,
+    this.paused = false,
+  });
+
+  final Member member;
+  final bool isSelf;
+
+  /// True while a gesture has the follow on hold; the camera resumes by itself.
+  final bool paused;
+  final VoidCallback onProfile;
+  final VoidCallback onStop;
+
+  @override
+  Widget build(BuildContext context) {
+    final BrandTheme theme = BrandTheme.of(context);
+    return Material(
+      color: theme.sheet,
+      shape: const StadiumBorder(),
+      elevation: 3,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 4, 4, 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(paused ? Icons.pause : Icons.navigation,
+                size: 16, color: theme.accentInk),
+            const SizedBox(width: 8),
+            Text(
+              (isSelf ? 'Following you' : 'Following ${member.name}') +
+                  (paused ? ' · paused' : ''),
+              style: Theme.of(context).textTheme.labelLarge,
+            ),
+            const SizedBox(width: 4),
+            IconButton(
+              tooltip: 'Profile',
+              visualDensity: VisualDensity.compact,
+              onPressed: onProfile,
+              icon: const Icon(Icons.person_outline, size: 20),
+            ),
+            IconButton(
+              tooltip: 'Stop following',
+              visualDensity: VisualDensity.compact,
+              onPressed: onStop,
+              icon: const Icon(Icons.close, size: 20),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A small circular "follow me" button. One tap keeps the map centred on the
+/// caller as they move; any gesture on the map releases it.
 class _LocateButton extends StatelessWidget {
-  const _LocateButton({required this.onTap});
+  const _LocateButton({required this.onTap, this.active = false});
 
   final VoidCallback onTap;
+
+  /// True while the camera is following the caller; the icon fills in.
+  final bool active;
 
   @override
   Widget build(BuildContext context) {
     return Tooltip(
-      message: 'Center on my location',
+      message: active ? 'Following you' : 'Follow my location',
       child: Material(
-        color: BrandTheme.of(context).sheet,
+        color: active
+            ? BrandTheme.of(context).accentInk
+            : BrandTheme.of(context).sheet,
         shape: const CircleBorder(),
         elevation: 3,
         child: InkWell(
@@ -928,7 +1171,9 @@ class _LocateButton extends StatelessWidget {
             child: Icon(
               Icons.my_location,
               size: 22,
-              color: BrandTheme.of(context).accentInk,
+              color: active
+                  ? BrandTheme.of(context).sheet
+                  : BrandTheme.of(context).accentInk,
             ),
           ),
         ),
@@ -1087,4 +1332,29 @@ class _LoadErrorCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// One bubble's in-flight movement from the position it was drawn at to the
+/// position the server just reported.
+class _Glide {
+  const _Glide({required this.from, required this.to, required this.start});
+
+  final LatLng from;
+  final LatLng to;
+  final DateTime start;
+
+  double _t(DateTime now, Duration d) {
+    final double t = now.difference(start).inMilliseconds / d.inMilliseconds;
+    return t < 0 ? 0 : (t > 1 ? 1 : t);
+  }
+
+  LatLng at(DateTime now, Duration d) {
+    final double t = _t(now, d);
+    return LatLng(
+      from.latitude + (to.latitude - from.latitude) * t,
+      from.longitude + (to.longitude - from.longitude) * t,
+    );
+  }
+
+  bool done(DateTime now, Duration d) => _t(now, d) >= 1;
 }

@@ -327,8 +327,9 @@ class ClusterBubble extends StatelessWidget {
   final List<Member> members;
   final VoidCallback? onTap;
 
-  static const double _avatarSize = 30;
-  static const double _overlap = 14;
+  // Same size as a solo bubble: two people in one car should not shrink.
+  static const double _avatarSize = 44;
+  static const double _overlap = 20;
 
   @override
   Widget build(BuildContext context) {
@@ -373,23 +374,31 @@ class ClusterBubble extends StatelessWidget {
                   ],
                 ),
               ),
-              // Movement glyphs (and speed captions) for each moving member.
+              // People clustered on one spot and moving are moving TOGETHER -
+              // one car, one speed. Show a single glyph and the group's speed
+              // (the fastest reading, since every phone lags a little
+              // differently) instead of one caption per person.
               if (moving.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 4),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      for (int i = 0; i < moving.length; i++) ...[
-                        if (i > 0) const SizedBox(width: 6),
-                        _MovementGlyphBadge(member: moving[i]),
-                        if (moving[i].hasDrivingSpeed) ...[
+                  child: Builder(builder: (context) {
+                    final List<Member> driving =
+                        moving.where((m) => m.hasDrivingSpeed).toList();
+                    final Member lead = driving.isNotEmpty
+                        ? driving.reduce((a, b) =>
+                            (a.speedMph ?? 0) >= (b.speedMph ?? 0) ? a : b)
+                        : moving.first;
+                    return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _MovementGlyphBadge(member: lead),
+                        if (lead.hasDrivingSpeed) ...[
                           const SizedBox(width: 4),
-                          _SpeedCaption(member: moving[i]),
+                          _SpeedCaption(member: lead),
                         ],
                       ],
-                    ],
-                  ),
+                    );
+                  }),
                 ),
             ],
           ),
