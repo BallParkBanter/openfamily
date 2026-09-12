@@ -143,10 +143,21 @@ class MemberAvatarBubble extends StatelessWidget {
 /// The red "location error" state additionally shows a red exclamation-mark
 /// badge (not a filled disc) so the error is unmistakable.
 class StatusAvatar extends StatefulWidget {
-  const StatusAvatar({super.key, required this.member, this.size = 44});
+  const StatusAvatar({
+    super.key,
+    required this.member,
+    this.size = 44,
+    this.ringColor,
+    this.ringWidth,
+  });
 
   final Member member;
   final double size;
+
+  /// Bray look: a per-person accent instead of the status colour, and an exact
+  /// width instead of 8 % of size. Null keeps upstream behaviour.
+  final Color? ringColor;
+  final double? ringWidth;
 
   @override
   State<StatusAvatar> createState() => _StatusAvatarState();
@@ -183,9 +194,9 @@ class _StatusAvatarState extends State<StatusAvatar> {
 
   @override
   Widget build(BuildContext context) {
-    final Color statusColor = widget.member.status.color;
+    final Color statusColor = widget.ringColor ?? widget.member.status.color;
     final bool isError = widget.member.status == MemberStatus.error;
-    final double ringWidth = _ringWidth(widget.size);
+    final double ringWidth = widget.ringWidth ?? _ringWidth(widget.size);
 
     return SizedBox(
       width: widget.size,
@@ -214,12 +225,21 @@ class _StatusAvatarState extends State<StatusAvatar> {
             ),
           ),
           // Status ring drawn on top, around the avatar (never behind it).
+          // Keyed only for the Bray accent ring so upstream tests stay untouched.
+          // A 0 width means NO ring: Flutter draws width 0 as a hairline, so the
+          // side is switched off instead of thinned (the capsule's faces sit in
+          // a grey border of their own, S:70).
           Container(
+            key: widget.ringColor != null ? const Key('bray-ring') : null,
             width: widget.size,
             height: widget.size,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(color: statusColor, width: ringWidth),
+              border: Border.all(
+                color: statusColor,
+                width: ringWidth,
+                style: ringWidth > 0 ? BorderStyle.solid : BorderStyle.none,
+              ),
             ),
           ),
           // Red exclamation-mark badge for the location-error state.

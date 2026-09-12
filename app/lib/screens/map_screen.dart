@@ -24,6 +24,7 @@ import '../services/tile_config.dart';
 import '../services/token_storage.dart';
 import '../theme/app_theme.dart';
 import '../utils/member_clustering.dart';
+import '../widgets/capsule_bubble.dart';
 import '../widgets/circle_switcher.dart';
 import '../widgets/map_bottom_bar.dart';
 import '../widgets/member_avatar_bubble.dart';
@@ -1219,12 +1220,16 @@ class _MemberMarkerLayer extends StatelessWidget {
       markers: [
         for (final BubblePlacement p in placements)
           if (p.isCluster)
+            // Bray capsule: faces above the spot, dot ON it. The alignment puts
+            // the point on the dot's centre (see CapsuleBubble.markerAlignment;
+            // flutter_map 7 marker.dart:33-34 - Alignment.topCenter would put
+            // the box's bottom edge, not the dot's centre, on the point).
             Marker(
               point: p.position,
-              width: 140,
-              height: 90,
-              alignment: Alignment.center,
-              child: ClusterBubble(
+              width: CapsuleBubble.markerWidth,
+              height: CapsuleBubble.markerHeight,
+              alignment: CapsuleBubble.markerAlignment,
+              child: CapsuleBubble(
                 members: p.clusterMembers,
                 onTap: () => onClusterTap(p.clusterId!, p.position),
               ),
