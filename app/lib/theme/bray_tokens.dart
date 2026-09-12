@@ -30,7 +30,11 @@ class BrayTokens {
   static const Color text = Color(0xFFE6ECF7);
 
   // S:21-29 solo pin
-  static const double pinSize = 46;
+  static const double pinSize = 46;            // S:21 .pin 46px (reference; the app's solo face is soloFace)
+  // Design list (Joplin "🎨 Life360 Replacement — Design Spec (icons, cards,
+  // behaviour)", id 41a4e11794924c8d9cc1921f07fc2ab1, Map and Icons:
+  // "Bigger avatars (44 → 56 px)"). The spec beats S:21 for the solo marker.
+  static const double soloFace = 56;
   static const double ringSolo = 3;
   static const double nameTagTop = -19;        // S:24 .tagname top:-19px
   static const double boltDark = 17;           // S:28 .pin .bolt 17px, bg ink, 1px line border
