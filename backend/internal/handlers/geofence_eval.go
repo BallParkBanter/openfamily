@@ -113,7 +113,7 @@ func (s *Server) evaluateGeofences(ctx context.Context, userID string, lon, lat 
 		  AND p.radius_meters IS NOT NULL
 		  AND (ST_DWithin(p.geom::geography, ST_SetSRID(ST_MakePoint($3, $4), 4326)::geography, p.radius_meters)
 		       OR s.inside = TRUE
-		       OR s.id IS NULL)`,
+		       OR s.geofence_id IS NULL)`,   // geofence_states has no id column (PK is geofence_id+user_id) - upstream bug, v0.1.0
 		familyID, userID, lon, lat)
 	if err != nil {
 		slog.Error("geofence: query candidates", "user_id", userID, "err", err)
