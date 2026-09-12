@@ -529,14 +529,6 @@ class _MapScreenState extends State<MapScreen>
     }).toList();
   }
 
-  /// Whether to draw the blue accuracy/range circle around this member: when
-  /// we have a live accuracy value, or the member is in the approximate
-  /// GPS-accuracy state (which implies significant uncertainty).
-  bool _showRange(Member m) =>
-      m.position != null &&
-      ((m.accuracyMeters != null && m.accuracyMeters! > 0) ||
-          m.status == MemberStatus.gpsIssue);
-
   /// The radius (meters) of the blue range circle for this member — the real
   /// GPS accuracy when known, otherwise the broader-zone fallback.
   double _rangeFor(Member m) =>
@@ -811,16 +803,14 @@ class _MapScreenState extends State<MapScreen>
                 urlTemplate: _satellite ? kSatelliteTileUrl : kTileUrl,
                 userAgentPackageName: 'app.openfamily',
               ),
-              // Blue "range" circle for members whose location accuracy is
-              // known (or who are in the approximate GPS-accuracy state).
-              // The radius is the member's real GPS accuracy in meters, so the
-              // circle shows how uncertain the fix is. Drawn for every member
-              // that has a live accuracy value; approximate/flagged members
-              // fall back to the broader-zone radius.
+              // Blue "range" circle - Bray look: only for members in the
+              // approximate GPS-accuracy state (see showRange), never for a
+              // merely known accuracy. The radius is the member's real GPS
+              // accuracy in meters when known, else the broader-zone fallback.
               CircleLayer(
                 circles: [
                   for (final Member m in members)
-                    if (_showRange(m))
+                    if (showRange(m))
                       CircleMarker(
                         point: m.position!,
                         radius: _rangeFor(m),
@@ -1249,6 +1239,13 @@ class _MemberMarkerLayer extends StatelessWidget {
     );
   }
 }
+
+/// Bray look: the accuracy circle is noise in a car (spec: "hide the blue accuracy
+/// circle"). Keep it only when the fix is genuinely bad - the approximate
+/// GPS-accuracy state. Upstream drew it for any member with a live accuracy
+/// value; that rule is gone. Top-level (not a _MapScreenState method) so the
+/// widget test can import it.
+bool showRange(Member m) => m.position != null && m.status == MemberStatus.gpsIssue;
 
 /// A gentle banner shown on the map when location sharing is off (the user
 /// skipped it during onboarding). Explains the degraded state and offers a

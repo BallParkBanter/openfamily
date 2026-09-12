@@ -6,15 +6,20 @@ import 'package:flutter/material.dart';
 import '../models/member.dart';
 import '../services/member_avatar_cache.dart';
 import '../theme/app_theme.dart';
+import '../theme/bray_tokens.dart';
 import 'movement_icon.dart';
 
 /// A circular avatar bubble pinned to a member's location on the map.
 ///
-/// The bubble is a circular photo avatar (or initials fallback) with a colored
-/// identity ring around it. Movement is a small circular glyph on the ring
-/// (icon only — never a card covering the face). Driving speed hangs *below*
-/// the pin as a caption, matching the web map. A "location error" state adds
-/// a red exclamation-mark badge. Tapping the bubble opens the member's details.
+/// Bray look (the Family Viewer's photo pin, style.css 21-29): a name tag
+/// floating above, a 46px face inside a 3px ring in the PERSON's accent colour
+/// (not the status colour), a dark bolt on the ring while charging, and the
+/// viewer's small speed pill hanging under the ring while driving. The ring's
+/// centre sits ON the location. Tapping the bubble opens the member's details.
+///
+/// Every visual constant is a BrayTokens value or a bare number with its source:
+///   S = family-viewer2/static/style.css   J = family-viewer2/static/app.js
+/// (line numbers verified 2026-09-12 against the live viewer on BrayNextcloudServer).
 class MemberAvatarBubble extends StatelessWidget {
   const MemberAvatarBubble({
     super.key,
@@ -26,20 +31,32 @@ class MemberAvatarBubble extends StatelessWidget {
   final Member member;
   final VoidCallback? onTap;
 
-  /// Radius of the avatar circle in logical pixels.
+  /// Kept for callers; the Bray pin is always 46px (S:21 .pin), so this no
+  /// longer sizes the face.
   final double radius;
 
-  /// Marker width — wide enough for a 3-digit speed caption ("128 mph").
-  static const double markerWidth = 76;
+  /// Marker width. The name tag is nowrap (S:25) and wider than the pin;
+  /// OPEN: measured - "Test Charlie" (the rig's longest name) at 10.5px bold
+  /// is ~95px with its padding, so 120 leaves room and clears the 14px shadow.
+  static const double markerWidth = 120;
 
-  /// Height of the avatar box (circle + glyph overflow).
-  static const double avatarBox = 58;
+  /// The zone above the face. S:24 .tagname top:-19px - the tag's top edge is
+  /// 19px above the pin's top edge, so the tag zone is 19px tall.
+  static const double _tagH = -BrayTokens.nameTagTop;
 
-  /// Extra height hanging under the avatar for the speed caption.
-  static const double speedCaptionH = 22;
+  /// Height of the box holding the tag zone and the 46px face (S:21): 65.
+  /// (Upstream name kept - its "marker grows" test reads it.)
+  static const double avatarBox = _tagH + BrayTokens.pinSize;
 
-  /// Gap between the avatar box and the speed caption.
+  /// Gap between the ring and the speed pill. OPEN: the viewer's solo pin has
+  /// no speed pill (S:21-29; the pill is the capsule's, S:75-80), so this is
+  /// chosen: enough to clear the ring's 3px border and read as "under".
   static const double speedGap = 6;
+
+  /// Height reserved for the speed pill: 1+1 padding (S:76), 1+1 border
+  /// (S:77), 9px/1.2 text (S:78) = 14.8, held in a 16px zone so the marker box
+  /// is the same height whatever the font's metrics.
+  static const double speedCaptionH = 16;
 
   static Size markerSizeFor(Member member) {
     return Size(
@@ -50,18 +67,37 @@ class MemberAvatarBubble extends StatelessWidget {
     );
   }
 
-  /// Alignment so the avatar center stays on the geographic point even when a
-  /// speed caption hangs below.
+  /// Where the map point sits inside the marker box: horizontally centred and
+  /// _tagH + 23 from the top - the ring's centre (S:21 .pin is the anchor; the
+  /// tag floats above it and the pill hangs below, so the point is neither the
+  /// box's centre nor its top).
+  ///
+  /// flutter_map 7 (marker_layer.dart:52-55, 75-76) resolves the anchor from
+  /// the box's top-left as left = w/2 * (x + 1), top = h/2 * (y + 1) and places
+  /// the box at (pos.x - (w - left), pos.y - (h - top)), so the point sits
+  /// (w - left, h - top) from the box's top-left corner - the inverse of
+  /// Marker.computePixelAlignment (marker.dart:66-76). For the point d px from
+  /// the top: h - top = d, so y = 1 - 2d/h. (Upstream's 2d/h - 1 is the mirror
+  /// image; it was only right while the avatar sat at the top of the box.)
   static Alignment markerAlignmentFor(Member member) {
     final double h = markerSizeFor(member).height;
-    const double avatarCenterY = avatarBox / 2;
-    return Alignment(0, (2 * avatarCenterY / h) - 1);
+    return Alignment(0, 1 - 2 * pointFromTop / h);
   }
+
+  /// The ring's centre, measured from the top of the marker box.
+  static const double pointFromTop = _tagH + BrayTokens.pinSize / 2;
+
+  /// OPEN: no charging field in Member; bolt hidden until the API exposes one
+  /// (checked 2026-09-12: backend models.MemberWithLocation carries
+  /// battery_pct only - no "charging" anywhere in backend/, migrations, or the
+  /// app). The bolt below is complete and compiles; flip this when it lands.
+  static bool _isCharging(Member member) => false;
 
   @override
   Widget build(BuildContext context) {
     final String tooltip = _tooltip();
     final Size size = markerSizeFor(member);
+    final Color accent = BrayTokens.accentFor(member);
 
     return Tooltip(
       message: tooltip,
@@ -73,43 +109,98 @@ class MemberAvatarBubble extends StatelessWidget {
           child: SizedBox(
             width: size.width,
             height: size.height,
-            child: Stack(
-              clipBehavior: Clip.none,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  height: avatarBox,
-                  child: Center(
-                    child: SizedBox(
-                      width: radius * 2 + 14,
-                      height: radius * 2 + 14,
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        alignment: Alignment.center,
-                        children: [
-                          StatusAvatar(
-                            member: member,
-                            size: radius * 2 + 6,
-                          ),
-                          if (member.movement != MovementType.none)
-                            Positioned(
-                              right: -2,
-                              bottom: -2,
-                              child: _MovementGlyphBadge(member: member),
-                            ),
-                        ],
+                // Name tag (S:24-27), top-aligned in its 19px zone so its top
+                // edge is 19px above the ring, as top:-19px puts it.
+                SizedBox(
+                  height: _tagH,
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    child: Container(
+                      key: const Key('bray-name-tag'),
+                      padding: const EdgeInsets.fromLTRB(8, 2, 8, 2), // S:26 padding:2px 8px
+                      decoration: BoxDecoration(
+                        color: const Color(0xDB0A0E16), // S:26 rgba(10,14,22,.86)
+                        borderRadius: BorderRadius.circular(999), // S:26
+                        border: Border.all(color: BrayTokens.line), // S:27 1px solid --line
+                      ),
+                      child: Text(
+                        member.name,
+                        maxLines: 1, // S:25 white-space:nowrap
+                        softWrap: false,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 10.5, // S:25
+                          fontWeight: FontWeight.w700, // S:25
+                          letterSpacing: 0.21, // S:25 .02em of 10.5px
+                          height: 1.15, // OPEN: measured - browser "normal" line height for the tag's font
+                          color: BrayTokens.text, // S:27
+                        ),
                       ),
                     ),
                   ),
                 ),
+                // The pin: ring around the face (S:21-23), bolt on the ring (S:28-29).
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Container(
+                      key: const Key('bray-ring'),
+                      width: BrayTokens.pinSize,
+                      height: BrayTokens.pinSize,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: accent, width: BrayTokens.ringSolo), // S:22 3px solid var(--a)
+                        boxShadow: const [
+                          // S:23 box-shadow:0 4px 14px rgba(0,0,0,.5)
+                          BoxShadow(color: Color(0x80000000), blurRadius: 14, offset: Offset(0, 4)),
+                        ],
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      // ringWidth 0 = no status ring inside the accent ring (and
+                      // no ringColor, so this Container is the only 'bray-ring').
+                      // ClipOval keeps StatusAvatar's status-tinted shadow off
+                      // the accent ring (the capsule needed the same, Task 10).
+                      child: ClipOval(
+                        child: StatusAvatar(
+                          member: member,
+                          size: BrayTokens.pinSize - 2 * BrayTokens.ringSolo,
+                          ringWidth: 0,
+                        ),
+                      ),
+                    ),
+                    if (_isCharging(member))
+                      Positioned(
+                        right: -3, // S:28 right:-3px
+                        bottom: -3, // S:28 bottom:-3px
+                        child: Container(
+                          key: const Key('bray-bolt'),
+                          width: BrayTokens.boltDark,
+                          height: BrayTokens.boltDark,
+                          alignment: Alignment.center, // S:29 place-items:center
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: BrayTokens.ink, // S:29 background:#0a0e16
+                            border: Border.all(color: BrayTokens.line), // S:29 1px solid --line
+                          ),
+                          child: const Text('⚡', style: TextStyle(fontSize: 9)), // S:29 font-size:9px
+                        ),
+                      ),
+                  ],
+                ),
+                // Speed pill under the ring while driving.
                 if (member.hasDrivingSpeed)
-                  Positioned(
-                    top: avatarBox + speedGap,
-                    left: 0,
-                    right: 0,
-                    child: Center(child: _SpeedCaption(member: member)),
+                  SizedBox(
+                    height: speedGap + speedCaptionH,
+                    child: Align(
+                      alignment: Alignment.bottomCenter,
+                      child: SizedBox(
+                        height: speedCaptionH,
+                        child: Center(child: _BraySpeedPill(mph: member.speedMph!)),
+                      ),
+                    ),
                   ),
               ],
             ),
@@ -564,4 +655,51 @@ class _SpeedCaption extends StatelessWidget {
       ),
     );
   }
+}
+
+/// S:75-80 .fc-pill: white, 1px 5px padding, "61" in 700 9px ink with a 7px
+/// "mph" beside it (the CSS is `${speed}<i>mph</i>`). One Text.rich so the
+/// pill reads "61 mph" as a single text, like upstream's _SpeedCaption does -
+/// upstream's tests find the caption by its whole string and stay untouched.
+/// The capsule's _SpeedPill (capsule_bubble.dart) is the two-widget form;
+/// private classes are not shared across files, so this is its sibling.
+class _BraySpeedPill extends StatelessWidget {
+  const _BraySpeedPill({required this.mph});
+
+  final int mph;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.fromLTRB(5, 1, 5, 1), // S:76 padding:1px 5px
+        decoration: BoxDecoration(
+          color: Colors.white, // S:76
+          borderRadius: BorderRadius.circular(99), // S:77
+          border: Border.all(color: const Color(0x26141B36)), // S:77 rgba(20,27,54,.15)
+          boxShadow: const [
+            // S:79 box-shadow:0 1px 4px rgba(0,0,0,.3)
+            BoxShadow(color: Color(0x4D000000), blurRadius: 4, offset: Offset(0, 1)),
+          ],
+        ),
+        child: Text.rich(
+          TextSpan(
+            children: [
+              TextSpan(
+                text: '$mph',
+                style: const TextStyle(
+                  fontSize: BrayTokens.speedPillFont,
+                  height: 1.2, // S:78 font:700 9px/1.2
+                  fontWeight: FontWeight.w700,
+                  color: BrayTokens.speedPillText,
+                ),
+              ),
+              const TextSpan(
+                // S:76 gap:1px is the space; S:80 .fc-pill i: 7px, opacity .7
+                // (0xB3 of the ink)
+                text: ' mph',
+                style: TextStyle(fontSize: 7, height: 1.2, color: Color(0xB3141B36)),
+              ),
+            ],
+          ),
+        ),
+      );
 }
