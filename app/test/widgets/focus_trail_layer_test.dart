@@ -25,6 +25,11 @@ void main() {
     expect(out.length, 3);                                  // 400-min point is older than 6 h; 33.9001 is 11 m from 33.9000
     expect(out.first.latitude, 33.9000); expect(out.last.latitude, 33.9020);
   });
+  test('daysCovering: only crosses local midnight when the 6 h window does', () {
+    expect(FocusTrailLayer.daysCovering(DateTime(2026, 9, 13, 12, 0)), [DateTime(2026, 9, 13)]);
+    expect(FocusTrailLayer.daysCovering(DateTime(2026, 9, 13, 0, 30)), [DateTime(2026, 9, 12), DateTime(2026, 9, 13)]);
+    expect(FocusTrailLayer.daysCovering(DateTime(2026, 9, 13, 6, 0)), [DateTime(2026, 9, 13)]); // window starts exactly at 00:00 - same day
+  });
   testWidgets('draws halo + accent line + start dot for the focused member (J:166-168)', (t) async {
     final raw = [p(33.900, -84.400, 30), p(33.902, -84.400, 20), p(33.904, -84.400, 10)];
     await t.pumpWidget(host(FocusTrailLayer(member: m('Heidi Bray'), fetch: (_) async => raw, now: now)));

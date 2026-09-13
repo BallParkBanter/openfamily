@@ -41,6 +41,18 @@ class FocusTrailLayer extends StatefulWidget {
     return out.length > maxPoints ? out.sublist(out.length - maxPoints) : out;
   }
 
+  /// The local calendar days the 6 h window (J:159) can touch, oldest first.
+  /// The default fetch pulls one calendar day at a time
+  /// (HistoryService.fetchDay); near local midnight the window's start falls
+  /// on the previous day, so fetching only `now`'s day would silently shrink
+  /// or empty the trail until local-today is >= 6 h old (the midnight gap).
+  static List<DateTime> daysCovering(DateTime now) {
+    final DateTime today = DateTime(now.year, now.month, now.day);
+    final DateTime start = now.subtract(window);
+    final DateTime startDay = DateTime(start.year, start.month, start.day);
+    return startDay == today ? <DateTime>[today] : <DateTime>[startDay, today];
+  }
+
   @override
   State<FocusTrailLayer> createState() => _FocusTrailLayerState();
 }
@@ -68,16 +80,28 @@ class _FocusTrailLayerState extends State<FocusTrailLayer> {
       return;
     }
     final String id = m.id;
+    final DateTime now = widget.now ?? DateTime.now();
     try {
       final List<HistoryTrailPoint> raw = widget.fetch != null
           ? await widget.fetch!(id)
-          : (await HistoryService.fetchDay(memberId: id, day: widget.now ?? DateTime.now())).trail;
+          : await _fetchDefault(id, now);
       if (!mounted || widget.member?.id != id) return;
-      setState(() { _forId = id; _points = FocusTrailLayer.trailPoints(raw, widget.now ?? DateTime.now()); });
+      setState(() { _forId = id; _points = FocusTrailLayer.trailPoints(raw, now); });
     } catch (_) {
       // J:170 "a missing trail should never break the map"
       if (mounted) setState(() { _forId = id; _points = const <LatLng>[]; });
     }
+  }
+
+  /// Fetches every local calendar day the 6 h window touches (see
+  /// [FocusTrailLayer.daysCovering] — the midnight gap) and concatenates
+  /// their trails; [FocusTrailLayer.trailPoints] applies the window/thinning.
+  Future<List<HistoryTrailPoint>> _fetchDefault(String id, DateTime now) async {
+    final List<HistoryTrailPoint> raw = <HistoryTrailPoint>[];
+    for (final DateTime day in FocusTrailLayer.daysCovering(now)) {
+      raw.addAll((await HistoryService.fetchDay(memberId: id, day: day)).trail);
+    }
+    return raw;
   }
 
   @override
