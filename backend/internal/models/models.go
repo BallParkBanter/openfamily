@@ -71,6 +71,7 @@ type MemberWithLocation struct {
 	Lon             *float64   `json:"lon,omitempty"`
 	TS              *time.Time `json:"ts,omitempty"`
 	BatteryPct      *float64   `json:"battery_pct,omitempty"`
+	Charging        *bool      `json:"charging,omitempty"` // bray: plugged in at last report; nil = client did not say
 	SpeedMPS        *float64   `json:"speed_mps,omitempty"`
 	MotionState     *string    `json:"motion_state,omitempty"`
 	AccuracyMeters  *float64   `json:"accuracy_meters,omitempty"`
@@ -120,6 +121,7 @@ type Location struct {
 	SpeedMPS       *float64  `json:"speed_mps,omitempty"`
 	HeadingDeg     *float64  `json:"heading_deg,omitempty"`
 	BatteryPct     *float64  `json:"battery_pct,omitempty"`
+	Charging       *bool     `json:"charging,omitempty"`
 	MotionState    string    `json:"motion_state,omitempty"`
 	Source         string    `json:"source,omitempty"`
 }

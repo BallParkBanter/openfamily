@@ -10,7 +10,7 @@ import 'package:flutter/material.dart';
 
 import '../models/member.dart';
 import '../theme/bray_tokens.dart';
-import 'member_avatar_bubble.dart' show StatusAvatar;
+import 'member_avatar_bubble.dart' show BrayChargingBolt, StatusAvatar;
 
 class CapsuleBubble extends StatelessWidget {
   const CapsuleBubble({super.key, required this.members, this.onTap});
@@ -127,35 +127,52 @@ class CapsuleBubble extends StatelessWidget {
                           // S:70 .fc-av: 58px circle, 2px capsule-grey border,
                           // dark fallback fill. Full size - two people in one car
                           // do not shrink. ringWidth 0 = no status ring inside.
-                          child: Container(
-                            key: const Key('capsule-avatar'),
+                          // The face and its bolt share one unclipped Stack so
+                          // the bolt can hang past the circle (S:72 negative
+                          // offsets) without changing the face's own box.
+                          child: SizedBox(
                             width: BrayTokens.capsuleAvatar,
                             height: BrayTokens.capsuleAvatar,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: BrayTokens.ink,
-                              border: Border.all(
-                                color: BrayTokens.capsuleGrey,
-                                width: BrayTokens.capsuleAvatarBorder,
-                              ),
-                            ),
-                            clipBehavior: Clip.antiAlias,
-                            // ClipOval keeps StatusAvatar's status-tinted
-                            // shadow off the grey border (seen live as a faint
-                            // green rim on the first icons-wip frame).
-                            child: ClipOval(
-                              child: StatusAvatar(
-                                member: preview[i],
-                                size: BrayTokens.capsuleAvatar - 2 * BrayTokens.capsuleAvatarBorder,
-                                ringWidth: 0,
-                              ),
+                            child: Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                Container(
+                                  key: const Key('capsule-avatar'),
+                                  width: BrayTokens.capsuleAvatar,
+                                  height: BrayTokens.capsuleAvatar,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: BrayTokens.ink,
+                                    border: Border.all(
+                                      color: BrayTokens.capsuleGrey,
+                                      width: BrayTokens.capsuleAvatarBorder,
+                                    ),
+                                  ),
+                                  clipBehavior: Clip.antiAlias,
+                                  // ClipOval keeps StatusAvatar's status-tinted
+                                  // shadow off the grey border (seen live as a faint
+                                  // green rim on the first icons-wip frame).
+                                  child: ClipOval(
+                                    child: StatusAvatar(
+                                      member: preview[i],
+                                      size: BrayTokens.capsuleAvatar - 2 * BrayTokens.capsuleAvatarBorder,
+                                      ringWidth: 0,
+                                    ),
+                                  ),
+                                ),
+                                // S:72-74 .fc-chg on each charging face
+                                // (bray-charging: Member.charging from the
+                                // backend's `charging`; only an explicit true).
+                                if (preview[i].charging == true)
+                                  const Positioned(
+                                    left: -3, // S:72 left:-3px
+                                    bottom: -1, // S:72 bottom:-1px
+                                    child: BrayChargingBolt(),
+                                  ),
+                              ],
                             ),
                           ),
                         ),
-                      // OPEN: no charging field in Member - S:72-74 .fc-chg (a
-                      // white 19px bolt, BrayTokens.boltWhite, at left:-3px
-                      // bottom:-1px of each charging face) goes here once the
-                      // model carries one.
                       // One speed pill for the group (S:75-80), hanging under
                       // the faces and centred on the stack.
                       if (lead != null)

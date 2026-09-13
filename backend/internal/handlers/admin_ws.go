@@ -144,7 +144,7 @@ func (s *Server) adminMembersSnapshot(ctx context.Context) ([]adminWsMember, err
 	rows, err := s.Pool.Query(ctx, `
 		SELECT u.id, u.email, u.name, u.role,
 		       u.avatar_data IS NOT NULL, u.avatar_version, u.avatar_updated_at,
-		       mp.lat, mp.lon, mp.ts, mp.battery_pct, mp.speed_mps, mp.motion_state, mp.accuracy_meters,
+		       mp.lat, mp.lon, mp.ts, mp.battery_pct, mp.charging, mp.speed_mps, mp.motion_state, mp.accuracy_meters,
 		       d.last_seen,
 		       u.family_id, f.name
 		FROM users u
@@ -171,6 +171,7 @@ func (s *Server) adminMembersSnapshot(ctx context.Context) ([]adminWsMember, err
 			lat, lon        *float64
 			ts              *time.Time
 			battery, speed  *float64
+			charging        *bool
 			motion          *string
 			accuracy        *float64
 			lastSeenAt      *time.Time
@@ -178,7 +179,7 @@ func (s *Server) adminMembersSnapshot(ctx context.Context) ([]adminWsMember, err
 			familyName      *string
 		)
 		if err := rows.Scan(&id, &email, &name, &role, &hasAvatar, &avatarVersion, &avatarUpdatedAt,
-			&lat, &lon, &ts, &battery, &speed, &motion, &accuracy, &lastSeenAt, &familyID, &familyName); err != nil {
+			&lat, &lon, &ts, &battery, &charging, &speed, &motion, &accuracy, &lastSeenAt, &familyID, &familyName); err != nil {
 			return nil, err
 		}
 		m := adminWsMember{
@@ -194,6 +195,7 @@ func (s *Server) adminMembersSnapshot(ctx context.Context) ([]adminWsMember, err
 				Lon:             lon,
 				TS:              ts,
 				BatteryPct:      battery,
+				Charging:        charging,
 				SpeedMPS:        speed,
 				MotionState:     motion,
 				AccuracyMeters:  accuracy,

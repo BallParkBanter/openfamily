@@ -8,10 +8,10 @@ import 'package:openfamily/widgets/member_avatar_bubble.dart';
 import 'package:openfamily/screens/map_screen.dart' show showRange;
 
 // batteryPercent/address are required by Member's constructor (member.dart:85-90).
-Member m(String name, {MemberStatus st = MemberStatus.normal, int? mph, double? acc}) => Member(
+Member m(String name, {MemberStatus st = MemberStatus.normal, int? mph, double? acc, bool? charging}) => Member(
     id: name, name: name, status: st, position: const LatLng(33.9, -84.4),
     movement: mph == null ? MovementType.none : MovementType.car, speedMph: mph, accuracyMeters: acc,
-    batteryPercent: 0, address: '');
+    batteryPercent: 0, address: '', charging: charging);
 Widget host(Widget w) => MaterialApp(home: Scaffold(body: Center(child: w)));
 
 void main() {
@@ -62,6 +62,19 @@ void main() {
     expect(dot.center.dy, closeTo(box.bottom - BrayTokens.dotSize / 2, 1));
     expect(dot.center.dy, closeTo(box.top + MemberAvatarBubble.pointFromTop, 1));
     expect(t.takeException(), isNull);
+  });
+  testWidgets('bolt (S:72-74) bottom-left of the ring only while charging; null means no bolt', (t) async {
+    await t.pumpWidget(host(MemberAvatarBubble(member: m('Bo Bray', charging: true), onTap: () {})));
+    expect(find.byKey(const Key('bray-bolt')), findsOneWidget);
+    final bolt = t.getRect(find.byKey(const Key('bray-bolt')));
+    final ring = t.getRect(find.byKey(const Key('bray-ring')));
+    expect(bolt.size, const Size(BrayTokens.boltWhite, BrayTokens.boltWhite));
+    expect(bolt.left, closeTo(ring.left - 3, 0.5)); // S:72 left:-3px
+    expect(bolt.bottom, closeTo(ring.bottom + 1, 0.5)); // S:72 bottom:-1px
+    await t.pumpWidget(host(MemberAvatarBubble(member: m('Bo Bray', charging: false), onTap: () {})));
+    expect(find.byKey(const Key('bray-bolt')), findsNothing);
+    await t.pumpWidget(host(MemberAvatarBubble(member: m('Bo Bray'), onTap: () {})));
+    expect(find.byKey(const Key('bray-bolt')), findsNothing);
   });
   testWidgets('speed pill only while driving', (t) async {
     await t.pumpWidget(host(MemberAvatarBubble(member: m('Bo Bray', mph: 61), onTap: () {})));

@@ -59,6 +59,7 @@ func (s *Server) IngestLocation(w http.ResponseWriter, r *http.Request) {
 		SpeedMPS       *float64   `json:"speed_mps,omitempty"`
 		HeadingDeg     *float64   `json:"heading_deg,omitempty"`
 		BatteryPct     *float64   `json:"battery_pct,omitempty"`
+		Charging       *bool      `json:"charging,omitempty"`
 		MotionState    string     `json:"motion_state,omitempty"`
 		Source         string     `json:"source,omitempty"`
 	}
@@ -160,8 +161,9 @@ func (s *Server) IngestLocation(w http.ResponseWriter, r *http.Request) {
 		}
 		if _, err := tx.Exec(r.Context(), `
 			UPDATE member_positions
-			SET updated_at = now(), battery_pct = COALESCE($2, battery_pct)
-			WHERE user_id = $1`, ownerID, req.BatteryPct); err != nil {
+			SET updated_at = now(), battery_pct = COALESCE($2, battery_pct),
+			    charging = COALESCE($3, charging)
+			WHERE user_id = $1`, ownerID, req.BatteryPct, req.Charging); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to update member position")
 			return
 		}
@@ -177,7 +179,7 @@ func (s *Server) IngestLocation(w http.ResponseWriter, r *http.Request) {
 		}()
 		// Presence is liveness, so use server receipt time rather than the GPS
 		// fix timestamp. A delayed fix must never move "last seen" backwards.
-		go s.broadcastPresence(ownerID, time.Now().UTC(), req.BatteryPct)
+		go s.broadcastPresence(ownerID, time.Now().UTC(), req.BatteryPct, req.Charging)
 
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status": "deduplicated",
@@ -187,10 +189,10 @@ func (s *Server) IngestLocation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := tx.Exec(r.Context(), `
-		INSERT INTO locations (device_id, ts, geom, accuracy_meters, altitude_meters, speed_mps, heading_deg, battery_pct, motion_state, source)
-		VALUES ($1, $2, ST_SetSRID(ST_MakePoint($3, $4), 4326), $5, $6, $7, $8, $9, $10, $11)`,
+		INSERT INTO locations (device_id, ts, geom, accuracy_meters, altitude_meters, speed_mps, heading_deg, battery_pct, motion_state, source, charging)
+		VALUES ($1, $2, ST_SetSRID(ST_MakePoint($3, $4), 4326), $5, $6, $7, $8, $9, $10, $11, $12)`,
 		req.DeviceID, ts, req.Lon, req.Lat, req.AccuracyMeters, req.AltitudeMeters,
-		req.SpeedMPS, req.HeadingDeg, req.BatteryPct, nullIfEmpty(req.MotionState), nullIfEmpty(req.Source),
+		req.SpeedMPS, req.HeadingDeg, req.BatteryPct, nullIfEmpty(req.MotionState), nullIfEmpty(req.Source), req.Charging,
 	); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to store location")
 		return
@@ -201,16 +203,16 @@ func (s *Server) IngestLocation(w http.ResponseWriter, r *http.Request) {
 	// clause skips the update if the stored position is already newer, so an
 	// out-of-order point can never regress a member's last-known position.
 	if _, err := tx.Exec(r.Context(), `
-		INSERT INTO member_positions (user_id, lat, lon, ts, battery_pct, speed_mps, motion_state, accuracy_meters, device_id, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
+		INSERT INTO member_positions (user_id, lat, lon, ts, battery_pct, speed_mps, motion_state, accuracy_meters, device_id, updated_at, charging)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now(), $10)
 		ON CONFLICT (user_id) DO UPDATE SET
 			lat = EXCLUDED.lat, lon = EXCLUDED.lon, ts = EXCLUDED.ts,
 			battery_pct = EXCLUDED.battery_pct, speed_mps = EXCLUDED.speed_mps,
 			motion_state = EXCLUDED.motion_state, accuracy_meters = EXCLUDED.accuracy_meters,
-			device_id = EXCLUDED.device_id, updated_at = now()
+			device_id = EXCLUDED.device_id, updated_at = now(), charging = EXCLUDED.charging
 		WHERE member_positions.ts < EXCLUDED.ts`,
 		ownerID, req.Lat, req.Lon, ts, req.BatteryPct, req.SpeedMPS,
-		nullIfEmpty(req.MotionState), req.AccuracyMeters, req.DeviceID,
+		nullIfEmpty(req.MotionState), req.AccuracyMeters, req.DeviceID, req.Charging,
 	); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to store member position")
 		return
@@ -261,6 +263,7 @@ func (s *Server) IngestLocation(w http.ResponseWriter, r *http.Request) {
 			TS:             ts,
 			LastSeenAt:     time.Now().UTC(),
 			BatteryPct:     req.BatteryPct,
+			Charging:       req.Charging,
 			SpeedMPS:       req.SpeedMPS,
 			MotionState:    motionState,
 			AccuracyMeters: req.AccuracyMeters,
@@ -277,6 +280,7 @@ func (s *Server) IngestLocation(w http.ResponseWriter, r *http.Request) {
 		SpeedMPS:       req.SpeedMPS,
 		HeadingDeg:     req.HeadingDeg,
 		BatteryPct:     req.BatteryPct,
+		Charging:       req.Charging,
 		MotionState:    req.MotionState,
 		Source:         req.Source,
 	})

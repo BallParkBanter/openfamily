@@ -17,6 +17,7 @@ Member memberFromJson(Map<String, dynamic> json) {
   final num? speedMps = json['speed_mps'] as num?;
   final String? motion = json['motion_state'] as String?;
   final num? accuracy = json['accuracy_meters'] as num?;
+  final bool? charging = json['charging'] as bool?;
   final bool hasAvatar = json['has_avatar'] == true;
   final DateTime? avatarUpdatedAt =
       hasAvatar ? _parseTs(json['avatar_updated_at']) : null;
@@ -60,6 +61,7 @@ Member memberFromJson(Map<String, dynamic> json) {
     speedMph: speedMps != null ? (speedMps * 2.23694).round() : null,
     lastSeen: effectiveLastSeen,
     accuracyMeters: accuracy?.toDouble(),
+    charging: charging,
   );
 }
 
@@ -98,6 +100,7 @@ Member memberFromLocationUpdate(Member existing, Map<String, dynamic> json) {
   final num? speedMps = json['speed_mps'] as num?;
   final String? motion = json['motion_state'] as String?;
   final num? accuracy = json['accuracy_meters'] as num?;
+  final bool? charging = json['charging'] as bool?;
 
   final LatLng? position = (lat != null && lon != null)
       ? LatLng(lat.toDouble(), lon.toDouble())
@@ -146,6 +149,7 @@ Member memberFromLocationUpdate(Member existing, Map<String, dynamic> json) {
         speedMps != null ? (speedMps * 2.23694).round() : existing.speedMph,
     lastSeen: timestamp,
     accuracyMeters: accuracy?.toDouble() ?? existing.accuracyMeters,
+    charging: charging ?? existing.charging,
   );
 }
 
@@ -167,6 +171,9 @@ Member memberFromPresenceUpdate(Member existing, Map<String, dynamic> json) {
   if (current != null && !ts.isAfter(current)) return existing;
 
   final num? batteryPct = json['battery_pct'] as num?;
+  // bray: a parked phone plugged in or unplugged only ever shows up on the
+  // presence path (stationary dedup), so the bolt has to follow it here too.
+  final bool? charging = json['charging'] as bool?;
   return existing.copyWith(
     status: MemberStatus.normal,
     batteryPercent:
@@ -177,6 +184,7 @@ Member memberFromPresenceUpdate(Member existing, Map<String, dynamic> json) {
       movement: existing.movement,
     ),
     lastSeen: ts,
+    charging: charging ?? existing.charging,
   );
 }
 
