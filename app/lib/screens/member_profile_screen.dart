@@ -105,8 +105,18 @@ class MemberProfileScreen extends StatelessWidget {
               color: AppColors.purple,
             ),
             label: 'Address',
-            value: member.address,
+            value: member.place?.street ?? member.address,
           ),
+          if (member.place?.county != null || member.place?.city != null)
+            _DetailRow(
+              icon: const Icon(
+                Icons.location_city_outlined,
+                size: 22,
+                color: AppColors.purple,
+              ),
+              label: 'Area',
+              value: [member.place?.city, member.place?.county].whereType<String>().join(' · '),
+            ),
           const SizedBox(height: 16),
           _LocationRefreshButton(memberId: member.id),
           const SizedBox(height: 12),
