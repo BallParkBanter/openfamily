@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' show Point;
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' hide Circle;
 
 import '../models/member.dart';
+import '../models/member_place.dart';
 import '../services/api_client.dart';
 import '../services/app_config.dart';
 import '../services/background_location_service.dart';
@@ -23,12 +25,15 @@ import '../services/server_features.dart';
 import '../services/tile_config.dart';
 import '../services/token_storage.dart';
 import '../theme/app_theme.dart';
+import '../theme/bray_tokens.dart';
+import '../utils/focus_rules.dart';
 import '../utils/member_clustering.dart';
 import '../widgets/capsule_bubble.dart';
 import '../widgets/circle_switcher.dart';
 import '../widgets/home_chip.dart';
 import '../widgets/map_bottom_bar.dart';
 import '../widgets/member_avatar_bubble.dart';
+import '../widgets/people_sheet.dart';
 import 'check_in_screen.dart';
 import 'help_alert_screen.dart';
 import 'invite_screen.dart';
@@ -141,6 +146,16 @@ class _MapScreenState extends State<MapScreen>
   static const Duration _glideDuration = Duration(seconds: 4);
   final Map<String, _Glide> _glides = <String, _Glide>{};
   Ticker? _glideTicker;
+
+  /// Piece 3: the levels of detail. FocusRules owns who is focused and the
+  /// idle clock; the sheet level is derived from it (FocusRules.levelFor).
+  final FocusRules _focus = FocusRules();
+  SheetLevel _sheetLevel = SheetLevel.peek;
+  Timer? _idleTimer;
+
+  MemberPlace? _placeFor(Member m) => null;   // Piece 4 fills this from the geocode feed; null draws no place chips.
+
+  bool _chargingFor(Member m) => m.charging ?? false;   // Member.charging: backend `charging` (bray-charging)
 
   @override
   void initState() {
@@ -291,6 +306,116 @@ class _MapScreenState extends State<MapScreen>
     return null;
   }
 
+  /// Any interaction restarts the 5-minute idle clock (design list).
+  void _touch() {
+    _focus.touch();
+    _idleTimer?.cancel();
+    if (_focus.focusedId == null) return;
+    _idleTimer = Timer(BrayTokens.idleBack, () {
+      if (mounted && _focus.idleExpired()) _leaveFocus();
+    });
+  }
+
+  /// A tap on a face or a card. Same person again = back (J:239-241).
+  void _focusMember(Member member) {
+    final FocusChange change = _focus.tap(member.id);
+    if (change == FocusChange.cleared) {
+      _leaveFocus();
+      return;
+    }
+    _touch();
+    setState(() => _sheetLevel = _focus.levelFor(_sheetLevel));
+    // Focus includes their follow mode: the camera stays with the person as
+    // they move (their _keepFollowing), starting from the focus zoom (J:217)
+    // with the camera lifted so the pin sits above the sheet (J:204-211).
+    setState(() {
+      _followId = member.id;
+      _followPausedUntil = null;
+    });
+    final LatLng? pos = member.position;
+    if (pos != null && _mapReady) {
+      final double zoom = _focus.zoomFor(member, _mapController.camera.zoom);
+      _animateTo(_centreAbove(pos, zoom), zoom);
+    }
+  }
+
+  /// Back to everyone: map tap, tap-again, swipe the focus sheet down, the
+  /// system back button, or 5 idle minutes.
+  void _leaveFocus() {
+    _idleTimer?.cancel();
+    _focus.clear();
+    setState(() => _sheetLevel = _focus.levelFor(_sheetLevel));
+    _stopFollowing();
+    _animatedFit();
+  }
+
+  /// Tap on a card: the focused person's big card opens their profile (the
+  /// "full" level); any other card focuses that person.
+  void _onCardTap(Member member) {
+    _touch();
+    if (_focus.focusedId == member.id) {
+      _openMemberDetails(member);
+    } else {
+      _focusMember(member);
+    }
+  }
+
+  void _onSheetLevel(SheetLevel level) {
+    _touch();
+    if (_focus.focusedId != null && level == SheetLevel.peek) {
+      _leaveFocus();
+      return;
+    }
+    setState(() => _sheetLevel = level);
+  }
+
+  void _onPeoplePressed() {
+    if (peopleButtonOpensRoster(_sheetLevel)) {
+      _openPeople();
+    } else {
+      _onSheetLevel(SheetLevel.cards);
+    }
+  }
+
+  /// J:208-211: project the target, push it down by half the sheet, unproject
+  /// - the pin lands in the visible strip of map above the sheet.
+  /// flutter_map 7.0.2 camera.dart:212 `Point<double> project(LatLng latlng,
+  /// [double? zoom])` and :217 `LatLng unproject(Point point, [double? zoom])`.
+  LatLng _centreAbove(LatLng target, double zoom) {
+    final double lift = FocusRules.liftFor(_currentSheetHeight());
+    final MapCamera cam = _mapController.camera;
+    final Point<double> p = cam.project(target, zoom);
+    return cam.unproject(Point<double>(p.x, p.y + lift), zoom);
+  }
+
+  double _currentSheetHeight() {
+    final MediaQueryData media = MediaQuery.of(context);
+    final double reserved = MapBottomBar.height + media.padding.bottom;
+    final double maxH = sheetMaxHeight(screenHeight: media.size.height, topInset: media.padding.top, controlBarReserved: reserved);
+    return PeopleSheet.heightFor(_sheetLevel, _members.length, maxH, 0);
+  }
+
+  /// Overview auto-fit (design list; J:228-236) that pans instead of snapping
+  /// (design list "camera pans smoothly, never snaps"): compute the fit, then
+  /// tween to it with the sheet's height as bottom padding.
+  void _animatedFit() {
+    if (!_mapReady) return;
+    final List<Member> members = _liveMembers().where((Member m) => m.position != null).toList();
+    if (members.isEmpty) return;
+    final MapCamera cam = _mapController.camera;
+    if (members.length == 1) {
+      _animateTo(_centreAbove(members.first.position!, 16), 16);   // J:229-231
+      return;
+    }
+    final LatLngBounds bounds = LatLngBounds.fromPoints(members.map((Member m) => m.position!).toList());
+    final MapCamera fitted = CameraFit.bounds(
+      bounds: bounds,
+      padding: EdgeInsets.fromLTRB(80, 80, 80, 80 + _currentSheetHeight()),   // J:235 paddingBottomRight sheet + 90
+      maxZoom: 16,                                                              // J:235 maxZoom:16
+    ).fit(cam);
+    _animateTo(fitted.center, fitted.zoom);
+  }
+
   void _onUserId(String userId) {
     if (!mounted) return;
     setState(() => _userId = userId);
@@ -436,6 +561,7 @@ class _MapScreenState extends State<MapScreen>
 
   @override
   void dispose() {
+    _idleTimer?.cancel();
     _glideTicker?.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _connectivitySub?.cancel();
@@ -599,6 +725,7 @@ class _MapScreenState extends State<MapScreen>
     _lastZoom = camera.zoom;
     _camera = camera;
     if (hasGesture) _pauseFollowing();
+    if (hasGesture) _touch();
     if (hasGesture &&
         _expandedClusters.isNotEmpty &&
         prev != null &&
@@ -776,7 +903,12 @@ class _MapScreenState extends State<MapScreen>
     // docks clear of it.
     final double controlBarReserved = MapBottomBar.height + safeBottom;
 
-    return Scaffold(
+    return PopScope(
+      canPop: _focus.focusedId == null,
+      onPopInvokedWithResult: (bool didPop, Object? _) {
+        if (!didPop) _leaveFocus();
+      },
+      child: Scaffold(
       body: Stack(
         children: [
           // Full-bleed live map — extends behind every control.
@@ -798,6 +930,9 @@ class _MapScreenState extends State<MapScreen>
               },
               onPositionChanged: (camera, hasGesture) =>
                   _onCameraChanged(camera, hasGesture),
+              onTap: (_, __) {
+                if (_focus.focusedId != null) _leaveFocus();   // design list: tap the map = back
+              },
             ),
             children: [
               TileLayer(
@@ -810,7 +945,7 @@ class _MapScreenState extends State<MapScreen>
               // accuracy in meters when known, else the broader-zone fallback.
               CircleLayer(
                 circles: [
-                  for (final Member m in members)
+                  for (final Member m in _focus.visible(members))
                     if (showRange(m))
                       CircleMarker(
                         point: m.position!,
@@ -832,9 +967,11 @@ class _MapScreenState extends State<MapScreen>
               // Member bubbles, clustered by on-screen proximity at
               // the current zoom (rebuilds as the camera moves).
               _MemberMarkerLayer(
-                members: members,
+                members: _focus.visible(members),        // focus: others hidden (J:175-181)
                 expandedClusters: _expandedClusters,
-                onMemberTap: _followMember,
+                selectedId: _followId,                    // Task 8: the ringed face inside a capsule
+                onMemberTap: _focusMember,
+                onMemberHold: _openMemberDetails,         // design list: hold = full details
                 onClusterTap: _expandCluster,
               ),
             ],
@@ -939,18 +1076,34 @@ class _MapScreenState extends State<MapScreen>
             ),
           ),
 
-          // Bottom-center `+` FAB for the Check In / Help Alert / Invite quick
-          // actions, docked just above the fixed control bar.
+          // The people sheet (piece 3) sits on the fixed bottom bar; their `+`
+          // FAB now rides the sheet's top-right edge so the sheet never covers it.
           Positioned(
             left: 0,
             right: 0,
-            bottom: controlBarReserved + 12,
-            child: Center(
-              child: FloatingActionButton(
-                onPressed: _showAddActions,
-                tooltip: 'Add — Check In / Help Alert / Invite',
-                child: const Icon(Icons.add),
-              ),
+            bottom: controlBarReserved,
+            child: PeopleSheet(
+              members: members,
+              level: _sheetLevel,
+              maxHeight: sheetMaxHeight(screenHeight: media.size.height, topInset: media.padding.top, controlBarReserved: controlBarReserved),
+              viewerId: _userId,
+              focusedId: _focus.focusedId,
+              chargingFor: _chargingFor,
+              placeFor: _placeFor,
+              onLevelChanged: _onSheetLevel,
+              onCardTap: _onCardTap,
+              onCardHold: _openMemberDetails,
+            ),
+          ),
+          AnimatedPositioned(
+            duration: BrayTokens.sheetTransition,
+            curve: Curves.ease,
+            right: 12,
+            bottom: controlBarReserved + _currentSheetHeight() - 20,
+            child: FloatingActionButton.small(
+              onPressed: _showAddActions,
+              tooltip: 'Add — Check In / Help Alert / Invite',
+              child: const Icon(Icons.add),
             ),
           ),
 
@@ -965,7 +1118,7 @@ class _MapScreenState extends State<MapScreen>
               top: false,
               child: MapBottomBar(
                 onSos: _openSos,
-                onPeople: _openPeople,
+                onPeople: _onPeoplePressed,
                 onPlaces: _openPlaces,
                 onSafety: ServerFeatures.instance.smsConfigured
                     ? _openSafety
@@ -975,6 +1128,7 @@ class _MapScreenState extends State<MapScreen>
             ),
           ),
         ],
+      ),
       ),
     );
   }
@@ -1191,12 +1345,19 @@ class _MemberMarkerLayer extends StatelessWidget {
     required this.members,
     required this.expandedClusters,
     required this.onMemberTap,
+    required this.onMemberHold,
     required this.onClusterTap,
+    this.selectedId,
   });
 
   final List<Member> members;
   final Set<String> expandedClusters;
   final ValueChanged<Member> onMemberTap;
+  // Task 8 passes selectedId to CapsuleBubble and onMemberHold to
+  // MemberAvatarBubble.onLongPress - those two widget parameters do not exist
+  // yet, so this task only stores them.
+  final String? selectedId;
+  final ValueChanged<Member> onMemberHold;
   final void Function(String clusterId, LatLng centroid) onClusterTap;
 
   @override
@@ -1252,6 +1413,16 @@ class _MemberMarkerLayer extends StatelessWidget {
 /// value; that rule is gone. Top-level (not a _MapScreenState method) so the
 /// widget test can import it.
 bool showRange(Member m) => m.position != null && m.status == MemberStatus.gpsIssue;
+
+/// The bottom bar's People button (theirs) now steps through the levels of
+/// detail: peek → the raised sheet of cards; raised → their PeopleScreen (the
+/// family-wide "full" level). Nothing is removed - the roster is one tap away
+/// from the raised sheet.
+bool peopleButtonOpensRoster(SheetLevel current) => current == SheetLevel.cards;
+
+/// The map area the sheet may cover (S:49 caps it at 62 % of this).
+double sheetMaxHeight({required double screenHeight, required double topInset, required double controlBarReserved}) =>
+    screenHeight - topInset - controlBarReserved;
 
 /// A gentle banner shown on the map when location sharing is off (the user
 /// skipped it during onboarding). Explains the degraded state and offers a
