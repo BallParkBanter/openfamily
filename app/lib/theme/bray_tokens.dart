@@ -71,4 +71,107 @@ class BrayTokens {
   // J:42 GROUP_M = 120 - "people within this many metres draw as one capsule";
   // J:140-149 clusters() joins a person to a group when metres() < GROUP_M.
   static const double groupMetres = 120;
+
+  // ---------------------------------------------------------------- piece 3
+  // Sheet (S:44-50, S:165 override) and cards (S:112-158). DPR 2 on the tablet
+  // goldens: CSS px = device px / 2.
+  static const double cardH = 112;                   // S:119 .card height:112px
+  static const double cardHFocus = 170;              // S:122 .card.sel height:170px
+  static const double cardRadius = 22;               // S:119 border-radius:22px
+  static const double cardGap = 12;                  // S:118 .cards gap:12px
+  static const Color cardBorder = Color(0x1AFFFFFF); // S:120 1px rgba(255,255,255,.10)
+  static const Color cardBg = Color(0xFF0A0E1A);     // S:121 background:#0a0e1a
+  static const Color ghostA = Color(0xFF9FD4FF);     // S:129 gradient #9fd4ff
+  static const Color ghostB = Color(0xFFD9B8FF);     // S:129 gradient #d9b8ff
+  static const double ghostSize = 31;                // S:128 font-size:31px
+  static const double ghostSpacing = -1.4;           // S:128 letter-spacing:-1.4px
+  static const double ghostOpacity = 0.6;            // S:130 opacity:.6
+  static const double ghostLeft = 12;                // S:127 left:12px
+  static const double ghostTop = 9;                  // S:127 top:9px
+  static const double battLabelSize = 8;             // S:145 .blabel 8px
+  static const double battLabelSpacing = 1.6;        // S:145 letter-spacing:.2em of 8px
+  static const Color battLabel = Color(0xA6FFFFFF);  // S:145 rgba(255,255,255,.65)
+  static const double battValueSize = 24;            // S:147 .bval 24px
+  static const double battUnitSize = 11;             // S:151 .bval small 11px
+  static const Color battLow = Color(0xFFFF8A8A);    // S:150 .bval.low #ff8a8a
+  static const int battLowAt = 20;                   // J:271 p.battery <= 20
+  static const double updSize = 12;                  // S:131 .upd 12px 700
+  static const Color updBadgeA = Color(0xD940AAFF);  // S:133 rgba(64,170,255,.85)
+  static const Color updBadgeB = Color(0xD9747CFA);  // S:133 rgba(116,124,250,.85)
+  static const Color updBadgeC = Color(0xD9AA68F6);  // S:133 rgba(170,104,246,.85)
+  static const Color updBorder = Color(0x66FFFFFF);  // S:135 1px rgba(255,255,255,.4)
+  static const double statSize = 13.5;               // S:140 .stat 13.5px 700
+  static const Color statChipBg = Color(0xA80D1122); // S:141 rgba(13,17,34,.66)
+  static const Color statChipBorder = Color(0x59FFFFFF); // S:142 rgba(255,255,255,.35)
+  static const double c2Size = 11.5;                 // S:156 .c2 11.5px 700
+  static const Color c2Bg = Color(0xA80D1122);       // S:158 rgba(13,17,34,.66)
+  static const Color c2Border = Color(0x2EFFFFFF);   // S:158 rgba(255,255,255,.18)
+  static const Color c2Text = Color(0xD9FFFFFF);     // S:158 rgba(255,255,255,.85)
+  static const double drowBottom = 54;               // S:154 .drow bottom:54px
+  static const double cardInset = 12;                // S:137 .bottom left/right:12px; S:137 bottom:10px
+  static const double cardInsetBottom = 10;
+  static const Color run = Color(0xFF34D399);        // S:4 --run (online dot; design list "green online dot")
+  static const Color muted = Color(0xFF8391AB);      // S:3 --muted
+  static const double veilAlphaTop = 0.30;           // S:126 115deg gradient .3 / .18 / .3 — tinted with the
+  static const double veilAlphaMid = 0.18;           //   person's accent (design list "card tinted the person's colour")
+  static const Color veilDarkTop = Color(0x1A0A0E1A);    // S:125 rgba(10,14,26,.1) at 0%
+  static const Color veilDarkBottom = Color(0xE00A0E1A); // S:125 rgba(10,14,26,.88) at 84%
+  static const Color sheetTop = Color(0xF00D1220);   // S:165 rgba(13,18,32,.94) (overrides S:45)
+  static const Color sheetBottom = Color(0xFC12152B);// S:165 rgba(18,21,43,.99)
+  static const double sheetRadius = 22;              // S:46 border-radius:22px 22px 0 0
+  static const double sheetPadH = 12;                // S:48 padding … 12px
+  static const double sheetPadTop = 8;               // S:48 padding-top 8px
+  static const double sheetPadBottom = 12;           // S:48 … + 12px (safe-area added by the widget)
+  static const double sheetMaxFrac = 0.62;           // S:49 max-height:62vh
+  static const double grabW = 38;                    // S:50 .grab 38x4
+  static const double grabH = 4;
+  static const Color grab = Color(0xFF2B3A55);       // S:50 #2b3a55
+  static const double grabTop = 2;                   // S:50 margin:2px auto 10px
+  static const double grabBottom = 10;
+  static const Duration sheetTransition = Duration(milliseconds: 180); // S:121 transition:height .18s ease
+  static const Color headerTop = Color(0xEB0A0E16);  // S:37 rgba(10,14,22,.92) → transparent
+  static const double brandSize = 21;                // S:38 .brand 21px 800
+  static const double summarySize = 12.5;            // S:40 .summary 12.5px 600 --muted
+  static const Color summaryBg = Color(0xB30A0E16);  // S:41 rgba(10,14,22,.7), 1px --line
+  static const double focusZoom = 16;                // J:217 max(zoom, 16) when focused
+  static const double followZoom = 17;               // J:217 max(zoom, 17) when following a drive
+  static const Duration idleBack = Duration(minutes: 5); // design list "5 minutes idle = back to everyone"
+  static const double focusRing = 4;                 // J:101 border-width:4px for the selected face
+
+  /// Design list "Labels relative to the viewer: Dad, Mom, Me". The viewer is
+  /// "Me"; Bo is "Dad" (P:52) and Heidi "Mom" (P:55); everyone else gets their
+  /// first name (P:60 labels Charlie "Me" only because that viewer IS Charlie;
+  /// from a parent's tablet he is "Charlie" — OPEN: chosen). "Test Dad" /
+  /// "Test Charlie" are the rig's Bray Test family.
+  static String labelFor(Member m, {required bool isViewer}) {
+    if (isViewer) return 'Me';
+    final String n = m.name.trim().toLowerCase();
+    if (n.startsWith('bo') || n.startsWith('test dad')) return 'Dad';
+    if (n.startsWith('heidi')) return 'Mom';
+    if (n.startsWith('test charlie')) return 'Charlie';
+    final String first = m.name.trim().split(RegExp(r'\s+')).first;
+    return first.isEmpty ? m.name : first;
+  }
+
+  /// Card photo crop: P:53 "center 38%" (Bo), P:56 "center 63%" (Heidi),
+  /// P:61 "center 38%" (Charlie); J:274 default "center 35%". CSS
+  /// background-position y% maps to Alignment y = 2*p - 1.
+  static Alignment photoAlignFor(Member m) {
+    final String n = m.name.trim().toLowerCase();
+    if (n.startsWith('heidi')) return const Alignment(0, 0.26);
+    if (n.startsWith('bo') || n.startsWith('test dad') || n.startsWith('charlie') || n.startsWith('test charlie')) {
+      return const Alignment(0, -0.24);
+    }
+    return const Alignment(0, -0.30);
+  }
+
+  /// J:57-64 ago(): "—" when unknown, "just now" under 2 min, then m / h / d.
+  static String agoText(DateTime? seen, DateTime now) {
+    if (seen == null) return '—';
+    final int m = (now.difference(seen).inSeconds / 60).round();
+    if (m < 2) return 'just now';
+    if (m < 60) return '${m}m ago';
+    final int h = (m / 60).round();
+    return h < 24 ? '${h}h ago' : '${(h / 24).round()}d ago';
+  }
 }
