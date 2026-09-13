@@ -30,6 +30,7 @@ import '../utils/focus_rules.dart';
 import '../utils/member_clustering.dart';
 import '../widgets/capsule_bubble.dart';
 import '../widgets/circle_switcher.dart';
+import '../widgets/family_header.dart';
 import '../widgets/focus_trail_layer.dart';
 import '../widgets/home_chip.dart';
 import '../widgets/map_bottom_bar.dart';
@@ -127,6 +128,11 @@ class _MapScreenState extends State<MapScreen>
   /// free. Set by the locate button (self) or by tapping a member bubble.
   String? _followId;
 
+  /// When the user last panned/zoomed; the overview auto-fit waits 12 s after
+  /// it (J:200).
+  DateTime? _lastGesture;
+  int? _homeCount, _outCount;   // piece 4's place feed; null hides the chip
+
   /// While following, a gesture on the map does not stop the follow - it
   /// pauses it, so the user can look around and the camera picks them back up
   /// on its own. Life360 behaves this way; a follow that dies on the first
@@ -203,6 +209,11 @@ class _MapScreenState extends State<MapScreen>
     });
     if (_glides.isNotEmpty) _startGlideTicker();
     _keepFollowing();
+    // Overview auto-fits everyone (design list; J:228-236), pans, never snaps.
+    if (_mapReady && !(_cameraAnim?.isAnimating ?? false) &&
+        autoFitDue(lastGesture: _lastGesture, now: DateTime.now(), focused: _focus.focusedId != null, following: _followId != null)) {
+      _animatedFit();
+    }
   }
 
   /// Where [memberId]'s bubble is currently drawn: mid-glide if one is
@@ -427,6 +438,8 @@ class _MapScreenState extends State<MapScreen>
       padding: EdgeInsets.fromLTRB(80, 80, 80, 80 + _currentSheetHeight()),   // OPEN: chosen - theirs: 80 is their _fitToMembers padding, plus the sheet (J:235 pads sheet + 90)
       maxZoom: 16,                                                              // J:235 maxZoom:16
     ).fit(cam);
+    final p0 = cam.latLngToScreenPoint(cam.center), p1 = cam.latLngToScreenPoint(fitted.center);
+    if ((fitted.zoom - cam.zoom).abs() < 0.05 && (p0.x - p1.x).abs() < 4 && (p0.y - p1.y).abs() < 4) return;   // OPEN: chosen - "unchanged" threshold
     _animateTo(fitted.center, fitted.zoom);
   }
 
@@ -741,6 +754,7 @@ class _MapScreenState extends State<MapScreen>
     final double? prev = _lastZoom;
     _lastZoom = camera.zoom;
     _camera = camera;
+    if (hasGesture) _lastGesture = DateTime.now();
     if (hasGesture) _pauseFollowing();
     if (hasGesture) _touch();
     if (hasGesture &&
@@ -1031,6 +1045,8 @@ class _MapScreenState extends State<MapScreen>
               child: _LoadErrorCard(message: _error!, onRetry: _load),
             ),
 
+          const Positioned(top: 0, left: 0, right: 0, child: FamilyHeaderScrim()),   // S:37
+
           // Top: family name, with a location-off re-prompt banner below it
           // when the user skipped location during onboarding.
           Positioned(
@@ -1102,6 +1118,15 @@ class _MapScreenState extends State<MapScreen>
               bottom: false,
               child: Column(
                 children: [
+                  Builder(builder: (BuildContext context) {
+                    final Member? f = _followedMember;
+                    final String? s = summaryText(
+                      following: f,
+                      followingLabel: f == null ? null : BrayTokens.labelFor(f, isViewer: f.id == _userId),
+                      homeCount: _homeCount, outCount: _outCount,
+                    );
+                    return s == null ? const SizedBox.shrink() : Padding(padding: const EdgeInsets.only(top: 8), child: FamilySummaryChip(text: s));
+                  }),
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
                     child: _LayerToggle(
