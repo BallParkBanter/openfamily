@@ -65,4 +65,14 @@ void main() {
     await t.pumpAndSettle();
     expect(taps, ['heidi']);
   });
+  testWidgets('cards: a swipe down over the list body collapses to peek (once); a swipe up does not', (t) async {
+    final List<SheetLevel> levels = [];
+    await t.pumpWidget(host(sheet(level: SheetLevel.cards, onLevel: levels.add)));
+    await t.drag(find.byType(PersonCard).first, const Offset(0, 300));
+    await t.pumpAndSettle();
+    expect(levels, [SheetLevel.peek]);
+    await t.drag(find.byType(PersonCard).first, const Offset(0, -300));
+    await t.pumpAndSettle();
+    expect(levels, [SheetLevel.peek]);   // the swipe up emitted nothing
+  });
 }

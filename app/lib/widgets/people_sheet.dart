@@ -158,13 +158,17 @@ class PeopleSheet extends StatelessWidget {
                 Expanded(
                   child: f != null
                       ? Align(alignment: Alignment.topCenter, child: _card(f, focused: true))
-                      : ListView.separated(
-                          padding: EdgeInsets.only(bottom: BrayTokens.sheetPadBottom + bottomInset),
-                          physics: level == SheetLevel.peek ? const NeverScrollableScrollPhysics() : const ClampingScrollPhysics(),
-                          cacheExtent: 0,
-                          itemCount: ordered.length,
-                          separatorBuilder: (_, __) => const SizedBox(height: BrayTokens.cardGap),   // S:118
-                          itemBuilder: (_, int i) => _card(ordered[i], focused: false),
+                      : _CollapseOnPullDown(
+                          enabled: level == SheetLevel.cards,
+                          onPullDown: () => onLevelChanged?.call(SheetLevel.peek),
+                          child: ListView.separated(
+                            padding: EdgeInsets.only(bottom: BrayTokens.sheetPadBottom + bottomInset),
+                            physics: level == SheetLevel.peek ? const NeverScrollableScrollPhysics() : const ClampingScrollPhysics(),
+                            cacheExtent: 0,
+                            itemCount: ordered.length,
+                            separatorBuilder: (_, __) => const SizedBox(height: BrayTokens.cardGap),   // S:118
+                            itemBuilder: (_, int i) => _card(ordered[i], focused: false),
+                          ),
                         ),
                 ),
               ],
@@ -174,4 +178,43 @@ class PeopleSheet extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Cards level: a swipe down over the list body collapses the sheet - design
+/// list "swipe down = back to the list/peek". The list's own drag recognizer
+/// wins the arena over the sheet's GestureDetector, so only the handle strip
+/// reached _dragEnd; here the list itself reports the pull instead.
+/// OPEN: chosen - the trigger is the OverscrollNotification with overscroll
+/// < 0 that ClampingScrollPhysics posts when the user drags down past the
+/// top (a ScrollUpdateNotification does not fire there: pixels stay at 0).
+/// Fires once per drag; the flag resets on the next ScrollStart. The
+/// listener returns false so the notification still bubbles.
+class _CollapseOnPullDown extends StatefulWidget {
+  const _CollapseOnPullDown({required this.enabled, required this.onPullDown, required this.child});
+
+  final bool enabled;
+  final VoidCallback onPullDown;
+  final Widget child;
+
+  @override
+  State<_CollapseOnPullDown> createState() => _CollapseOnPullDownState();
+}
+
+class _CollapseOnPullDownState extends State<_CollapseOnPullDown> {
+  bool _fired = false;
+
+  bool _onNotification(ScrollNotification n) {
+    if (n is ScrollStartNotification) {
+      _fired = false;
+    } else if (n is OverscrollNotification && n.overscroll < 0 && n.dragDetails != null) {
+      if (widget.enabled && !_fired) {
+        _fired = true;
+        widget.onPullDown();
+      }
+    }
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) => NotificationListener<ScrollNotification>(onNotification: _onNotification, child: widget.child);
 }
