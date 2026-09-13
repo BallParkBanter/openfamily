@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"time"
 
@@ -116,4 +117,37 @@ func (s *Server) loadMemberPlace(ctx context.Context, userID string) *models.Mem
 		return nil
 	}
 	return r.toPlace(lat, lon)
+}
+
+// wsPlace tells family clients that a member's place words changed without a
+// position change (the geocoder wrote a new street). Same fan-out as presence.
+type wsPlace struct {
+	Type   string              `json:"type"`
+	UserID string              `json:"user_id"`
+	Place  *models.MemberPlace `json:"place"`
+}
+
+func (s *Server) broadcastPlace(userID string) {
+	if !s.hub.hasAny() && !s.hub.hasAdminClients() {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	familyID, err := s.familyIDForUser(ctx, userID)
+	if err != nil {
+		slog.Warn("place broadcast: resolve family failed", "err", err, "user_id", userID)
+		return
+	}
+	place := s.loadMemberPlace(ctx, userID)
+	if place == nil {
+		return
+	}
+	msg, err := json.Marshal(wsPlace{Type: "place", UserID: userID, Place: place})
+	if err != nil {
+		return
+	}
+	if familyID != "" {
+		s.hub.broadcast(familyID, msg)
+	}
+	s.hub.broadcastAdmin(msg)
 }

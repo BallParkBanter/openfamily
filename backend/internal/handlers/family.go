@@ -283,13 +283,13 @@ func (s *Server) ListMembers(w http.ResponseWriter, r *http.Request) {
 		SELECT u.id, u.email, u.name, u.role, u.totp_enabled, u.created_at, u.updated_at,
 		       u.avatar_data IS NOT NULL, u.avatar_version, u.avatar_updated_at,
 		       mp.lat, mp.lon, mp.ts, mp.battery_pct, mp.charging, mp.speed_mps, mp.motion_state, mp.accuracy_meters,
-		       d.last_seen
+		       d.last_seen`+memberPlaceColumns+`
 		FROM users u
 		LEFT JOIN member_positions mp ON mp.user_id = u.id
 		LEFT JOIN (
 			SELECT user_id, MAX(last_seen) AS last_seen
 			FROM devices GROUP BY user_id
-		) d ON d.user_id = u.id
+		) d ON d.user_id = u.id`+memberPlaceJoins+`
 		WHERE u.family_id = $1
 		ORDER BY u.name`, familyID)
 	if err != nil {
@@ -301,13 +301,16 @@ func (s *Server) ListMembers(w http.ResponseWriter, r *http.Request) {
 	members := []models.MemberWithLocation{}
 	for rows.Next() {
 		var m models.MemberWithLocation
-		if err := rows.Scan(&m.ID, &m.Email, &m.Name, &m.Role, &m.TOTPEnabled, &m.CreatedAt, &m.UpdatedAt,
+		var pr memberPlaceRow
+		targets := append([]any{&m.ID, &m.Email, &m.Name, &m.Role, &m.TOTPEnabled, &m.CreatedAt, &m.UpdatedAt,
 			&m.HasAvatar, &m.AvatarVersion, &m.AvatarUpdatedAt,
 			&m.Lat, &m.Lon, &m.TS, &m.BatteryPct, &m.Charging, &m.SpeedMPS, &m.MotionState, &m.AccuracyMeters,
-			&m.LastSeenAt); err != nil {
+			&m.LastSeenAt}, pr.scanTargets()...)
+		if err := rows.Scan(targets...); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to scan member")
 			return
 		}
+		m.Place = pr.toPlace(m.Lat, m.Lon)
 		if !canManage {
 			m.Email = "" // redact email for non-manager (child) viewers
 		}

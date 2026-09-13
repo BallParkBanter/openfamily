@@ -85,3 +85,19 @@ func TestLocationFrameCarriesPlaceOnlyWhenKnown(t *testing.T) {
 		t.Fatalf("place missing from the location frame: %s", b)
 	}
 }
+
+func TestPlaceFrameShape(t *testing.T) {
+	fr := wsPlace{Type: "place", UserID: "u1", Place: &models.MemberPlace{City: s("Dacula"), AtHome: true}}
+	b, _ := json.Marshal(fr)
+	want := `{"type":"place","user_id":"u1","place":{"street":null,"city":"Dacula","county":null,"place_name":null,"at_home":true,"home_distance_m":null,"since":null}}`
+	if string(b) != want {
+		t.Fatalf("got %s\nwant %s", b, want)
+	}
+}
+
+func TestSnapshotMemberJSONHasPlaceKeyOnlyWhenKnown(t *testing.T) {
+	var m wsMember
+	if b, _ := json.Marshal(m); strings.Contains(string(b), `"place"`) {
+		t.Fatalf("nil place must be omitted: %s", b)
+	}
+}
