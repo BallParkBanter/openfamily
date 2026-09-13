@@ -211,7 +211,7 @@ class _MapScreenState extends State<MapScreen>
     _keepFollowing();
     // Overview auto-fits everyone (design list; J:228-236), pans, never snaps.
     if (_mapReady && !(_cameraAnim?.isAnimating ?? false) &&
-        autoFitDue(lastGesture: _lastGesture, now: DateTime.now(), focused: _focus.focusedId != null, following: _followId != null)) {
+        autoFitDue(lastGesture: _lastGesture, now: now, focused: _focus.focusedId != null, following: _followId != null)) {
       _animatedFit();
     }
   }
@@ -429,7 +429,10 @@ class _MapScreenState extends State<MapScreen>
     if (members.isEmpty) return;
     final MapCamera cam = _mapController.camera;
     if (members.length == 1) {
-      _animateTo(_centreAbove(members.first.position!, 16), 16);   // J:229-231
+      final LatLng target = _centreAbove(members.first.position!, 16);   // J:229-231
+      final p0 = cam.latLngToScreenPoint(cam.center), p1 = cam.latLngToScreenPoint(target);
+      if ((16 - cam.zoom).abs() < 0.05 && (p0.x - p1.x).abs() < 4 && (p0.y - p1.y).abs() < 4) return;   // OPEN: chosen - same "unchanged" threshold as below
+      _animateTo(target, 16);
       return;
     }
     final LatLngBounds bounds = LatLngBounds.fromPoints(members.map((Member m) => m.position!).toList());
@@ -787,8 +790,10 @@ class _MapScreenState extends State<MapScreen>
     final List<Member> members =
         _liveMembers().where((Member m) => m.position != null).toList();
     if (members.isEmpty) return;
+    // Same target as _animatedFit, so the overview auto-fit that follows the
+    // first members snapshot finds nothing to correct (no launch bounce).
     if (members.length == 1) {
-      _mapController.move(members.first.position!, 15);
+      _mapController.move(_centreAbove(members.first.position!, 16), 16);   // J:229-231
       return;
     }
     final LatLngBounds bounds = LatLngBounds.fromPoints(
@@ -800,6 +805,7 @@ class _MapScreenState extends State<MapScreen>
       CameraFit.bounds(
         bounds: bounds,
         padding: EdgeInsets.fromLTRB(80, 80, 80, 80 + _currentSheetHeight()),
+        maxZoom: 16,                                                            // J:235 maxZoom:16
       ),
     );
   }
@@ -1057,6 +1063,7 @@ class _MapScreenState extends State<MapScreen>
               bottom: false,
               child: Column(
                 children: [
+                  // OPEN: S:38 .brand 21px 800 - theirs shows the family name in a chip; left as is, remove nothing
                   Padding(
                     padding: const EdgeInsets.only(top: 8, left: 12, right: 76),
                     child: CircleSwitcher(
