@@ -84,6 +84,7 @@ func (s *Server) PutMemberGeocode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req putGeocodeRequest
+	r.Body = http.MaxBytesReader(w, r.Body, 4096)
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return

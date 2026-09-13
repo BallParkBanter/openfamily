@@ -33,7 +33,9 @@ func TestPutMemberGeocodeRejectsBadBodyBeforeTouchingTheDB(t *testing.T) {
 	srv := &Server{} // Pool nil: any DB access would panic, so a 400 proves validation runs first
 	r := chi.NewRouter()
 	r.Put("/api/geocode/members/{id}", srv.PutMemberGeocode)
-	for _, body := range []string{`not json`, `{"lat": 95, "lon": 0}`, `{"lat": 1, "lon": 1, "street": "` + strings.Repeat("x", 121) + `"}`} {
+	for _, body := range []string{`not json`, `{"lat": 95, "lon": 0}`, `{"lat": 1, "lon": 1, "street": "` + strings.Repeat("x", 121) + `"}`,
+		`{"lat": 1, "lon": 1, "street": "` + strings.Repeat("x", 5*1024) + `"}`, // over the 4 KiB body cap
+	} {
 		req := httptest.NewRequest(http.MethodPut, "/api/geocode/members/11111111-1111-1111-1111-111111111111", strings.NewReader(body))
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
