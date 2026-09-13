@@ -41,10 +41,13 @@ List<String> detailChipTexts(MemberPlace? place, {required bool driving}) {
 }
 
 /// J:73-77 since(): "11:12 am" - hour without a leading zero, lower-case.
+/// MemberPlace.since is UTC (the model normalises with .toUtc()); the chip
+/// shows wall-clock time, as the viewer's since() does with a JS Date.
 String chipSinceText(DateTime t) {
-  final int h12 = t.hour % 12 == 0 ? 12 : t.hour % 12;
-  final String mm = t.minute.toString().padLeft(2, '0');
-  return '$h12:$mm ${t.hour < 12 ? 'am' : 'pm'}';
+  final DateTime l = t.toLocal();
+  final int h12 = l.hour % 12 == 0 ? 12 : l.hour % 12;
+  final String mm = l.minute.toString().padLeft(2, '0');
+  return '$h12:$mm ${l.hour < 12 ? 'am' : 'pm'}';
 }
 
 String _mi(double v) => v.toStringAsFixed(1);

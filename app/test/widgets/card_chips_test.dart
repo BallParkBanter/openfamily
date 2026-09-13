@@ -22,4 +22,10 @@ void main() {
     expect(detailChipTexts(const MemberPlace(), driving: false), isEmpty);
     expect(detailChipTexts(null, driving: false), isEmpty);
   });
+  test('since chip shows local wall-clock time for a UTC instant (MemberPlace.since is UTC)', () {
+    final DateTime utc = DateTime.utc(2026, 9, 13, 15, 12);
+    expect(chipSinceText(utc), chipSinceText(utc.toLocal()));   // holds in any TZ
+    expect(chipSinceText(DateTime(2026, 9, 13, 15, 12)), '3:12 pm');
+    expect(chipSinceText(DateTime(2026, 9, 13, 0, 5)), '12:05 am');
+  });
 }
