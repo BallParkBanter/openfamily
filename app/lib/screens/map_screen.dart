@@ -245,7 +245,16 @@ class _MapScreenState extends State<MapScreen>
     final LatLng? pos = _drawnPosition(id, now);
     if (pos == null) {
       if (!_members.any((Member m) => m.id == id)) {
-        setState(() => _followId = null);   // left the roster
+        // Left the roster. Piece 3: one focus/follow state - if they were the
+        // focused person, `_focus.visible` would now draw nobody, so leave
+        // focus (its `_stopFollowing` nulls `_followId`; its `_animatedFit`
+        // runs once here, and later ticks return early above on the null
+        // `_followId`, so nothing re-enters or animates twice).
+        if (_focus.focusedId != null) {
+          _leaveFocus();
+        } else {
+          setState(() => _followId = null);
+        }
       }
       return;
     }
@@ -362,9 +371,13 @@ class _MapScreenState extends State<MapScreen>
 
   void _onSheetLevel(SheetLevel level) {
     _touch();
-    if (_focus.focusedId != null && level == SheetLevel.peek) {
+    // Focus is "others hidden + one card" (J:175-181). Any other level while
+    // focused - peek (swipe down) or cards (People button) - is a request for
+    // everyone, so it leaves focus first; a raised sheet of everyone is not
+    // focus and must not leave the map drawing one person.
+    if (_focus.focusedId != null && level != SheetLevel.focus) {
       _leaveFocus();
-      return;
+      if (level == SheetLevel.peek) return;
     }
     setState(() => _sheetLevel = level);
   }
@@ -410,7 +423,7 @@ class _MapScreenState extends State<MapScreen>
     final LatLngBounds bounds = LatLngBounds.fromPoints(members.map((Member m) => m.position!).toList());
     final MapCamera fitted = CameraFit.bounds(
       bounds: bounds,
-      padding: EdgeInsets.fromLTRB(80, 80, 80, 80 + _currentSheetHeight()),   // J:235 paddingBottomRight sheet + 90
+      padding: EdgeInsets.fromLTRB(80, 80, 80, 80 + _currentSheetHeight()),   // OPEN: chosen - theirs: 80 is their _fitToMembers padding, plus the sheet (J:235 pads sheet + 90)
       maxZoom: 16,                                                              // J:235 maxZoom:16
     ).fit(cam);
     _animateTo(fitted.center, fitted.zoom);
@@ -694,6 +707,9 @@ class _MapScreenState extends State<MapScreen>
   /// (which always carries the freshest GPS fix); falls back to the live device
   /// position when the caller has no backend location yet.
   Future<void> _centerOnUser() async {
+    // Piece 3: one focus/follow state - locating "You" while focused on
+    // someone else would follow a hidden pin, so leave focus first.
+    if (_focus.focusedId != null) _leaveFocus();
     final String? uid = _userId;
     if (uid != null) {
       for (final Member m in _members) {
@@ -752,6 +768,7 @@ class _MapScreenState extends State<MapScreen>
 
   /// Frames all members of the current family.
   void _fitToMembers() {
+    if (!mounted) return;   // _currentSheetHeight reads MediaQuery.of(context)
     final List<Member> members =
         _liveMembers().where((Member m) => m.position != null).toList();
     if (members.isEmpty) return;
@@ -762,8 +779,13 @@ class _MapScreenState extends State<MapScreen>
     final LatLngBounds bounds = LatLngBounds.fromPoints(
       members.map((Member m) => m.position!).toList(),
     );
+    // Piece 3: the sheet covers the bottom of the map, so the first fit pads
+    // for it too (their 80 kept, plus the sheet - same rule as _animatedFit).
     _mapController.fitCamera(
-      CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(80)),
+      CameraFit.bounds(
+        bounds: bounds,
+        padding: EdgeInsets.fromLTRB(80, 80, 80, 80 + _currentSheetHeight()),
+      ),
     );
   }
 
@@ -1043,7 +1065,11 @@ class _MapScreenState extends State<MapScreen>
                       isSelf: _followedMember!.id == _userId,
                       paused: _followPaused,
                       onProfile: () => _openMemberDetails(_followedMember!),
-                      onStop: _stopFollowing,
+                      // Piece 3: one focus/follow state - letting go of the
+                      // person also leaves focus (others back on the map).
+                      onStop: _focus.focusedId != null
+                          ? _leaveFocus
+                          : _stopFollowing,
                     ),
                   ),
                 ),
