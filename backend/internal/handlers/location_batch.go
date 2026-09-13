@@ -68,6 +68,7 @@ type batchPoint struct {
 	SpeedMPS       *float64   `json:"speed_mps,omitempty"`
 	HeadingDeg     *float64   `json:"heading_deg,omitempty"`
 	BatteryPct     *float64   `json:"battery_pct,omitempty"`
+	Charging       *bool      `json:"charging,omitempty"`
 	MotionState    string     `json:"motion_state,omitempty"`
 	Source         string     `json:"source,omitempty"`
 }
@@ -273,23 +274,23 @@ func (s *Server) storeBackfill(ctx context.Context, deviceID, ownerID string, po
 		b := &pgx.Batch{}
 		for _, p := range storable {
 			b.Queue(`
-				INSERT INTO locations (device_id, ts, geom, accuracy_meters, altitude_meters, speed_mps, heading_deg, battery_pct, motion_state, source)
-				VALUES ($1, $2, ST_SetSRID(ST_MakePoint($3, $4), 4326), $5, $6, $7, $8, $9, $10, $11)`,
+				INSERT INTO locations (device_id, ts, geom, accuracy_meters, altitude_meters, speed_mps, heading_deg, battery_pct, motion_state, source, charging)
+				VALUES ($1, $2, ST_SetSRID(ST_MakePoint($3, $4), 4326), $5, $6, $7, $8, $9, $10, $11, $12)`,
 				p.DeviceID, *p.TS, p.Lon, p.Lat, p.AccuracyMeters,
 				p.AltitudeMeters, p.SpeedMPS, p.HeadingDeg, p.BatteryPct,
-				nullIfEmpty(p.MotionState), nullIfEmpty(p.Source),
+				nullIfEmpty(p.MotionState), nullIfEmpty(p.Source), p.Charging,
 			)
 			b.Queue(`
-				INSERT INTO member_positions (user_id, lat, lon, ts, battery_pct, speed_mps, motion_state, accuracy_meters, device_id, updated_at)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
+				INSERT INTO member_positions (user_id, lat, lon, ts, battery_pct, speed_mps, motion_state, accuracy_meters, device_id, updated_at, charging)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now(), $10)
 				ON CONFLICT (user_id) DO UPDATE SET
 					lat = EXCLUDED.lat, lon = EXCLUDED.lon, ts = EXCLUDED.ts,
 					battery_pct = EXCLUDED.battery_pct, speed_mps = EXCLUDED.speed_mps,
 					motion_state = EXCLUDED.motion_state, accuracy_meters = EXCLUDED.accuracy_meters,
-					device_id = EXCLUDED.device_id, updated_at = now()
+					device_id = EXCLUDED.device_id, updated_at = now(), charging = EXCLUDED.charging
 				WHERE member_positions.ts < EXCLUDED.ts`,
 				ownerID, p.Lat, p.Lon, *p.TS, p.BatteryPct, p.SpeedMPS,
-				nullIfEmpty(p.MotionState), p.AccuracyMeters, p.DeviceID,
+				nullIfEmpty(p.MotionState), p.AccuracyMeters, p.DeviceID, p.Charging,
 			)
 		}
 		br := tx.SendBatch(ctx, b)

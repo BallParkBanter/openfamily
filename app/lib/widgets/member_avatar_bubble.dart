@@ -107,11 +107,11 @@ class MemberAvatarBubble extends StatelessWidget {
     return Alignment(0, 1 - 2 * pointFromTop / h);
   }
 
-  /// OPEN: no charging field in Member; bolt hidden until the API exposes one
-  /// (checked 2026-09-12: backend models.MemberWithLocation carries
-  /// battery_pct only - no "charging" anywhere in backend/, migrations, or the
-  /// app). The bolt below is complete and compiles; flip this when it lands.
-  static bool _isCharging(Member member) => false;
+  /// The bolt shows only on an explicit `charging: true` from the backend
+  /// (bray-charging: migration 000025 + `charging` on the ingest body and
+  /// member JSON, fed by the receiver on BrayNextcloudServer from OwnTracks
+  /// bs 2/3). Null means the client never said - no bolt, same as false.
+  static bool _isCharging(Member member) => member.charging == true;
 
   @override
   Widget build(BuildContext context) {
@@ -206,27 +206,10 @@ class MemberAvatarBubble extends StatelessWidget {
                       ),
                     ),
                     if (_isCharging(member))
-                      Positioned(
+                      const Positioned(
                         left: -3, // S:72 left:-3px
                         bottom: -1, // S:72 bottom:-1px
-                        child: Container(
-                          key: const Key('bray-bolt'),
-                          width: BrayTokens.boltWhite, // S:72 19px
-                          height: BrayTokens.boltWhite,
-                          alignment: Alignment.center, // S:73 align-items/justify-content:center
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Colors.white, // S:73 background:#fff
-                            border: Border.all(color: const Color(0x33141B36)), // S:73 1px rgba(20,27,54,.2)
-                            boxShadow: const [
-                              // S:74 box-shadow:0 1px 4px rgba(0,0,0,.35)
-                              BoxShadow(color: Color(0x59000000), blurRadius: 4, offset: Offset(0, 1)),
-                            ],
-                          ),
-                          // S:74 font-size:10px; the glyph is the colour-emoji
-                          // bolt, yellow by itself (design list: "yellow bolt").
-                          child: const Text('⚡', style: TextStyle(fontSize: 10, height: 1)),
-                        ),
+                        child: BrayChargingBolt(),
                       ),
                     if (member.hasDrivingSpeed)
                       Positioned(
@@ -279,6 +262,35 @@ class MemberAvatarBubble extends StatelessWidget {
       }
     }
     return sb.toString();
+  }
+}
+
+/// The Family Viewer's charging bolt (S:72-74 .fc-chg): a white 19px pill
+/// with the colour-emoji bolt, pinned bottom-left of a face. Shared by the
+/// solo marker and each charging face in the capsule (capsule_bubble.dart).
+class BrayChargingBolt extends StatelessWidget {
+  const BrayChargingBolt({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('bray-bolt'),
+      width: BrayTokens.boltWhite, // S:72 19px
+      height: BrayTokens.boltWhite,
+      alignment: Alignment.center, // S:73 align-items/justify-content:center
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.white, // S:73 background:#fff
+        border: Border.all(color: const Color(0x33141B36)), // S:73 1px rgba(20,27,54,.2)
+        boxShadow: const [
+          // S:74 box-shadow:0 1px 4px rgba(0,0,0,.35)
+          BoxShadow(color: Color(0x59000000), blurRadius: 4, offset: Offset(0, 1)),
+        ],
+      ),
+      // S:74 font-size:10px; the glyph is the colour-emoji bolt, yellow by
+      // itself (design list: "yellow bolt").
+      child: const Text('⚡', style: TextStyle(fontSize: 10, height: 1)),
+    );
   }
 }
 

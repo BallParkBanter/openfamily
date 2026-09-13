@@ -100,6 +100,7 @@ class Member {
     this.history = const [],
     this.lastSeen,
     this.accuracyMeters,
+    this.charging,
   });
 
   final String id;
@@ -165,6 +166,12 @@ class Member {
   /// blue "range" circle around the member and to label their accuracy.
   final double? accuracyMeters;
 
+  /// bray: whether the member's phone was plugged in at its last report - the
+  /// backend `charging` field (OwnTracks bs 2/3, carried through the receiver
+  /// on BrayNextcloudServer and OpenFamily's member JSON). Null when the
+  /// backend did not say; only an explicit true shows the bolt.
+  final bool? charging;
+
   /// Whether this member is driving fast enough to show as "speeding".
   bool get isSpeeding =>
       movement == MovementType.car &&
@@ -201,6 +208,7 @@ class Member {
     String? eta,
     DateTime? lastSeen,
     double? accuracyMeters,
+    bool? charging,
   }) {
     return Member(
       id: id,
@@ -220,6 +228,7 @@ class Member {
       history: history,
       lastSeen: lastSeen ?? this.lastSeen,
       accuracyMeters: accuracyMeters ?? this.accuracyMeters,
+      charging: charging ?? this.charging,
     );
   }
 
@@ -250,6 +259,7 @@ class Member {
       history: history,
       lastSeen: lastSeen,
       accuracyMeters: accuracyMeters,
+      charging: charging,
     );
   }
 }

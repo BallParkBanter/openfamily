@@ -27,6 +27,7 @@ type wsMember struct {
 	Lon             *float64    `json:"lon"`
 	TS              *time.Time  `json:"ts"`
 	BatteryPct      *float64    `json:"battery_pct"`
+	Charging        *bool       `json:"charging"`
 	SpeedMPS        *float64    `json:"speed_mps"`
 	MotionState     *string     `json:"motion_state"`
 	AccuracyMeters  *float64    `json:"accuracy_meters"`
@@ -47,6 +48,7 @@ type wsLocation struct {
 	TS             time.Time `json:"ts"`
 	LastSeenAt     time.Time `json:"last_seen_at"`
 	BatteryPct     *float64  `json:"battery_pct"`
+	Charging       *bool     `json:"charging"`
 	SpeedMPS       *float64  `json:"speed_mps"`
 	MotionState    *string   `json:"motion_state"`
 	AccuracyMeters *float64  `json:"accuracy_meters"`
@@ -62,6 +64,7 @@ type wsPresence struct {
 	UserID     string    `json:"user_id"`
 	TS         time.Time `json:"ts"`
 	BatteryPct *float64  `json:"battery_pct,omitempty"`
+	Charging   *bool     `json:"charging,omitempty"`
 }
 
 // wsAvatarUpdate tells already-connected clients to fetch or clear a changed
@@ -228,7 +231,7 @@ func (s *Server) familyMembersSnapshot(ctx context.Context, familyID, callerID s
 	rows, err := s.Pool.Query(ctx, `
 		SELECT u.id, u.email, u.name, u.role,
 		       u.avatar_data IS NOT NULL, u.avatar_version, u.avatar_updated_at,
-		       mp.lat, mp.lon, mp.ts, mp.battery_pct, mp.speed_mps, mp.motion_state, mp.accuracy_meters,
+		       mp.lat, mp.lon, mp.ts, mp.battery_pct, mp.charging, mp.speed_mps, mp.motion_state, mp.accuracy_meters,
 		       d.last_seen
 		FROM users u
 		LEFT JOIN member_positions mp ON mp.user_id = u.id
@@ -254,12 +257,13 @@ func (s *Server) familyMembersSnapshot(ctx context.Context, familyID, callerID s
 			lat, lon        *float64
 			ts              *time.Time
 			battery, speed  *float64
+			charging        *bool
 			motion          *string
 			accuracy        *float64
 			lastSeenAt      *time.Time
 		)
 		if err := rows.Scan(&id, &email, &name, &role, &hasAvatar, &avatarVersion, &avatarUpdatedAt,
-			&lat, &lon, &ts, &battery, &speed, &motion, &accuracy, &lastSeenAt); err != nil {
+			&lat, &lon, &ts, &battery, &charging, &speed, &motion, &accuracy, &lastSeenAt); err != nil {
 			return nil, err
 		}
 		m := wsMember{
@@ -273,6 +277,7 @@ func (s *Server) familyMembersSnapshot(ctx context.Context, familyID, callerID s
 			Lon:             lon,
 			TS:              ts,
 			BatteryPct:      battery,
+			Charging:        charging,
 			SpeedMPS:        speed,
 			MotionState:     motion,
 			AccuracyMeters:  accuracy,
@@ -326,7 +331,7 @@ func (s *Server) broadcastLocation(ownerID string, loc wsLocation) {
 // broadcastLocation, it resolves the family under a background context so a
 // client disconnect cannot cancel the broadcast; callers should invoke it in a
 // goroutine.
-func (s *Server) broadcastPresence(ownerID string, ts time.Time, batteryPct *float64) {
+func (s *Server) broadcastPresence(ownerID string, ts time.Time, batteryPct *float64, charging *bool) {
 	// Nobody listening: skip the family lookup entirely, matching
 	// broadcastLocation's idle fast path.
 	if !s.hub.hasAny() && !s.hub.hasAdminClients() {
@@ -344,6 +349,7 @@ func (s *Server) broadcastPresence(ownerID string, ts time.Time, batteryPct *flo
 		UserID:     ownerID,
 		TS:         ts,
 		BatteryPct: batteryPct,
+		Charging:   charging,
 	})
 	if err != nil {
 		slog.Warn("presence broadcast: marshal failed", "err", err)

@@ -396,4 +396,48 @@ void main() {
       expect(identical(again, refreshed), isTrue);
     });
   });
+
+  group('charging (bray)', () {
+    Member base() => memberFromJson(<String, dynamic>{
+          'id': 'u1',
+          'name': 'Bo',
+          'lat': 33.9,
+          'lon': -84.4,
+          'ts': '2026-09-13T12:00:00Z',
+          'battery_pct': 84,
+          'charging': true,
+        });
+
+    test('member JSON: charging parsed as bool?, absent stays null', () {
+      expect(base().charging, isTrue);
+      expect(base().batteryPercent, 84);
+      final unknown = memberFromJson(<String, dynamic>{'id': 'u2', 'name': 'X'});
+      expect(unknown.charging, isNull);
+    });
+
+    test('location frame: follows the frame, keeps the old value when omitted', () {
+      final m = base();
+      final unplugged = memberFromLocationUpdate(m, <String, dynamic>{
+        'lat': 33.91, 'lon': -84.41, 'ts': '2026-09-13T12:01:00Z', 'charging': false,
+      });
+      expect(unplugged.charging, isFalse);
+      final silent = memberFromLocationUpdate(m, <String, dynamic>{
+        'lat': 33.92, 'lon': -84.42, 'ts': '2026-09-13T12:02:00Z',
+      });
+      expect(silent.charging, isTrue);
+    });
+
+    test('presence frame: a parked phone can plug in or unplug', () {
+      final m = base();
+      final plugged = memberFromPresenceUpdate(m, <String, dynamic>{
+        'user_id': 'u1', 'ts': '2026-09-13T12:05:00Z', 'charging': false,
+      });
+      expect(plugged.charging, isFalse);
+      expect(plugged.position, m.position);
+      final silent = memberFromPresenceUpdate(m, <String, dynamic>{
+        'user_id': 'u1', 'ts': '2026-09-13T12:06:00Z',
+      });
+      expect(silent.charging, isTrue);
+    });
+  });
 }
