@@ -43,6 +43,13 @@ void main() {
     final deco = t.widget<AnimatedContainer>(find.byKey(const Key('sheet'))).decoration as BoxDecoration;
     expect(deco.border!.top.color, BrayTokens.accentCharlie);
   });
+  testWidgets('focus: the big card is its own semantics node, separate from the sheet (rig finds "<Label> card · battery")', (t) async {
+    final SemanticsHandle handle = t.ensureSemantics();
+    await t.pumpWidget(host(sheet(level: SheetLevel.focus, focusedId: 'charlie')));
+    expect(find.bySemanticsLabel(RegExp(r'^Charlie card · battery')), findsOneWidget);
+    expect(find.bySemanticsLabel(RegExp(r'^People sheet · focus$')), findsOneWidget);   // not joined with the card's label
+    handle.dispose();
+  });
   testWidgets('swipes move between levels; swipe up in focus is "full"', (t) async {
     final List<SheetLevel> levels = []; final List<String> taps = [];
     await t.pumpWidget(host(sheet(onLevel: levels.add)));

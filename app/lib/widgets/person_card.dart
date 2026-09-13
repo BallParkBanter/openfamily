@@ -97,9 +97,13 @@ class _PersonCardState extends State<PersonCard> {
     final String batt = m.batteryPercent > 0 ? '${m.batteryPercent}' : '—';              // J:282 null → "—"
     final String semantics = '${widget.label} card · battery $batt% · $ago';
 
+    // container: true - the card is its own accessibility node. Without it
+    // the focus-level card (Align child, no list boundary) merged into the
+    // sheet's "People sheet · focus" node and the rig could not find it.
     return Semantics(
       label: semantics,
       button: true,
+      container: true,
       child: GestureDetector(
         onTap: widget.onTap,
         onLongPress: widget.onLongPress,
