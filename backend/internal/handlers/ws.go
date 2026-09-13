@@ -52,6 +52,8 @@ type wsLocation struct {
 	SpeedMPS       *float64  `json:"speed_mps"`
 	MotionState    *string   `json:"motion_state"`
 	AccuracyMeters *float64  `json:"accuracy_meters"`
+	// Place: where the member is in words (Bray piece 4); omitted when unknown.
+	Place *models.MemberPlace `json:"place,omitempty"`
 }
 
 // wsPresence is a liveness announcement broadcast when a device reports but its

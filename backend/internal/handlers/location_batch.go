@@ -303,6 +303,10 @@ func (s *Server) storeBackfill(ctx context.Context, deviceID, ownerID string, po
 		if err := br.Close(); err != nil {
 			return 0, 0, fmt.Errorf("ingest batch: %w", err)
 		}
+		last := storable[len(storable)-1]
+		if err := updateMemberPlace(ctx, tx, ownerID, last.Lon, last.Lat, *last.TS); err != nil {
+			return 0, 0, fmt.Errorf("member place: %w", err)
+		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {

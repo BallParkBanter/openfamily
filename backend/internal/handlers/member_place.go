@@ -1,8 +1,11 @@
 package handlers
 
 import (
+	"context"
+	"log/slog"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/wheresfrank/openfamily/backend/internal/models"
 )
 
@@ -64,4 +67,48 @@ func (r memberPlaceRow) toPlace(lat, lon *float64) *models.MemberPlace {
 		p.Street, p.City, p.County = r.Street, r.City, r.County
 	}
 	return p
+}
+
+// updateMemberPlace records which saved place (smallest radius that contains
+// the point - the same rule as the app's placeContaining and the history
+// matcher) the member is in, and since when. Runs inside the ingest
+// transaction on BOTH paths - stored and stationary-deduplicated - so a Home
+// created while the phone sits parked is picked up on its next report. The
+// UPDATE's right-hand sides all read the OLD row, so `place_since` compares
+// against the previous place_id.
+func updateMemberPlace(ctx context.Context, tx pgx.Tx, userID string, lon, lat float64, ts time.Time) error {
+	_, err := tx.Exec(ctx, `
+		WITH here AS (
+			SELECT p.id FROM places p
+			JOIN users u ON u.family_id = p.family_id
+			WHERE u.id = $1 AND p.geom IS NOT NULL AND p.radius_meters IS NOT NULL
+			  AND ST_DWithin(p.geom::geography, ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography, p.radius_meters)
+			ORDER BY p.radius_meters ASC
+			LIMIT 1
+		)
+		UPDATE member_positions mp SET
+			place_since = CASE
+				WHEN mp.place_since IS NULL OR mp.place_id IS DISTINCT FROM (SELECT id FROM here) THEN $4
+				ELSE mp.place_since END,
+			place_id = (SELECT id FROM here)
+		WHERE mp.user_id = $1`, userID, lon, lat, ts)
+	return err
+}
+
+// loadMemberPlace reads one member's place for a broadcast. Best-effort: a
+// failure is logged and yields nil (the frame still goes out without it).
+func (s *Server) loadMemberPlace(ctx context.Context, userID string) *models.MemberPlace {
+	var lat, lon *float64
+	var r memberPlaceRow
+	targets := append([]any{&lat, &lon}, r.scanTargets()...)
+	err := s.Pool.QueryRow(ctx, `
+		SELECT mp.lat, mp.lon`+memberPlaceColumns+`
+		FROM member_positions mp
+		JOIN users u ON u.id = mp.user_id`+memberPlaceJoins+`
+		WHERE mp.user_id = $1`, userID).Scan(targets...)
+	if err != nil {
+		slog.Warn("member place: load failed", "user_id", userID, "err", err)
+		return nil
+	}
+	return r.toPlace(lat, lon)
 }

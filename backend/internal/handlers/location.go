@@ -167,6 +167,10 @@ func (s *Server) IngestLocation(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "failed to update member position")
 			return
 		}
+		if err := updateMemberPlace(r.Context(), tx, ownerID, req.Lon, req.Lat, ts); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update member place")
+			return
+		}
 		if err := tx.Commit(r.Context()); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to commit")
 			return
@@ -218,6 +222,11 @@ func (s *Server) IngestLocation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := updateMemberPlace(r.Context(), tx, ownerID, req.Lon, req.Lat, ts); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update member place")
+		return
+	}
+
 	if _, err := tx.Exec(r.Context(), `
 		UPDATE devices SET last_seen = now() WHERE id = $1`, req.DeviceID); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to update device")
@@ -255,6 +264,9 @@ func (s *Server) IngestLocation(w http.ResponseWriter, r *http.Request) {
 		if req.MotionState != "" {
 			motionState = &req.MotionState
 		}
+		placeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		place := s.loadMemberPlace(placeCtx, ownerID)
+		cancel()
 		s.broadcastLocation(ownerID, wsLocation{
 			Type:           "location",
 			UserID:         ownerID,
@@ -267,6 +279,7 @@ func (s *Server) IngestLocation(w http.ResponseWriter, r *http.Request) {
 			SpeedMPS:       req.SpeedMPS,
 			MotionState:    motionState,
 			AccuracyMeters: req.AccuracyMeters,
+			Place:          place,
 		})
 	}()
 

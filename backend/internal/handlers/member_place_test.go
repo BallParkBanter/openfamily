@@ -72,3 +72,16 @@ func TestScanTargetsMatchTheColumnList(t *testing.T) {
 		t.Fatalf("memberPlaceColumns selects 9 columns; scanTargets has %d", n)
 	}
 }
+
+func TestLocationFrameCarriesPlaceOnlyWhenKnown(t *testing.T) {
+	loc := wsLocation{Type: "location", UserID: "u1", Lat: 33.9, Lon: -84.2}
+	b, _ := json.Marshal(loc)
+	if strings.Contains(string(b), `"place"`) {
+		t.Fatalf("no place must be omitted: %s", b)
+	}
+	loc.Place = &models.MemberPlace{Street: s("Loganville Highway")}
+	b, _ = json.Marshal(loc)
+	if !strings.Contains(string(b), `"place":{"street":"Loganville Highway"`) {
+		t.Fatalf("place missing from the location frame: %s", b)
+	}
+}
