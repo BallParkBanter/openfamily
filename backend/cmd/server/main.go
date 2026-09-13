@@ -211,6 +211,15 @@ func main() {
 		r.Post("/locations/batch", srv.IngestLocationBatch)
 	})
 
+	// Family geocoder (Bray piece 4): a cron script reverse-geocodes member
+	// positions and writes the street back. Static key, two routes.
+	r.Group(func(r chi.Router) {
+		r.Use(mid.RequireGeocodeKey(cfg.GeocodeWriterKey))
+
+		r.Get("/api/geocode/members", srv.GeocodeListMembers)
+		r.Put("/api/geocode/members/{id}", srv.PutMemberGeocode)
+	})
+
 	// Platform admin API, namespaced under /api/admin/* so it never collides
 	// with the admin SPA served at /admin/* (which falls back to index.html for
 	// client-side routing). RequireAuth runs first (injects claims);

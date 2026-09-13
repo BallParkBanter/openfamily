@@ -48,6 +48,8 @@ services:
       # Caddy terminates TLS in front of the API.
       TLS_BEHIND_PROXY: ${TLS_BEHIND_PROXY:-true}
       VERBOSE_PUSH: ${VERBOSE_PUSH:-false}
+      # Static key for the family geocoder's /api/geocode routes. Empty disables them.
+      GEOCODE_WRITER_KEY: ${GEOCODE_WRITER_KEY:-}
       # Advertised to the app via GET /config so a generic APK can register
       # UnifiedPush without a dart-define.
       NTFY_BASE_URL: ${NTFY_BASE_URL:-http://localhost:2586}
