@@ -30,6 +30,7 @@ import '../utils/focus_rules.dart';
 import '../utils/member_clustering.dart';
 import '../widgets/capsule_bubble.dart';
 import '../widgets/circle_switcher.dart';
+import '../widgets/focus_trail_layer.dart';
 import '../widgets/home_chip.dart';
 import '../widgets/map_bottom_bar.dart';
 import '../widgets/member_avatar_bubble.dart';
@@ -918,6 +919,18 @@ class _MapScreenState extends State<MapScreen>
   @override
   Widget build(BuildContext context) {
     final List<Member> members = _liveMembers();
+    // The focused member for FocusTrailLayer: independent of _followedMember
+    // because the Following pill's ✕ can end following while focus stays
+    // active (controller note 1) — look the id up in `members` directly.
+    Member? focusedMember;
+    if (_focus.focusedId != null) {
+      for (final Member candidate in members) {
+        if (candidate.id == _focus.focusedId) {
+          focusedMember = candidate;
+          break;
+        }
+      }
+    }
     final MediaQueryData media = MediaQuery.of(context);
     final double safeBottom = media.padding.bottom;
     // Space reserved at the very bottom for the fixed control bar (its own
@@ -986,6 +999,9 @@ class _MapScreenState extends State<MapScreen>
               // people"; C:183-186). Places come from the same FamilyService
               // that labels members with them.
               HomeChipLayer(places: _familyService.places),
+              // Piece 3: the focused person's last 6 h under their marker
+              // (house under the trail under people).
+              FocusTrailLayer(member: focusedMember),
               // Member bubbles, clustered by on-screen proximity at
               // the current zoom (rebuilds as the camera moves).
               _MemberMarkerLayer(
