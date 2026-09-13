@@ -1,5 +1,6 @@
 // app/test/widgets/place_on_map_test.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:openfamily/models/member.dart';
@@ -28,6 +29,11 @@ void main() {
     final street = t.getRect(find.text('Peachtree Ind.'));
     expect(street.top, greaterThanOrEqualTo(t.getRect(find.textContaining('61')).bottom - 1));   // under the speed
     expect(pill.contains(street.center), isTrue);
+    // The street must be readable, not ellipsized: the pill spans the marker
+    // width (design list line 41). find.text matches data, not painted glyphs,
+    // so this is the only assertion that sees an ellipsis (test font: 1 em/glyph,
+    // "Peachtree Ind." = 98 px; fits in 148 px, not in a 44 px slot).
+    expect(t.renderObject<RenderParagraph>(find.byKey(const Key('bray-pill-street'))).didExceedMaxLines, isFalse);
     final node = t.getSemantics(sem(MemberAvatarBubble));
     expect(node.label, contains('61 mph · Peachtree Ind.'));
     handle.dispose();

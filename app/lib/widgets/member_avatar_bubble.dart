@@ -77,29 +77,26 @@ class MemberAvatarBubble extends StatelessWidget {
 
   /// S:75 .fc-pill bottom:-3px - the speed pill overlays the face's bottom
   /// edge and pokes 3px below the ring; it adds nothing under the marker (the
-  /// tail and dot are there), so the marker box does not grow for the speed
-  /// alone (only [streetLineH] below, for the street line).
+  /// tail and dot are there), so the marker box does not grow while driving -
+  /// the two-line pill (street under the speed) is bottom-anchored too and
+  /// grows UP over the face, so it adds nothing under the marker either.
   /// Upstream's names kept, honestly zero.
   static const double _speedPillDrop = 3;
   static const double speedGap = 0;
   static const double speedCaptionH = 0;
 
-  /// The street line under the speed (design list line 41: "Street under the
-  /// speed") makes the pill two lines; the box grows by that line so
-  /// [pointFromTop] (measured from the top, where the Column starts) still
-  /// lands on the dot. OPEN: measured: a 7px/1.2 line = 8.4 px.
-  static const double streetLineH = 8;
-
-  /// True exactly when the pill draws its second line (same [pillStreet]
-  /// call the pill makes, so a blank street grows nothing).
-  static bool _hasStreetLine(Member member) =>
-      member.hasDrivingSpeed && pillStreet(member.place?.street) != null;
+  /// How far the speed pill's slot reaches past the ring on each side, so the
+  /// pill stays centred on the ring but can grow to the whole [markerWidth]
+  /// (160) instead of the ring's 56: "Peachtree Ind." needs ~64px at 7px.
+  /// Design list line 41 ("Street under the speed") - the street has to be
+  /// readable, not ellipsized. The Stack is Clip.none, so nothing is cut.
+  static const double _pillReach = (markerWidth - BrayTokens.soloFace) / 2;
 
   static Size markerSizeFor(Member member) {
     return Size(
       markerWidth,
       member.hasDrivingSpeed
-          ? avatarBox + speedGap + speedCaptionH + (_hasStreetLine(member) ? streetLineH : 0)
+          ? avatarBox + speedGap + speedCaptionH
           : avatarBox,
     );
   }
@@ -233,8 +230,11 @@ class MemberAvatarBubble extends StatelessWidget {
                       ),
                     if (member.hasDrivingSpeed)
                       Positioned(
-                        left: 0,
-                        right: 0,
+                        // design list line 41: the slot spans the marker
+                        // width (symmetric, so the pill stays centred on the
+                        // ring) - a 56px slot ellipsized "Peachtree Ind.".
+                        left: -_pillReach,
+                        right: -_pillReach,
                         bottom: -_speedPillDrop,
                         child: Center(
                           child: _BraySpeedPill(
