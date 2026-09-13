@@ -5,6 +5,7 @@
 // focus (one tall card). It only draws and reports gestures; the map screen
 // owns the level and the focused person.
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;   // not re-exported by material
 
 import '../models/member.dart';
 import '../models/member_place.dart';
@@ -164,7 +165,7 @@ class PeopleSheet extends StatelessWidget {
                           child: ListView.separated(
                             padding: EdgeInsets.only(bottom: BrayTokens.sheetPadBottom + bottomInset),
                             physics: level == SheetLevel.peek ? const NeverScrollableScrollPhysics() : const ClampingScrollPhysics(),
-                            cacheExtent: 0,
+                            scrollCacheExtent: const ScrollCacheExtent.pixels(0),   // was cacheExtent: 0 (deprecated in 3.41)
                             itemCount: ordered.length,
                             separatorBuilder: (_, __) => const SizedBox(height: BrayTokens.cardGap),   // S:118
                             itemBuilder: (_, int i) => _card(ordered[i], focused: false),
