@@ -26,6 +26,12 @@ void main() {
     expect(pillStreet(null), isNull);
     expect(pillStreet(''), isNull);
   });
+  test('pillStreet: numbered routes keep their number (Nominatim gives GA-20 etc. this way)', () {
+    expect(pillStreet('US Highway 78'), 'US Hwy 78');
+    expect(pillStreet('State Route 124'), 'State Rte 124');
+    expect(pillStreet('Georgia State Route 20'), 'Georgia State 20');
+    expect(pillStreet('/ Foo'), isNull);
+  });
   test('miles and since read like the HA card (H:79, H:75-77)', () {
     expect(milesText(6763.2), '4.2 mi');
     expect(milesText(20000), '12 mi');
@@ -35,7 +41,7 @@ void main() {
   });
   test('statusLine: the five wordings from the design list', () {
     expect(statusLine(m(mph: 61, place: const MemberPlace(street: 'Loganville Highway', homeDistanceM: 5000)), now: now),
-        '🚗 Driving near Loganville Highway');                       // distance dropped while driving
+        '🚗 Driving near Loganville Hwy');                       // map abbreviation; distance dropped while driving
     expect(statusLine(m(mph: 61, place: const MemberPlace(placeName: 'Kroger', homeDistanceM: 5000)), now: now),
         '🚗 Driving near Kroger');
     expect(statusLine(m(place: MemberPlace(atHome: true, placeName: 'Home', since: DateTime(2026, 9, 13, 21, 6))), now: now),

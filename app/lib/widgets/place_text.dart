@@ -18,19 +18,29 @@ const int kStreetMaxChars = 22;
 const Map<String, String> _abbrev = {
   'industrial': 'Ind.', 'boulevard': 'Blvd', 'highway': 'Hwy', 'parkway': 'Pkwy',
   'road': 'Rd', 'avenue': 'Ave', 'street': 'St', 'drive': 'Dr', 'lane': 'Ln', 'court': 'Ct',
-  'expressway': 'Expy', 'circle': 'Cir', 'place': 'Pl', 'terrace': 'Ter',
+  'expressway': 'Expy', 'circle': 'Cir', 'place': 'Pl', 'terrace': 'Ter', 'route': 'Rte',
 };
 const Set<String> _roadTypes = {'boulevard', 'highway', 'parkway', 'road', 'avenue', 'street', 'drive',
-  'lane', 'court', 'expressway', 'circle', 'place', 'terrace', 'way', 'trail', 'pike'};
+  'lane', 'court', 'expressway', 'circle', 'place', 'terrace', 'way', 'trail', 'pike', 'route'};
 
 String? pillStreet(String? street) {
   if (street == null || street.trim().isEmpty) return null;
   String s = street.split('/').first.trim();                               // H:90
   List<String> words = s.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+  if (words.isEmpty) return null;
   if (words.length > 1 && RegExp(r'^\d+[A-Za-z]?$').hasMatch(words.first)) words = words.sublist(1);
-  if (words.length >= 3 && _roadTypes.contains(words.last.toLowerCase())) words = words.sublist(0, words.length - 1);
-  words = words.take(2).map((w) => _abbrev[w.toLowerCase()] ?? w).toList();
-  s = words.join(' ');
+  // OPEN: numbered routes — derived, not in the design list. Nominatim often
+  // returns state/US routes with the route number as the final word (GA-20 as
+  // "... Route 20"); keep the number as a third token instead of dropping it
+  // with the road type.
+  final bool numberedRoute = words.length >= 2 && RegExp(r'^\d+$').hasMatch(words.last);
+  if (!numberedRoute && words.length >= 3 && _roadTypes.contains(words.last.toLowerCase())) {
+    words = words.sublist(0, words.length - 1);
+  }
+  final List<String> preNumber = numberedRoute ? words.sublist(0, words.length - 1) : words;
+  final List<String> headWords = preNumber.take(2).map((w) => _abbrev[w.toLowerCase()] ?? w).toList();
+  if (numberedRoute) headWords.add(words.last);
+  s = headWords.join(' ');
   if (s.length > kStreetMaxChars) s = '${s.substring(0, kStreetMaxChars - 1)}…';   // H:91
   return s;
 }
@@ -54,16 +64,19 @@ String sinceText(DateTime since, {DateTime? now}) {
 }
 
 /// One line saying where the member is (card chip; their address slot).
-/// Design list: "🚗 Driving near Loganville Hwy" over 8 mph with the distance
-/// dropped; "🏠 Home since 9:06pm"; "📍 Kroger · 4.2 mi" when away (a named
-/// place wins over the street, H:93); no place object yet → their own label.
+/// Design list line 42: "🚗 Driving near Loganville Hwy" over 8 mph — the
+/// map abbreviation ([pillStreet]), not the full street; distance is
+/// dropped while driving. The away detail chip (design list line 64) keeps
+/// the full street, e.g. "📍 near Twin Lakes Drive · 4.2 mi" (a named place
+/// wins over the street, H:93); "🏠 Home since 9:06pm"; no place object yet
+/// → their own label.
 String statusLine(Member m, {DateTime? now}) {
   final place = m.place;
   if (place == null) return m.address;
   final String? where = place.placeName ?? (place.street != null ? 'near ${place.street}' : null);
   final String? miles = place.homeDistanceM == null ? null : milesText(place.homeDistanceM!);
   if (isDriving(m)) {
-    final String? near = place.placeName ?? place.street;       // "near" for both (design list line 42)
+    final String? near = place.placeName ?? pillStreet(place.street);   // map abbreviation (design list line 42)
     return near == null ? '🚗 Driving' : '🚗 Driving near $near';
   }
   if (place.atHome) {
