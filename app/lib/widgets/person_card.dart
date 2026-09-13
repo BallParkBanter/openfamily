@@ -177,7 +177,7 @@ class _PersonCardState extends State<PersonCard> {
                       ),
                     ),
                     if (m.status == MemberStatus.normal) ...[
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 8),                     // OPEN: chosen - gap between ghost name and online dot, no CSS source
                       Container(
                         key: const Key('card-dot'),
                         width: 9, height: 9,                       // OPEN: chosen - Life360's dot is ~8-10 CSS px
@@ -194,7 +194,7 @@ class _PersonCardState extends State<PersonCard> {
                   key: const Key('card-upd'),
                   padding: const EdgeInsets.fromLTRB(11, 4, 11, 4), // S:132 padding:4px 11px
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(99),
+                    borderRadius: BorderRadius.circular(99),        // S:132 border-radius:99px
                     gradient: const LinearGradient(
                       begin: Alignment.topLeft, end: Alignment.bottomRight,   // S:133 130deg
                       colors: [BrayTokens.updBadgeA, BrayTokens.updBadgeB, BrayTokens.updBadgeC],
@@ -241,7 +241,7 @@ class _PersonCardState extends State<PersonCard> {
                                 padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),           // S:140 padding:6px 12px
                                 decoration: BoxDecoration(
                                   color: BrayTokens.statChipBg,                              // S:141
-                                  borderRadius: BorderRadius.circular(99),
+                                  borderRadius: BorderRadius.circular(99),                   // S:140 border-radius:99px
                                   border: Border.all(color: BrayTokens.statChipBorder),      // S:142
                                 ),
                                 child: Text(stat, maxLines: 1, overflow: TextOverflow.ellipsis,   // S:143
@@ -312,7 +312,7 @@ class _C2 extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
         padding: const EdgeInsets.fromLTRB(9, 4, 9, 4),                           // S:156 padding:4px 9px
-        decoration: BoxDecoration(color: BrayTokens.c2Bg, borderRadius: BorderRadius.circular(99), border: Border.all(color: BrayTokens.c2Border)),
+        decoration: BoxDecoration(color: BrayTokens.c2Bg, borderRadius: BorderRadius.circular(99) /* S:156 border-radius:99px */, border: Border.all(color: BrayTokens.c2Border)),
         child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontSize: BrayTokens.c2Size, fontWeight: FontWeight.w700, color: BrayTokens.c2Text)),
       );
@@ -330,10 +330,14 @@ class _ActionChip extends StatelessWidget {
         onTap: onTap,
         child: Container(
           padding: const EdgeInsets.fromLTRB(9, 4, 9, 4),
-          decoration: BoxDecoration(color: BrayTokens.c2Bg, borderRadius: BorderRadius.circular(99), border: Border.all(color: accent.withValues(alpha: 0.6))),
+          decoration: BoxDecoration(
+            color: BrayTokens.c2Bg,
+            borderRadius: BorderRadius.circular(99),               // S:156 border-radius:99px (same chip metrics as _C2)
+            border: Border.all(color: accent.withValues(alpha: 0.6)), // OPEN: chosen - no CSS source for Call/Text (not in the viewer); .6 keeps the accent border visible without matching the fully-opaque .card border
+          ),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(icon, size: 13, color: accent),
-            const SizedBox(width: 4),
+            Icon(icon, size: 13, color: accent),                    // OPEN: chosen - matches _C2's 11.5px text at a legible icon scale, no CSS source
+            const SizedBox(width: 4),                               // OPEN: chosen - icon-to-label gap, no CSS source
             Text(label, style: TextStyle(fontSize: BrayTokens.c2Size, fontWeight: FontWeight.w700, color: accent)),
           ]),
         ),
