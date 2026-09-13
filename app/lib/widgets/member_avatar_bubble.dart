@@ -134,9 +134,11 @@ class MemberAvatarBubble extends StatelessWidget {
   /// bs 2/3). Null means the client never said - no bolt, same as false.
   static bool _isCharging(Member member) => member.charging == true;
 
-  /// Stale = their status says updates are not live and we know when the
-  /// last one was (FamilyService flips status to stopped/warning on a timer).
-  static bool _isStale(Member m) => m.status != MemberStatus.normal && m.lastSeen != null;
+  /// Stale = FamilyService's staleness timer flipped the status to `stopped`
+  /// (member_mapper.dart:376-399) and the last fix time is known. `warning`
+  /// (low battery) and `gpsIssue` (poor accuracy) are live members with a
+  /// problem, not stale ones (design list: "updated 2m ago on stale icons").
+  static bool _isStale(Member m) => m.status == MemberStatus.stopped && m.lastSeen != null;
 
   @override
   Widget build(BuildContext context) {

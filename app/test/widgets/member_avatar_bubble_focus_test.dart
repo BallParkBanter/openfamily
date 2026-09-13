@@ -25,5 +25,8 @@ void main() {
     expect(find.text('updated 3h ago'), findsOneWidget);
     await t.pumpWidget(host(MemberAvatarBubble(member: m('Heidi Bray', seen: seen), onTap: () {})));
     expect(find.byKey(const Key('bray-age-pill')), findsNothing);
+    // warning = low battery on a LIVE member (member_mapper.dart:214), not stale.
+    await t.pumpWidget(host(MemberAvatarBubble(member: m('Heidi Bray', st: MemberStatus.warning, seen: seen), onTap: () {})));
+    expect(find.byKey(const Key('bray-age-pill')), findsNothing);
   });
 }
