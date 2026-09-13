@@ -1007,7 +1007,8 @@ class _MapScreenState extends State<MapScreen>
               _MemberMarkerLayer(
                 members: _focus.visible(members),        // focus: others hidden (J:175-181)
                 expandedClusters: _expandedClusters,
-                selectedId: _followId,                    // Task 8: the ringed face inside a capsule
+                selectedId: _followId,                    // J:101: the ringed face inside a capsule
+                labelFor: (Member m) => _focus.focusedId == m.id ? BrayTokens.labelFor(m, isViewer: m.id == _userId) : null, // design list: Dad / Mom / Me
                 onMemberTap: _focusMember,
                 onMemberHold: _openMemberDetails,         // design list: hold = full details
                 onClusterTap: _expandCluster,
@@ -1389,17 +1390,23 @@ class _MemberMarkerLayer extends StatelessWidget {
     required this.onMemberTap,
     required this.onMemberHold,
     required this.onClusterTap,
+    required this.labelFor,
     this.selectedId,
   });
 
   final List<Member> members;
   final Set<String> expandedClusters;
   final ValueChanged<Member> onMemberTap;
-  // Task 8 passes selectedId to CapsuleBubble and onMemberHold to
-  // MemberAvatarBubble.onLongPress - those two widget parameters do not exist
-  // yet, so this task only stores them.
+
+  /// The face ringed inside a capsule (J:101); null rings nobody.
   final String? selectedId;
+
+  /// Design list: hold a marker = the full details.
   final ValueChanged<Member> onMemberHold;
+
+  /// Design list: the focused person's pill says "Dad" / "Mom" / "Me"; null
+  /// keeps the account name.
+  final String? Function(Member) labelFor;
   final void Function(String clusterId, LatLng centroid) onClusterTap;
 
   @override
@@ -1430,6 +1437,7 @@ class _MemberMarkerLayer extends StatelessWidget {
               alignment: CapsuleBubble.markerAlignment,
               child: CapsuleBubble(
                 members: p.clusterMembers,
+                selectedId: selectedId,
                 onTap: () => onClusterTap(p.clusterId!, p.position),
               ),
             )
@@ -1441,7 +1449,9 @@ class _MemberMarkerLayer extends StatelessWidget {
               alignment: MemberAvatarBubble.markerAlignmentFor(p.member!),
               child: MemberAvatarBubble(
                 member: p.member!,
+                label: labelFor(p.member!),
                 onTap: () => onMemberTap(p.member!),
+                onLongPress: () => onMemberHold(p.member!),
               ),
             ),
       ],

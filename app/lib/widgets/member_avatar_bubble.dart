@@ -31,11 +31,18 @@ class MemberAvatarBubble extends StatelessWidget {
     super.key,
     required this.member,
     this.onTap,
+    this.label,
+    this.onLongPress,
     this.radius = 22,
   });
 
   final Member member;
   final VoidCallback? onTap;
+
+  /// Focus mode shows the viewer-relative label ("Dad") in the pill (golden
+  /// focus_dad.png); null keeps the account name as piece 2 delivered it.
+  final String? label;
+  final VoidCallback? onLongPress;
 
   /// Kept for callers; the Bray face is always [BrayTokens.soloFace], so this
   /// no longer sizes it.
@@ -127,6 +134,10 @@ class MemberAvatarBubble extends StatelessWidget {
   /// bs 2/3). Null means the client never said - no bolt, same as false.
   static bool _isCharging(Member member) => member.charging == true;
 
+  /// Stale = their status says updates are not live and we know when the
+  /// last one was (FamilyService flips status to stopped/warning on a timer).
+  static bool _isStale(Member m) => m.status != MemberStatus.normal && m.lastSeen != null;
+
   @override
   Widget build(BuildContext context) {
     final String tooltip = _tooltip();
@@ -140,6 +151,7 @@ class MemberAvatarBubble extends StatelessWidget {
         button: true,
         child: GestureDetector(
           onTap: onTap,
+          onLongPress: onLongPress,
           child: SizedBox(
             width: size.width,
             height: size.height,
@@ -174,7 +186,7 @@ class MemberAvatarBubble extends StatelessWidget {
                         ],
                       ),
                       child: Text(
-                        member.name,
+                        label ?? member.name,
                         maxLines: 1, // S:25 white-space:nowrap
                         softWrap: false,
                         overflow: TextOverflow.ellipsis,
@@ -241,6 +253,20 @@ class MemberAvatarBubble extends StatelessWidget {
                             key: const Key('bray-speed-pill'),
                             mph: member.speedMph!,
                             street: pillStreet(member.place?.street),
+                          ),
+                        ),
+                      )
+                    else if (_isStale(member))
+                      // Design list: "updated 2m ago on stale icons" - same slot and
+                      // metrics as the speed pill (S:75-80), wording J:57-64.
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: -_speedPillDrop,
+                        child: Center(
+                          child: _BrayAgePill(
+                            key: const Key('bray-age-pill'),
+                            text: 'updated ${BrayTokens.agoText(member.lastSeen, DateTime.now())}',
                           ),
                         ),
                       ),
@@ -763,24 +789,16 @@ class _SpeedCaption extends StatelessWidget {
   }
 }
 
-/// S:75-80 .fc-pill: white, 1px 5px padding, "61" in 700 ink (S:78 9px, raised
-/// to BrayTokens.speedPillFont for the tablet) with a 7px "mph" beside it (the
-/// CSS is `${speed}<i>mph</i>`). One Text.rich so the
-/// pill reads "61 mph" as a single text, like upstream's _SpeedCaption does -
-/// upstream's tests find the caption by its whole string and stay untouched.
+/// S:75-80 .fc-pill chrome: white, 1px 5px padding, hairline border, soft
+/// shadow. The one pill box under the face - the speed pill ("61 mph", with
+/// the street under it) and the age pill ("updated 3h ago") put their own
+/// text inside it.
 /// The capsule's _SpeedPill (capsule_bubble.dart) is the two-widget form;
 /// private classes are not shared across files, so this is its sibling.
-///
-/// With a [street] (design list line 41: "Street under the speed") a second
-/// line sits under the speed in the "mph" unit style (S:80 7px, .7 opacity),
-/// so the pill reuses its own tokens; null draws the one-line pill.
-class _BraySpeedPill extends StatelessWidget {
-  const _BraySpeedPill({super.key, required this.mph, this.street});
+class _BrayPill extends StatelessWidget {
+  const _BrayPill({required this.child});
 
-  final int mph;
-
-  /// Already abbreviated by [pillStreet] ("Peachtree Ind.").
-  final String? street;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -794,6 +812,30 @@ class _BraySpeedPill extends StatelessWidget {
             BoxShadow(color: Color(0x4D000000), blurRadius: 4, offset: Offset(0, 1)),
           ],
         ),
+        child: child,
+      );
+}
+
+/// S:75-80 .fc-pill: "61" in 700 ink (S:78 9px, raised to
+/// BrayTokens.speedPillFont for the tablet) with a 7px "mph" beside it (the
+/// CSS is `${speed}<i>mph</i>`), in the shared [_BrayPill] chrome. One
+/// Text.rich so the pill reads "61 mph" as a single text, like upstream's
+/// _SpeedCaption does - upstream's tests find the caption by its whole string
+/// and stay untouched.
+///
+/// With a [street] (design list line 41: "Street under the speed") a second
+/// line sits under the speed in the "mph" unit style (S:80 7px, .7 opacity),
+/// so the pill reuses its own tokens; null draws the one-line pill.
+class _BraySpeedPill extends StatelessWidget {
+  const _BraySpeedPill({super.key, required this.mph, this.street});
+
+  final int mph;
+
+  /// Already abbreviated by [pillStreet] ("Peachtree Ind.").
+  final String? street;
+
+  @override
+  Widget build(BuildContext context) => _BrayPill(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -829,6 +871,27 @@ class _BraySpeedPill extends StatelessWidget {
                 style: const TextStyle(fontSize: 7, height: 1.2, color: Color(0xB3141B36)),
               ),
           ],
+        ),
+      );
+}
+
+/// Design list "updated 2m ago on stale icons": the J:57-64 ago() wording in
+/// the shared [_BrayPill] chrome, set like the speed number (S:78).
+class _BrayAgePill extends StatelessWidget {
+  const _BrayAgePill({super.key, required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => _BrayPill(
+        child: Text(
+          text,
+          style: const TextStyle(
+            fontSize: BrayTokens.speedPillFont, // S:78 (raised, see speedPillFont)
+            height: 1.2, // S:78 font:700 9px/1.2
+            fontWeight: FontWeight.w700,
+            color: BrayTokens.speedPillText,
+          ),
         ),
       );
 }
