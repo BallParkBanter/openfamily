@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../theme/app_theme.dart';
+import 'member_place.dart';
 
 /// Speed (mph) at or above which a driving member is shown as a
 /// "race car with flames".
@@ -101,6 +102,7 @@ class Member {
     this.lastSeen,
     this.accuracyMeters,
     this.charging,
+    this.place,
   });
 
   final String id;
@@ -172,6 +174,10 @@ class Member {
   /// backend did not say; only an explicit true shows the bolt.
   final bool? charging;
 
+  /// Where the member is, in words (server-produced; null until the backend
+  /// has a position for them). See [MemberPlace].
+  final MemberPlace? place;
+
   /// Whether this member is driving fast enough to show as "speeding".
   bool get isSpeeding =>
       movement == MovementType.car &&
@@ -209,6 +215,7 @@ class Member {
     DateTime? lastSeen,
     double? accuracyMeters,
     bool? charging,
+    MemberPlace? place,
   }) {
     return Member(
       id: id,
@@ -229,6 +236,7 @@ class Member {
       lastSeen: lastSeen ?? this.lastSeen,
       accuracyMeters: accuracyMeters ?? this.accuracyMeters,
       charging: charging ?? this.charging,
+      place: place ?? this.place,
     );
   }
 
@@ -260,6 +268,7 @@ class Member {
       lastSeen: lastSeen,
       accuracyMeters: accuracyMeters,
       charging: charging,
+      place: place,
     );
   }
 }
