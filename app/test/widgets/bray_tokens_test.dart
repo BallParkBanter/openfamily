@@ -28,5 +28,10 @@ void main() {
     expect(BrayTokens.capsuleGrey, const Color(0xFFD5D9E2));
     expect(BrayTokens.tailH, 14);           // .fc-tail border-top 14px
     expect(BrayTokens.dotSize, 10);         // .fc-dot 10px
+    expect(BrayTokens.groupMetres, 120);    // app.js:42 GROUP_M
+  });
+  test('tablet readability overrides (OPEN: Bo, 2026-09-13 "too small on tablet screen")', () {
+    expect(BrayTokens.nameTagFont, 14);     // was S:25 10.5px
+    expect(BrayTokens.speedPillFont, 11);   // was S:78 9px
   });
 }

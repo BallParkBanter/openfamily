@@ -28,6 +28,15 @@ void main() {
     // The pill sits above the ring.
     expect(t.getRect(find.byKey(const Key('bray-name-tag'))).bottom,
         lessThanOrEqualTo(t.getRect(find.byKey(const Key('bray-ring'))).top));
+    // OPEN: Bo, 2026-09-13 "too small on tablet screen" - 14px, not S:25's 10.5.
+    final Text name = t.widget<Text>(find.text('Heidi Bray'));
+    expect(name.style!.fontSize, BrayTokens.nameTagFont);
+    expect(BrayTokens.nameTagFont, 14);
+    // The taller pill still fits its zone above the ring. (No width check: the
+    // test font is Ahem, 1em per glyph, three times wider than the real one.)
+    await t.pumpWidget(host(MemberAvatarBubble(member: m('Test Charlie'), onTap: () {})));
+    final Size pill = t.getSize(find.byKey(const Key('bray-name-tag')));
+    expect(pill.height, lessThanOrEqualTo(MemberAvatarBubble.nameTagZone));
   });
   testWidgets('accent tail under the ring, dot with a white ring at the bottom centre of the marker box', (t) async {
     final Member who = m('Bo Bray');
@@ -39,8 +48,11 @@ void main() {
     final tail = t.getRect(find.byKey(const Key('bray-tail')));
     final dot = t.getRect(find.byKey(const Key('bray-dot')));
     expect(tail.size, const Size(BrayTokens.tailW, BrayTokens.tailHSolo));
-    expect(tail.top, greaterThanOrEqualTo(ring.bottom));
-    expect(dot.top, greaterThanOrEqualTo(tail.bottom));
+    // Design list: "Solid accent tail under the ring, a gap, then a dark dot" -
+    // the tail touches the ring; the gap is between the tail tip and the dot.
+    expect(tail.top, closeTo(ring.bottom, 0.01));
+    expect(dot.top, closeTo(tail.bottom + MemberAvatarBubble.tailDotGap, 0.01));
+    expect(MemberAvatarBubble.tailDotGap, 4);
     expect(dot.size, const Size(BrayTokens.dotSize, BrayTokens.dotSize));
     final dotBox = t.widget<Container>(find.byKey(const Key('bray-dot')));
     final d = dotBox.decoration as BoxDecoration;
@@ -55,6 +67,11 @@ void main() {
     await t.pumpWidget(host(MemberAvatarBubble(member: m('Bo Bray', mph: 61), onTap: () {})));
     // The pill is one Text.rich ('61' + ' mph', S:76-80), so match its plain text.
     expect(find.textContaining('61'), findsOneWidget);
+    // OPEN: Bo, 2026-09-13 "too small on tablet screen" - the number is 11px, not S:78's 9.
+    final Text pill = t.widget<Text>(find.textContaining('61'));
+    final TextSpan span = pill.textSpan as TextSpan;
+    expect((span.children!.first as TextSpan).style!.fontSize, BrayTokens.speedPillFont);
+    expect(BrayTokens.speedPillFont, 11);
     await t.pumpWidget(host(MemberAvatarBubble(member: m('Bo Bray'), onTap: () {})));
     expect(find.textContaining('mph'), findsNothing);
   });
@@ -70,6 +87,11 @@ void main() {
       expect(s.width - left, closeTo(s.width / 2, 0.001));
       expect(s.height - top, closeTo(s.height - BrayTokens.dotSize / 2, 0.001));
     }
+    // The box is recomputed for the 14px pill and the moved gap: tag zone + face
+    // + tail (touching the ring) + gap + dot.
+    expect(MemberAvatarBubble.avatarBox,
+        MemberAvatarBubble.nameTagZone + BrayTokens.soloFace + BrayTokens.tailHSolo + MemberAvatarBubble.tailDotGap + BrayTokens.dotSize);
+    expect(MemberAvatarBubble.pointFromTop, MemberAvatarBubble.avatarBox - BrayTokens.dotSize / 2);
   });
   test('accuracy circle only for a GPS problem', () {
     expect(showRange(m('Bo Bray', acc: 12)), isFalse);

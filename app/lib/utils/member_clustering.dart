@@ -4,6 +4,7 @@ import 'dart:ui' show Offset;
 import 'package:latlong2/latlong.dart';
 
 import '../models/member.dart';
+import '../theme/bray_tokens.dart';
 
 /// Converts a geographic position to a screen-space offset (logical pixels)
 /// at the map's current camera. Used to cluster by on-screen proximity, so
@@ -25,7 +26,21 @@ const double kClusterRadiusPx = 48.0;
 /// clustered members so their bubbles never stack or overlap when expanded.
 const double kFanOutRadiusPx = 60.0;
 
-/// A group of members whose bubbles visually overlap at the current zoom.
+/// Ground distance in metres between two positions - the Family Viewer's
+/// haversine, app.js:66-71 metres() (R = 6371000), so the app groups exactly
+/// the people the viewer groups.
+double groundMetres(LatLng a, LatLng b) {
+  const double r = 6371000;
+  double t(double x) => x * math.pi / 180;
+  final double dla = t(b.latitude - a.latitude);
+  final double dlo = t(b.longitude - a.longitude);
+  final double x = math.pow(math.sin(dla / 2), 2) +
+      math.cos(t(a.latitude)) * math.cos(t(b.latitude)) * math.pow(math.sin(dlo / 2), 2);
+  return r * 2 * math.asin(math.sqrt(x));
+}
+
+/// A group of members whose bubbles visually overlap at the current zoom, or
+/// who are within [BrayTokens.groupMetres] of each other on the ground.
 class MemberCluster {
   const MemberCluster({
     required this.id,
@@ -76,7 +91,7 @@ class BubblePlacement {
   bool get isCluster => member == null;
 }
 
-/// Groups [members] into clusters by *on-screen* proximity.
+/// Groups [members] into clusters by *on-screen* proximity OR ground distance.
 ///
 /// Each member's geographic position is projected to a screen offset via
 /// [toScreenOffset] (which reflects the map's current center and zoom), and
@@ -84,10 +99,18 @@ class BubblePlacement {
 /// [clusterRadiusPx] of each other. This means the same set of members will
 /// cluster at a low zoom and separate as the user zooms in — matching the
 /// "cluster and separate as people move" behavior, now also zoom-aware.
+///
+/// Bray: members also cluster when they are within [groupMetres] of each other
+/// on the ground, whatever the zoom - the Family Viewer's rule (app.js:42
+/// GROUP_M = 120, app.js:140-149 clusters()), so Bo and Charlie at home are
+/// one capsule here as they are there. The viewer joins to a group's running
+/// centroid; this keeps upstream's member-to-member (single-link) join, which
+/// only ever groups more, never less.
 List<MemberCluster> clusterMembers(
   List<Member> members, {
   required LatLngToScreenOffset toScreenOffset,
   double clusterRadiusPx = kClusterRadiusPx,
+  double groupMetres = BrayTokens.groupMetres,
 }) {
   // Members without a reported location have no bubble and are skipped.
   final List<Member> positioned =
@@ -110,7 +133,8 @@ List<MemberCluster> clusterMembers(
         final Member m = remaining[i];
         final bool near = group.any(
           (Member g) =>
-              _distancePx(points[g.id]!, points[m.id]!) <= clusterRadiusPx,
+              _distancePx(points[g.id]!, points[m.id]!) <= clusterRadiusPx ||
+              groundMetres(g.position!, m.position!) <= groupMetres,
         );
         if (near) {
           group.add(m);
@@ -143,6 +167,7 @@ List<BubblePlacement> placeBubbles(
   required LatLngToScreenOffset toScreenOffset,
   required ScreenOffsetToLatLng toLatLng,
   double clusterRadiusPx = kClusterRadiusPx,
+  double groupMetres = BrayTokens.groupMetres,
   double fanOutRadiusPx = kFanOutRadiusPx,
   Set<String> expandedClusterIds = const {},
 }) {
@@ -150,6 +175,7 @@ List<BubblePlacement> placeBubbles(
     members,
     toScreenOffset: toScreenOffset,
     clusterRadiusPx: clusterRadiusPx,
+    groupMetres: groupMetres,
   );
   final List<BubblePlacement> placements = <BubblePlacement>[];
 

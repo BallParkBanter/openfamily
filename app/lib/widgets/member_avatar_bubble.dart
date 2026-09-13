@@ -16,7 +16,7 @@ import 'movement_icon.dart';
 /// Viewer's selected-person marker (style.css 88-91 .fc-solo: "NO gray capsule
 /// — the ring is their own colour"): a name pill above with the person's accent
 /// outline, a 56px face inside a 3px accent ring, a solid accent tail under the
-/// ring, then the dark dot with a white ring ON the exact spot. A white bolt
+/// ring, a gap, then the dark dot with a white ring ON the exact spot. A white bolt
 /// pill sits bottom-left of the ring while charging; the viewer's small speed
 /// pill overlays the face's bottom edge while driving. Tapping opens details.
 ///
@@ -41,34 +41,38 @@ class MemberAvatarBubble extends StatelessWidget {
   final double radius;
 
   /// Marker width. The name pill is nowrap (S:25) and wider than the face;
-  /// OPEN: measured - "Test Charlie" (the rig's longest name) at 10.5px bold
-  /// is ~95px with its padding, so 120 leaves room and clears the shadows.
-  static const double markerWidth = 120;
+  /// OPEN: measured - "Test Charlie" (the rig's longest name) was ~95px with
+  /// its padding at 10.5px bold; at 14px (nameTagFont) that scales to ~127,
+  /// so 160 leaves room and clears the shadows.
+  static const double markerWidth = 160;
 
-  /// The zone above the face. S:24 .tagname top:-19px - the tag's top edge is
-  /// 19px above the face's top edge, so the tag zone is 19px tall.
-  static const double _tagH = -BrayTokens.nameTagTop;
+  /// The zone above the face. S:24 .tagname top:-19px put the 10.5px pill's
+  /// top edge 19px above the face - the pill (10.5 x 1.15 line + 2 x 2px pad
+  /// + 2 x 1px border = 18.1) plus ~1px of clearance. The 14px pill is
+  /// 14 x 1.15 + 2 x 3 + 2 = 24.1, so the zone is 25 with the same clearance.
+  /// OPEN: computed from nameTagFont (Bo, 2026-09-13 "too small on tablet screen").
+  static const double nameTagZone = 25;
 
-  /// Clear space between the ring's bottom edge and the tail's top edge.
-  /// OPEN: measured - focus_dad.png ring bottom y=1122, tail top y=1130:
-  /// 8 device px = 4 CSS px. (S:88 lifts .fc-solo 15px above the point and
-  /// S:81 starts the tail 17px above it, which would overlap by 2px; the
-  /// golden shows clear space, so the golden wins.)
-  static const double _ringTailGap = 4;
+  /// Ring bottom edge to tail top edge: 0 - the tail sits ON the ring. Design
+  /// list (Joplin "Life360 Replacement" Map and Icons): "Solid accent tail
+  /// under the ring, a gap, then a dark dot with a white ring" - the gap is
+  /// below the tail, not above it. (S:88 lifts .fc-solo 15px above the point
+  /// and S:81 starts the tail 17px above it: touching, within 2px.)
+  static const double _ringTailGap = 0;
 
   /// The tail: S:82 10px + 10px wide, S:91 .fc-tail.solo 13px tall.
   static const double _tailH = BrayTokens.tailHSolo;
 
-  /// Tail tip to dot: OPEN: measured - focus_dad.png tail tip y=1153/1154,
-  /// dot's white ring top y=1154: 0 px, the dot's top edge sits on the tip
-  /// (S:81 tail top 17px above the point, 13px tall = tip 4px above the point;
-  /// the 10px dot's top edge is 5px above it - within a pixel of touching).
-  static const double _tailDotGap = 0;
+  /// Tail tip to dot - the design list's "gap". OPEN: measured - the 4 CSS px
+  /// of clear space in focus_dad.png (ring bottom y=1122, tail top y=1130 at
+  /// DPR 2) is the marker's one gap; Bo's list puts it between the tail tip
+  /// and the dot, so it moved there (2026-09-13), keeping the measured size.
+  static const double tailDotGap = 4;
 
-  /// Height of the whole pin: tag zone + face + gap + tail + dot = 102.
+  /// Height of the whole pin: tag zone + face + tail + gap + dot = 108.
   /// (Upstream name kept - its "marker grows" test reads it.)
   static const double avatarBox =
-      _tagH + BrayTokens.soloFace + _ringTailGap + _tailH + _tailDotGap + BrayTokens.dotSize;
+      nameTagZone + BrayTokens.soloFace + _ringTailGap + _tailH + tailDotGap + BrayTokens.dotSize;
 
   /// S:75 .fc-pill bottom:-3px - the speed pill overlays the face's bottom
   /// edge and pokes 3px below the ring; it adds nothing under the marker (the
@@ -88,7 +92,7 @@ class MemberAvatarBubble extends StatelessWidget {
   }
 
   /// The dot's centre, measured from the top of the marker box: everything
-  /// above it plus half the dot = 97.
+  /// above it plus half the dot = 103.
   static const double pointFromTop = avatarBox - BrayTokens.dotSize / 2;
 
   /// Where the map point sits inside the marker box: horizontally centred and
@@ -132,16 +136,19 @@ class MemberAvatarBubble extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Name pill (S:24-27 metrics; design list: "dark, accent
-                // outline, soft shadow"), top-aligned in its 19px zone so its
-                // top edge is 19px above the ring, as top:-19px puts it.
+                // Name pill (S:24-27 metrics scaled 4/3 for the tablet, see
+                // BrayTokens.nameTagFont; design list: "dark, accent outline,
+                // soft shadow"), top-aligned in its zone so the pill clears the
+                // ring by the same ~1px S:24's top:-19px gave the 10.5px pill.
                 SizedBox(
-                  height: _tagH,
+                  height: nameTagZone,
                   child: Align(
                     alignment: Alignment.topCenter,
                     child: Container(
                       key: const Key('bray-name-tag'),
-                      padding: const EdgeInsets.fromLTRB(8, 2, 8, 2), // S:26 padding:2px 8px
+                      // S:26 padding:2px 8px, scaled with the font (nameTagPadV/H)
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: BrayTokens.nameTagPadH, vertical: BrayTokens.nameTagPadV),
                       decoration: BoxDecoration(
                         color: const Color(0xDB0A0E16), // S:26 rgba(10,14,22,.86)
                         borderRadius: BorderRadius.circular(999), // S:26
@@ -162,10 +169,10 @@ class MemberAvatarBubble extends StatelessWidget {
                         softWrap: false,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          fontSize: 10.5, // S:25
+                          fontSize: BrayTokens.nameTagFont, // OPEN: Bo, 2026-09-13 "too small on tablet screen" (S:25 was 10.5)
                           fontWeight: FontWeight.w700, // S:25
-                          letterSpacing: 0.21, // S:25 .02em of 10.5px
-                          height: 1.15, // OPEN: measured - browser "normal" line height for the tag's font
+                          letterSpacing: 0.02 * BrayTokens.nameTagFont, // S:25 .02em
+                          height: BrayTokens.nameTagLineHeight,
                           color: BrayTokens.text, // S:27
                         ),
                       ),
@@ -237,15 +244,16 @@ class MemberAvatarBubble extends StatelessWidget {
                       ),
                   ],
                 ),
-                const SizedBox(height: _ringTailGap),
+                const SizedBox(height: _ringTailGap), // 0: the tail touches the ring
                 // Solid accent tail (S:81-83 shape, S:91 solo height, design
-                // list colour) and the dot ON the location (S:84-86).
+                // list colour) on the ring, the gap, then the dot ON the
+                // location (S:84-86).
                 CustomPaint(
                   key: const Key('bray-tail'),
                   size: const Size(BrayTokens.tailW, _tailH),
                   painter: _BrayTailPainter(accent),
                 ),
-                const SizedBox(height: _tailDotGap),
+                const SizedBox(height: tailDotGap),
                 Container(
                   key: const Key('bray-dot'),
                   width: BrayTokens.dotSize,
@@ -715,8 +723,9 @@ class _SpeedCaption extends StatelessWidget {
   }
 }
 
-/// S:75-80 .fc-pill: white, 1px 5px padding, "61" in 700 9px ink with a 7px
-/// "mph" beside it (the CSS is `${speed}<i>mph</i>`). One Text.rich so the
+/// S:75-80 .fc-pill: white, 1px 5px padding, "61" in 700 ink (S:78 9px, raised
+/// to BrayTokens.speedPillFont for the tablet) with a 7px "mph" beside it (the
+/// CSS is `${speed}<i>mph</i>`). One Text.rich so the
 /// pill reads "61 mph" as a single text, like upstream's _SpeedCaption does -
 /// upstream's tests find the caption by its whole string and stay untouched.
 /// The capsule's _SpeedPill (capsule_bubble.dart) is the two-widget form;
@@ -744,7 +753,7 @@ class _BraySpeedPill extends StatelessWidget {
               TextSpan(
                 text: '$mph',
                 style: const TextStyle(
-                  fontSize: BrayTokens.speedPillFont,
+                  fontSize: BrayTokens.speedPillFont, // OPEN: Bo, 2026-09-13 "too small on tablet screen" (S:78 was 9)
                   height: 1.2, // S:78 font:700 9px/1.2
                   fontWeight: FontWeight.w700,
                   color: BrayTokens.speedPillText,

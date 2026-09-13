@@ -28,6 +28,8 @@ void main() {
     await t.pumpWidget(host(CapsuleBubble(members: [m('Bo Bray', mph: 57), m('Charlie', mph: 61)])));
     expect(find.text('61'), findsOneWidget);
     expect(find.textContaining('57'), findsNothing);
+    // OPEN: Bo, 2026-09-13 "too small on tablet screen" - 11px number, not S:78's 9.
+    expect(t.widget<Text>(find.text('61')).style!.fontSize, 11);
   });
   testWidgets('no count badge', (t) async {
     await t.pumpWidget(host(CapsuleBubble(members: [m('Bo Bray'), m('Charlie')])));

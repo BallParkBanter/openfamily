@@ -36,7 +36,13 @@ class BrayTokens {
   // "Bigger avatars (44 → 56 px)"). The spec beats S:21 for the solo marker.
   static const double soloFace = 56;
   static const double ringSolo = 3;
-  static const double nameTagTop = -19;        // S:24 .tagname top:-19px
+  static const double nameTagTop = -19;        // S:24 .tagname top:-19px (reference; the app's zone is MemberAvatarBubble.nameTagZone)
+  // S:25 .tagname font is 700 10.5px; the tablet (1600x2560) makes that unreadable
+  // at arm's length, so the pill is scaled 4/3 - font, padding and letter-spacing.
+  static const double nameTagFont = 14;        // OPEN: Bo, 2026-09-13 "too small on tablet screen" (S:25 was 10.5)
+  static const double nameTagPadH = 11;        // OPEN: S:26 padding 8px x 14/10.5 = 10.7
+  static const double nameTagPadV = 3;         // OPEN: S:26 padding 2px x 14/10.5 = 2.7
+  static const double nameTagLineHeight = 1.15; // OPEN: measured - browser "normal" line height for the tag's font
   static const double boltDark = 17;           // S:28 .pin .bolt 17px, bg ink, 1px line border
 
   // J:101,133 solo (focus) avatar: avatarHtml() sets border-width:4px at :101 when ring=true;
@@ -60,5 +66,9 @@ class BrayTokens {
   static const Color dotFill = Color(0xFF141B36);               // S:85 .fc-dot background
   static const double dotRing = 2;                              // S:85 .fc-dot border:2px solid #fff
   static const Color speedPillText = Color(0xFF141B36);         // S:78 .fc-pill color
-  static const double speedPillFont = 9;                        // S:78 .fc-pill font:700 9px/1.2
+  static const double speedPillFont = 11;                       // OPEN: Bo, 2026-09-13 "too small on tablet screen" (S:78 .fc-pill font:700 9px/1.2; Bo reads this while driving)
+
+  // J:42 GROUP_M = 120 - "people within this many metres draw as one capsule";
+  // J:140-149 clusters() joins a person to a group when metres() < GROUP_M.
+  static const double groupMetres = 120;
 }

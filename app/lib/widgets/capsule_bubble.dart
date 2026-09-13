@@ -213,8 +213,8 @@ class CapsuleBubble extends StatelessWidget {
   }
 }
 
-/// S:75-80 .fc-pill: white, 1px 5px padding, "61" in 700 9px ink with a 7px
-/// "mph" beside it. Two Text widgets (the CSS is `${speed}<i>mph</i>` with
+/// S:75-80 .fc-pill: white, 1px 5px padding, "61" in 700 ink (S:78 9px, raised
+/// to BrayTokens.speedPillFont for the tablet) with a 7px "mph" beside it. Two Text widgets (the CSS is `${speed}<i>mph</i>` with
 /// gap:1px), so the number is findable on its own.
 class _SpeedPill extends StatelessWidget {
   const _SpeedPill({required this.mph});
@@ -240,7 +240,7 @@ class _SpeedPill extends StatelessWidget {
             Text(
               '$mph',
               style: const TextStyle(
-                fontSize: BrayTokens.speedPillFont,
+                fontSize: BrayTokens.speedPillFont, // OPEN: Bo, 2026-09-13 "too small on tablet screen" (S:78 was 9)
                 height: 1.2, // S:78 font:700 9px/1.2
                 fontWeight: FontWeight.w700,
                 color: BrayTokens.speedPillText,
