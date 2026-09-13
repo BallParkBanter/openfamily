@@ -8,6 +8,7 @@ import '../services/member_avatar_cache.dart';
 import '../theme/app_theme.dart';
 import '../theme/bray_tokens.dart';
 import 'movement_icon.dart';
+import 'place_text.dart' show pillStreet;
 
 /// A circular avatar bubble pinned to a member's location on the map.
 ///
@@ -76,17 +77,29 @@ class MemberAvatarBubble extends StatelessWidget {
 
   /// S:75 .fc-pill bottom:-3px - the speed pill overlays the face's bottom
   /// edge and pokes 3px below the ring; it adds nothing under the marker (the
-  /// tail and dot are there), so the marker box does not grow while driving.
+  /// tail and dot are there), so the marker box does not grow for the speed
+  /// alone (only [streetLineH] below, for the street line).
   /// Upstream's names kept, honestly zero.
   static const double _speedPillDrop = 3;
   static const double speedGap = 0;
   static const double speedCaptionH = 0;
 
+  /// The street line under the speed (design list line 41: "Street under the
+  /// speed") makes the pill two lines; the box grows by that line so
+  /// [pointFromTop] (measured from the top, where the Column starts) still
+  /// lands on the dot. OPEN: measured: a 7px/1.2 line = 8.4 px.
+  static const double streetLineH = 8;
+
+  /// True exactly when the pill draws its second line (same [pillStreet]
+  /// call the pill makes, so a blank street grows nothing).
+  static bool _hasStreetLine(Member member) =>
+      member.hasDrivingSpeed && pillStreet(member.place?.street) != null;
+
   static Size markerSizeFor(Member member) {
     return Size(
       markerWidth,
       member.hasDrivingSpeed
-          ? avatarBox + speedGap + speedCaptionH
+          ? avatarBox + speedGap + speedCaptionH + (_hasStreetLine(member) ? streetLineH : 0)
           : avatarBox,
     );
   }
@@ -223,7 +236,13 @@ class MemberAvatarBubble extends StatelessWidget {
                         left: 0,
                         right: 0,
                         bottom: -_speedPillDrop,
-                        child: Center(child: _BraySpeedPill(mph: member.speedMph!)),
+                        child: Center(
+                          child: _BraySpeedPill(
+                            key: const Key('bray-speed-pill'),
+                            mph: member.speedMph!,
+                            street: pillStreet(member.place?.street),
+                          ),
+                        ),
                       ),
                   ],
                 ),
@@ -237,20 +256,24 @@ class MemberAvatarBubble extends StatelessWidget {
                   painter: _BrayTailPainter(accent),
                 ),
                 const SizedBox(height: tailDotGap),
-                Container(
-                  key: const Key('bray-dot'),
-                  width: BrayTokens.dotSize,
-                  height: BrayTokens.dotSize,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: BrayTokens.dotFill,
-                    border: Border.all(color: Colors.white, width: BrayTokens.dotRing),
-                    boxShadow: const [
-                      // S:86 box-shadow:0 1px 4px rgba(0,0,0,.4)
-                      BoxShadow(color: Color(0x66000000), blurRadius: 4, offset: Offset(0, 1)),
-                    ],
+                // C:167-176 (family-cluster.js): at home the house chip IS the
+                // location mark - drop the redundant dot. The tail and the gap
+                // stay, so the marker box and the point do not move.
+                if (member.place?.nearHome != true)
+                  Container(
+                    key: const Key('bray-dot'),
+                    width: BrayTokens.dotSize,
+                    height: BrayTokens.dotSize,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: BrayTokens.dotFill,
+                      border: Border.all(color: Colors.white, width: BrayTokens.dotRing),
+                      boxShadow: const [
+                        // S:86 box-shadow:0 1px 4px rgba(0,0,0,.4)
+                        BoxShadow(color: Color(0x66000000), blurRadius: 4, offset: Offset(0, 1)),
+                      ],
+                    ),
                   ),
-                ),
               ],
             ),
           ),
@@ -267,8 +290,13 @@ class MemberAvatarBubble extends StatelessWidget {
       sb.write(' · ${member.isSpeeding ? 'Speeding' : member.movement.label}');
       if (member.hasDrivingSpeed) {
         sb.write(' ${member.speedMph} mph');
+        // The pill's second line, so a screen reader (and the rig) hears the
+        // same street the map shows.
+        final String? street = pillStreet(member.place?.street);
+        if (street != null) sb.write(' · $street');
       }
     }
+    if (member.place?.atHome == true) sb.write(' at Home');
     return sb.toString();
   }
 }
@@ -742,10 +770,17 @@ class _SpeedCaption extends StatelessWidget {
 /// upstream's tests find the caption by its whole string and stay untouched.
 /// The capsule's _SpeedPill (capsule_bubble.dart) is the two-widget form;
 /// private classes are not shared across files, so this is its sibling.
+///
+/// With a [street] (design list line 41: "Street under the speed") a second
+/// line sits under the speed in the "mph" unit style (S:80 7px, .7 opacity),
+/// so the pill reuses its own tokens; null draws the one-line pill.
 class _BraySpeedPill extends StatelessWidget {
-  const _BraySpeedPill({required this.mph});
+  const _BraySpeedPill({super.key, required this.mph, this.street});
 
   final int mph;
+
+  /// Already abbreviated by [pillStreet] ("Peachtree Ind.").
+  final String? street;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -759,26 +794,41 @@ class _BraySpeedPill extends StatelessWidget {
             BoxShadow(color: Color(0x4D000000), blurRadius: 4, offset: Offset(0, 1)),
           ],
         ),
-        child: Text.rich(
-          TextSpan(
-            children: [
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text.rich(
               TextSpan(
-                text: '$mph',
-                style: const TextStyle(
-                  fontSize: BrayTokens.speedPillFont, // OPEN: Bo, 2026-09-13 "too small on tablet screen" (S:78 was 9)
-                  height: 1.2, // S:78 font:700 9px/1.2
-                  fontWeight: FontWeight.w700,
-                  color: BrayTokens.speedPillText,
-                ),
+                children: [
+                  TextSpan(
+                    text: '$mph',
+                    style: const TextStyle(
+                      fontSize: BrayTokens.speedPillFont, // OPEN: Bo, 2026-09-13 "too small on tablet screen" (S:78 was 9)
+                      height: 1.2, // S:78 font:700 9px/1.2
+                      fontWeight: FontWeight.w700,
+                      color: BrayTokens.speedPillText,
+                    ),
+                  ),
+                  const TextSpan(
+                    // S:76 gap:1px is the space; S:80 .fc-pill i: 7px, opacity .7
+                    // (0xB3 of the ink)
+                    text: ' mph',
+                    style: TextStyle(fontSize: 7, height: 1.2, color: Color(0xB3141B36)),
+                  ),
+                ],
               ),
-              const TextSpan(
-                // S:76 gap:1px is the space; S:80 .fc-pill i: 7px, opacity .7
-                // (0xB3 of the ink)
-                text: ' mph',
-                style: TextStyle(fontSize: 7, height: 1.2, color: Color(0xB3141B36)),
+            ),
+            if (street != null)
+              Text(
+                street!,
+                key: const Key('bray-pill-street'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                // S:80 .fc-pill i: 7px, opacity .7 (0xB3 of the ink) - the
+                // unit style, reused for the street line.
+                style: const TextStyle(fontSize: 7, height: 1.2, color: Color(0xB3141B36)),
               ),
-            ],
-          ),
+          ],
         ),
       );
 }
