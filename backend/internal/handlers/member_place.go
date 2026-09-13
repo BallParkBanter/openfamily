@@ -75,7 +75,12 @@ func (r memberPlaceRow) toPlace(lat, lon *float64) *models.MemberPlace {
 // transaction on BOTH paths - stored and stationary-deduplicated - so a Home
 // created while the phone sits parked is picked up on its next report. The
 // UPDATE's right-hand sides all read the OLD row, so `place_since` compares
-// against the previous place_id.
+// against the previous place_id. The `mp.ts <= $4` guard mirrors the
+// member_positions upsert's own `ts < EXCLUDED.ts` guard: batch backfill
+// replays points out of order (the first live post-reconnect fix makes every
+// queued point older than the head, so the batch path skips the strict
+// monotonicity check entirely), so without this guard a backfilled point
+// could regress place_id/place_since to somewhere the member already left.
 func updateMemberPlace(ctx context.Context, tx pgx.Tx, userID string, lon, lat float64, ts time.Time) error {
 	_, err := tx.Exec(ctx, `
 		WITH here AS (
@@ -91,7 +96,7 @@ func updateMemberPlace(ctx context.Context, tx pgx.Tx, userID string, lon, lat f
 				WHEN mp.place_since IS NULL OR mp.place_id IS DISTINCT FROM (SELECT id FROM here) THEN $4
 				ELSE mp.place_since END,
 			place_id = (SELECT id FROM here)
-		WHERE mp.user_id = $1`, userID, lon, lat, ts)
+		WHERE mp.user_id = $1 AND (mp.ts IS NULL OR mp.ts <= $4)`, userID, lon, lat, ts)
 	return err
 }
 
