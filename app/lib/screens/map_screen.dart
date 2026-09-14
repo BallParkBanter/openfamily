@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' show Point;
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' hide Circle;
 
 import '../models/member.dart';
+import '../models/member_place.dart';
 import '../services/api_client.dart';
 import '../services/app_config.dart';
 import '../services/background_location_service.dart';
@@ -23,12 +25,17 @@ import '../services/server_features.dart';
 import '../services/tile_config.dart';
 import '../services/token_storage.dart';
 import '../theme/app_theme.dart';
+import '../theme/bray_tokens.dart';
+import '../utils/focus_rules.dart';
 import '../utils/member_clustering.dart';
 import '../widgets/capsule_bubble.dart';
 import '../widgets/circle_switcher.dart';
+import '../widgets/family_header.dart';
+import '../widgets/focus_trail_layer.dart';
 import '../widgets/home_chip.dart';
 import '../widgets/map_bottom_bar.dart';
 import '../widgets/member_avatar_bubble.dart';
+import '../widgets/people_sheet.dart';
 import 'check_in_screen.dart';
 import 'help_alert_screen.dart';
 import 'invite_screen.dart';
@@ -121,6 +128,10 @@ class _MapScreenState extends State<MapScreen>
   /// free. Set by the locate button (self) or by tapping a member bubble.
   String? _followId;
 
+  /// When the user last panned/zoomed; the overview auto-fit waits 12 s after
+  /// it (J:200).
+  DateTime? _lastGesture;
+
   /// While following, a gesture on the map does not stop the follow - it
   /// pauses it, so the user can look around and the camera picks them back up
   /// on its own. Life360 behaves this way; a follow that dies on the first
@@ -141,6 +152,27 @@ class _MapScreenState extends State<MapScreen>
   static const Duration _glideDuration = Duration(seconds: 4);
   final Map<String, _Glide> _glides = <String, _Glide>{};
   Ticker? _glideTicker;
+
+  /// Piece 3: the levels of detail. FocusRules owns who is focused and the
+  /// idle clock; the sheet level is derived from it (FocusRules.levelFor).
+  final FocusRules _focus = FocusRules();
+  SheetLevel _sheetLevel = SheetLevel.peek;
+  Timer? _idleTimer;
+
+  /// Piece 4's geocode feed rides on the member (Member.place); null still
+  /// draws no place chips.
+  MemberPlace? _placeFor(Member m) => m.place;
+
+  /// Design list "3 home" chip (J:263-265), from Member.place.atHome. Both
+  /// null - chip hidden - until at least one member carries a place, so the
+  /// header never shows a count nobody measured.
+  static int? _homeCountOf(List<Member> members) =>
+      members.any((Member m) => m.place != null) ? members.where((Member m) => m.place?.atHome == true).length : null;
+  static int? _outCountOf(List<Member> members) => members.any((Member m) => m.place != null)
+      ? members.where((Member m) => m.place != null && !m.place!.atHome).length   // measured, and not at home
+      : null;
+
+  bool _chargingFor(Member m) => m.charging ?? false;   // Member.charging: backend `charging` (bray-charging)
 
   @override
   void initState() {
@@ -187,6 +219,11 @@ class _MapScreenState extends State<MapScreen>
     });
     if (_glides.isNotEmpty) _startGlideTicker();
     _keepFollowing();
+    // Overview auto-fits everyone (design list; J:228-236), pans, never snaps.
+    if (_mapReady && !(_cameraAnim?.isAnimating ?? false) &&
+        autoFitDue(lastGesture: _lastGesture, now: now, focused: _focus.focusedId != null, following: _followId != null)) {
+      _animatedFit();
+    }
   }
 
   /// Where [memberId]'s bubble is currently drawn: mid-glide if one is
@@ -230,7 +267,16 @@ class _MapScreenState extends State<MapScreen>
     final LatLng? pos = _drawnPosition(id, now);
     if (pos == null) {
       if (!_members.any((Member m) => m.id == id)) {
-        setState(() => _followId = null);   // left the roster
+        // Left the roster. Piece 3: one focus/follow state - if they were the
+        // focused person, `_focus.visible` would now draw nobody, so leave
+        // focus (its `_stopFollowing` nulls `_followId`; its `_animatedFit`
+        // runs once here, and later ticks return early above on the null
+        // `_followId`, so nothing re-enters or animates twice).
+        if (_focus.focusedId != null) {
+          _leaveFocus();
+        } else {
+          setState(() => _followId = null);
+        }
       }
       return;
     }
@@ -289,6 +335,125 @@ class _MapScreenState extends State<MapScreen>
       if (m.id == id) return m;
     }
     return null;
+  }
+
+  /// Any interaction restarts the 5-minute idle clock (design list).
+  void _touch() {
+    _focus.touch();
+    _idleTimer?.cancel();
+    if (_focus.focusedId == null) return;
+    _idleTimer = Timer(BrayTokens.idleBack, () {
+      if (mounted && _focus.idleExpired()) _leaveFocus();
+    });
+  }
+
+  /// A tap on a face or a card. Same person again = back (J:239-241).
+  void _focusMember(Member member) {
+    final FocusChange change = _focus.tap(member.id);
+    if (change == FocusChange.cleared) {
+      _leaveFocus();
+      return;
+    }
+    _touch();
+    setState(() => _sheetLevel = _focus.levelFor(_sheetLevel));
+    // Focus includes their follow mode: the camera stays with the person as
+    // they move (their _keepFollowing), starting from the focus zoom (J:217)
+    // with the camera lifted so the pin sits above the sheet (J:204-211).
+    setState(() {
+      _followId = member.id;
+      _followPausedUntil = null;
+    });
+    final LatLng? pos = member.position;
+    if (pos != null && _mapReady) {
+      final double zoom = _focus.zoomFor(member, _mapController.camera.zoom);
+      _animateTo(_centreAbove(pos, zoom), zoom);
+    }
+  }
+
+  /// Back to everyone: map tap, tap-again, swipe the focus sheet down, the
+  /// system back button, or 5 idle minutes.
+  void _leaveFocus() {
+    _idleTimer?.cancel();
+    _focus.clear();
+    setState(() => _sheetLevel = _focus.levelFor(_sheetLevel));
+    _stopFollowing();
+    _animatedFit();
+  }
+
+  /// Tap on a card: the focused person's big card opens their profile (the
+  /// "full" level); any other card focuses that person.
+  void _onCardTap(Member member) {
+    _touch();
+    if (_focus.focusedId == member.id) {
+      _openMemberDetails(member);
+    } else {
+      _focusMember(member);
+    }
+  }
+
+  void _onSheetLevel(SheetLevel level) {
+    _touch();
+    // Focus is "others hidden + one card" (J:175-181). Any other level while
+    // focused - peek (swipe down) or cards (People button) - is a request for
+    // everyone, so it leaves focus first; a raised sheet of everyone is not
+    // focus and must not leave the map drawing one person.
+    if (_focus.focusedId != null && level != SheetLevel.focus) {
+      _leaveFocus();
+      if (level == SheetLevel.peek) return;
+    }
+    setState(() => _sheetLevel = level);
+  }
+
+  void _onPeoplePressed() {
+    if (peopleButtonOpensRoster(_sheetLevel)) {
+      _openPeople();
+    } else {
+      _onSheetLevel(SheetLevel.cards);
+    }
+  }
+
+  /// J:208-211: project the target, push it down by half the sheet, unproject
+  /// - the pin lands in the visible strip of map above the sheet.
+  /// flutter_map 7.0.2 camera.dart:212 `Point<double> project(LatLng latlng,
+  /// [double? zoom])` and :217 `LatLng unproject(Point point, [double? zoom])`.
+  LatLng _centreAbove(LatLng target, double zoom) {
+    final double lift = FocusRules.liftFor(_currentSheetHeight());
+    final MapCamera cam = _mapController.camera;
+    final Point<double> p = cam.project(target, zoom);
+    return cam.unproject(Point<double>(p.x, p.y + lift), zoom);
+  }
+
+  double _currentSheetHeight() {
+    final MediaQueryData media = MediaQuery.of(context);
+    final double reserved = MapBottomBar.height + media.padding.bottom;
+    final double maxH = sheetMaxHeight(screenHeight: media.size.height, topInset: media.padding.top, controlBarReserved: reserved);
+    return PeopleSheet.heightFor(_sheetLevel, _members.length, maxH, 0);
+  }
+
+  /// Overview auto-fit (design list; J:228-236) that pans instead of snapping
+  /// (design list "camera pans smoothly, never snaps"): compute the fit, then
+  /// tween to it with the sheet's height as bottom padding.
+  void _animatedFit() {
+    if (!_mapReady) return;
+    final List<Member> members = _liveMembers().where((Member m) => m.position != null).toList();
+    if (members.isEmpty) return;
+    final MapCamera cam = _mapController.camera;
+    if (members.length == 1) {
+      final LatLng target = _centreAbove(members.first.position!, 16);   // J:229-231
+      final p0 = cam.latLngToScreenPoint(cam.center), p1 = cam.latLngToScreenPoint(target);
+      if ((16 - cam.zoom).abs() < 0.05 && (p0.x - p1.x).abs() < 4 && (p0.y - p1.y).abs() < 4) return;   // OPEN: chosen - same "unchanged" threshold as below
+      _animateTo(target, 16);
+      return;
+    }
+    final LatLngBounds bounds = LatLngBounds.fromPoints(members.map((Member m) => m.position!).toList());
+    final MapCamera fitted = CameraFit.bounds(
+      bounds: bounds,
+      padding: EdgeInsets.fromLTRB(80, 80, 80, 80 + _currentSheetHeight()),   // OPEN: chosen - theirs: 80 is their _fitToMembers padding, plus the sheet (J:235 pads sheet + 90)
+      maxZoom: 16,                                                              // J:235 maxZoom:16
+    ).fit(cam);
+    final p0 = cam.latLngToScreenPoint(cam.center), p1 = cam.latLngToScreenPoint(fitted.center);
+    if ((fitted.zoom - cam.zoom).abs() < 0.05 && (p0.x - p1.x).abs() < 4 && (p0.y - p1.y).abs() < 4) return;   // OPEN: chosen - "unchanged" threshold
+    _animateTo(fitted.center, fitted.zoom);
   }
 
   void _onUserId(String userId) {
@@ -436,6 +601,7 @@ class _MapScreenState extends State<MapScreen>
 
   @override
   void dispose() {
+    _idleTimer?.cancel();
     _glideTicker?.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _connectivitySub?.cancel();
@@ -568,6 +734,9 @@ class _MapScreenState extends State<MapScreen>
   /// (which always carries the freshest GPS fix); falls back to the live device
   /// position when the caller has no backend location yet.
   Future<void> _centerOnUser() async {
+    // Piece 3: one focus/follow state - locating "You" while focused on
+    // someone else would follow a hidden pin, so leave focus first.
+    if (_focus.focusedId != null) _leaveFocus();
     final String? uid = _userId;
     if (uid != null) {
       for (final Member m in _members) {
@@ -598,7 +767,9 @@ class _MapScreenState extends State<MapScreen>
     final double? prev = _lastZoom;
     _lastZoom = camera.zoom;
     _camera = camera;
+    if (hasGesture) _lastGesture = DateTime.now();
     if (hasGesture) _pauseFollowing();
+    if (hasGesture) _touch();
     if (hasGesture &&
         _expandedClusters.isNotEmpty &&
         prev != null &&
@@ -625,18 +796,27 @@ class _MapScreenState extends State<MapScreen>
 
   /// Frames all members of the current family.
   void _fitToMembers() {
+    if (!mounted) return;   // _currentSheetHeight reads MediaQuery.of(context)
     final List<Member> members =
         _liveMembers().where((Member m) => m.position != null).toList();
     if (members.isEmpty) return;
+    // Same target as _animatedFit, so the overview auto-fit that follows the
+    // first members snapshot finds nothing to correct (no launch bounce).
     if (members.length == 1) {
-      _mapController.move(members.first.position!, 15);
+      _mapController.move(_centreAbove(members.first.position!, 16), 16);   // J:229-231
       return;
     }
     final LatLngBounds bounds = LatLngBounds.fromPoints(
       members.map((Member m) => m.position!).toList(),
     );
+    // Piece 3: the sheet covers the bottom of the map, so the first fit pads
+    // for it too (their 80 kept, plus the sheet - same rule as _animatedFit).
     _mapController.fitCamera(
-      CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(80)),
+      CameraFit.bounds(
+        bounds: bounds,
+        padding: EdgeInsets.fromLTRB(80, 80, 80, 80 + _currentSheetHeight()),
+        maxZoom: 16,                                                            // J:235 maxZoom:16
+      ),
     );
   }
 
@@ -769,6 +949,18 @@ class _MapScreenState extends State<MapScreen>
   @override
   Widget build(BuildContext context) {
     final List<Member> members = _liveMembers();
+    // The focused member for FocusTrailLayer: independent of _followedMember
+    // because the Following pill's ✕ can end following while focus stays
+    // active (controller note 1) — look the id up in `members` directly.
+    Member? focusedMember;
+    if (_focus.focusedId != null) {
+      for (final Member candidate in members) {
+        if (candidate.id == _focus.focusedId) {
+          focusedMember = candidate;
+          break;
+        }
+      }
+    }
     final MediaQueryData media = MediaQuery.of(context);
     final double safeBottom = media.padding.bottom;
     // Space reserved at the very bottom for the fixed control bar (its own
@@ -776,205 +968,252 @@ class _MapScreenState extends State<MapScreen>
     // docks clear of it.
     final double controlBarReserved = MapBottomBar.height + safeBottom;
 
-    return Scaffold(
-      body: Stack(
-        children: [
-          // Full-bleed live map — extends behind every control.
-          FlutterMap(
-            mapController: _mapController,
-            options: MapOptions(
-              initialCenter: const LatLng(37.7749, -122.4194),
-              initialZoom: 13,
-              minZoom: 3,
-              maxZoom: 18,
-              interactionOptions: const InteractionOptions(
-                flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+    return PopScope(
+      canPop: _focus.focusedId == null,
+      onPopInvokedWithResult: (bool didPop, Object? _) {
+        if (!didPop) _leaveFocus();
+      },
+      child: Scaffold(
+        body: Stack(
+          children: [
+            // Full-bleed live map — extends behind every control.
+            FlutterMap(
+              mapController: _mapController,
+              options: MapOptions(
+                initialCenter: const LatLng(37.7749, -122.4194),
+                initialZoom: 13,
+                minZoom: 3,
+                maxZoom: 18,
+                interactionOptions: const InteractionOptions(
+                  flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+                ),
+                onMapReady: () {
+                  _camera = _mapController.camera;
+                  _lastZoom = _mapController.camera.zoom;
+                  _mapReady = true;
+                  _fitToMembers();
+                },
+                onPositionChanged: (camera, hasGesture) =>
+                    _onCameraChanged(camera, hasGesture),
+                onTap: (_, __) {
+                  if (_focus.focusedId != null) _leaveFocus();   // design list: tap the map = back
+                },
               ),
-              onMapReady: () {
-                _camera = _mapController.camera;
-                _lastZoom = _mapController.camera.zoom;
-                _mapReady = true;
-                _fitToMembers();
-              },
-              onPositionChanged: (camera, hasGesture) =>
-                  _onCameraChanged(camera, hasGesture),
-            ),
-            children: [
-              TileLayer(
-                urlTemplate: _satellite ? kSatelliteTileUrl : kTileUrl,
-                userAgentPackageName: 'app.openfamily',
-              ),
-              // Blue "range" circle - Bray look: only for members in the
-              // approximate GPS-accuracy state (see showRange), never for a
-              // merely known accuracy. The radius is the member's real GPS
-              // accuracy in meters when known, else the broader-zone fallback.
-              CircleLayer(
-                circles: [
-                  for (final Member m in members)
-                    if (showRange(m))
-                      CircleMarker(
-                        point: m.position!,
-                        radius: _rangeFor(m),
-                        useRadiusInMeter: true,
-                        color: AppColors.accuracyBlue.withValues(alpha: 0.12),
-                        borderColor: AppColors.accuracyBlue.withValues(
-                          alpha: 0.5,
+              children: [
+                TileLayer(
+                  urlTemplate: _satellite ? kSatelliteTileUrl : kTileUrl,
+                  userAgentPackageName: 'app.openfamily',
+                ),
+                // Blue "range" circle - Bray look: only for members in the
+                // approximate GPS-accuracy state (see showRange), never for a
+                // merely known accuracy. The radius is the member's real GPS
+                // accuracy in meters when known, else the broader-zone fallback.
+                CircleLayer(
+                  circles: [
+                    for (final Member m in _focus.visible(members))
+                      if (showRange(m))
+                        CircleMarker(
+                          point: m.position!,
+                          radius: _rangeFor(m),
+                          useRadiusInMeter: true,
+                          color: AppColors.accuracyBlue.withValues(alpha: 0.12),
+                          borderColor: AppColors.accuracyBlue.withValues(
+                            alpha: 0.5,
+                          ),
+                          borderStrokeWidth: 2,
                         ),
-                        borderStrokeWidth: 2,
-                      ),
-                ],
-              ),
-              // Home: the house chip at the family's Home place, drawn UNDER
-              // the members (design list: "House chip at home, drawn under
-              // people"; C:183-186). Places come from the same FamilyService
-              // that labels members with them.
-              HomeChipLayer(places: _familyService.places),
-              // Member bubbles, clustered by on-screen proximity at
-              // the current zoom (rebuilds as the camera moves).
-              _MemberMarkerLayer(
-                members: members,
-                expandedClusters: _expandedClusters,
-                onMemberTap: _followMember,
-                onClusterTap: _expandCluster,
-              ),
-            ],
-          ),
+                  ],
+                ),
+                // Home: the house chip at the family's Home place, drawn UNDER
+                // the members (design list: "House chip at home, drawn under
+                // people"; C:183-186). Places come from the same FamilyService
+                // that labels members with them.
+                HomeChipLayer(places: _familyService.places),
+                // Piece 3: the focused person's last 6 h under their marker
+                // (house under the trail under people).
+                FocusTrailLayer(member: focusedMember),
+                // Member bubbles, clustered by on-screen proximity at
+                // the current zoom (rebuilds as the camera moves).
+                _MemberMarkerLayer(
+                  members: _focus.visible(members),        // focus: others hidden (J:175-181)
+                  expandedClusters: _expandedClusters,
+                  selectedId: _followId,                    // J:101: the ringed face inside a capsule
+                  labelFor: (Member m) => _focus.focusedId == m.id ? BrayTokens.labelFor(m, isViewer: m.id == _userId) : null, // design list: Dad / Mom / Me
+                  onMemberTap: _focusMember,
+                  onMemberHold: _openMemberDetails,         // design list: hold = full details
+                  onClusterTap: _expandCluster,
+                ),
+              ],
+            ),
 
-          // Loading / error overlays for the initial fetch.
-          if (_loading)
-            const Positioned.fill(
-              child: ColoredBox(
-                color: Color(0x66000000),
-                child: Center(
-                  child: CircularProgressIndicator(color: AppColors.purple),
+            // Loading / error overlays for the initial fetch.
+            if (_loading)
+              const Positioned.fill(
+                child: ColoredBox(
+                  color: Color(0x66000000),
+                  child: Center(
+                    child: CircularProgressIndicator(color: AppColors.purple),
+                  ),
                 ),
               ),
-            ),
-          if (_error != null)
-            Positioned.fill(
-              child: _LoadErrorCard(message: _error!, onRetry: _load),
-            ),
-
-          // Top: family name, with a location-off re-prompt banner below it
-          // when the user skipped location during onboarding.
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: SafeArea(
-              bottom: false,
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8, left: 12, right: 76),
-                    child: CircleSwitcher(
-                      circles: [_familyName],
-                      selectedIndex: 0,
-                      onSelected: (_) {},
-                      onJoinCircle: _hasFamily ? null : _openJoinCircle,
-                      alignment: Alignment.centerLeft,
-                    ),
-                  ),
-                  if (_locationOff)
-                    Padding(
-                      padding: const EdgeInsets.only(
-                        top: 8,
-                        left: 12,
-                        right: 12,
-                      ),
-                      child: _LocationOffBanner(onEnable: _enableLocation),
-                    ),
-                ],
+            if (_error != null)
+              Positioned.fill(
+                child: _LoadErrorCard(message: _error!, onRetry: _load),
               ),
-            ),
-          ),
 
-          // Top-centre: who the camera is following, with a way to open their
-          // profile (which a bubble tap used to do) and a way to let go.
-          if (_followedMember != null)
+            const Positioned(top: 0, left: 0, right: 0, child: FamilyHeaderScrim()),   // S:37
+
+            // Top: family name, with a location-off re-prompt banner below it
+            // when the user skipped location during onboarding.
             Positioned(
               top: 0,
               left: 0,
               right: 0,
               child: SafeArea(
                 bottom: false,
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Center(
-                    child: _FollowingPill(
-                      member: _followedMember!,
-                      isSelf: _followedMember!.id == _userId,
-                      paused: _followPaused,
-                      onProfile: () => _openMemberDetails(_followedMember!),
-                      onStop: _stopFollowing,
+                child: Column(
+                  children: [
+                    // OPEN: S:38 .brand 21px 800 - theirs shows the family name in a chip; left as is, remove nothing
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8, left: 12, right: 76),
+                      child: CircleSwitcher(
+                        circles: [_familyName],
+                        selectedIndex: 0,
+                        onSelected: (_) {},
+                        onJoinCircle: _hasFamily ? null : _openJoinCircle,
+                        alignment: Alignment.centerLeft,
+                      ),
                     ),
-                  ),
+                    if (_locationOff)
+                      Padding(
+                        padding: const EdgeInsets.only(
+                          top: 8,
+                          left: 12,
+                          right: 12,
+                        ),
+                        child: _LocationOffBanner(onEnable: _enableLocation),
+                      ),
+                  ],
                 ),
               ),
             ),
 
-          // Top-right: satellite / standard layer toggle, with a "center on
-          // me" button stacked beneath it.
-          Positioned(
-            top: 0,
-            right: 12,
-            child: SafeArea(
-              bottom: false,
-              child: Column(
-                children: [
-                  Padding(
+            // Top-centre: who the camera is following, with a way to open their
+            // profile (which a bubble tap used to do) and a way to let go.
+            if (_followedMember != null)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: SafeArea(
+                  bottom: false,
+                  child: Padding(
                     padding: const EdgeInsets.only(top: 8),
-                    child: _LayerToggle(
-                      isSatellite: _satellite,
-                      onToggle: _toggleSatellite,
+                    child: Center(
+                      child: _FollowingPill(
+                        member: _followedMember!,
+                        isSelf: _followedMember!.id == _userId,
+                        paused: _followPaused,
+                        onProfile: () => _openMemberDetails(_followedMember!),
+                        // Piece 3: one focus/follow state - letting go of the
+                        // person also leaves focus (others back on the map).
+                        onStop: _focus.focusedId != null
+                            ? _leaveFocus
+                            : _stopFollowing,
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  _LocateButton(
-                    onTap: _centerOnUser,
-                    active: _followId != null && _followId == _userId,
-                  ),
-                ],
+                ),
+              ),
+
+            // Top-right: satellite / standard layer toggle, with a "center on
+            // me" button stacked beneath it.
+            Positioned(
+              top: 0,
+              right: 12,
+              child: SafeArea(
+                bottom: false,
+                child: Column(
+                  children: [
+                    Builder(builder: (BuildContext context) {
+                      final Member? f = _followedMember;
+                      final String? s = summaryText(
+                        following: f,
+                        followingLabel: f == null ? null : BrayTokens.labelFor(f, isViewer: f.id == _userId),
+                        homeCount: _homeCountOf(members), outCount: _outCountOf(members),
+                      );
+                      return s == null ? const SizedBox.shrink() : Padding(padding: const EdgeInsets.only(top: 8), child: FamilySummaryChip(text: s));
+                    }),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: _LayerToggle(
+                        isSatellite: _satellite,
+                        onToggle: _toggleSatellite,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _LocateButton(
+                      onTap: _centerOnUser,
+                      active: _followId != null && _followId == _userId,
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
 
-          // Bottom-center `+` FAB for the Check In / Help Alert / Invite quick
-          // actions, docked just above the fixed control bar.
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: controlBarReserved + 12,
-            child: Center(
-              child: FloatingActionButton(
+            // The people sheet (piece 3) sits on the fixed bottom bar; their `+`
+            // FAB now rides the sheet's top-right edge so the sheet never covers it.
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: controlBarReserved,
+              child: PeopleSheet(
+                members: members,
+                level: _sheetLevel,
+                maxHeight: sheetMaxHeight(screenHeight: media.size.height, topInset: media.padding.top, controlBarReserved: controlBarReserved),
+                viewerId: _userId,
+                focusedId: _focus.focusedId,
+                chargingFor: _chargingFor,
+                placeFor: _placeFor,
+                onLevelChanged: _onSheetLevel,
+                onCardTap: _onCardTap,
+                onCardHold: _openMemberDetails,
+              ),
+            ),
+            AnimatedPositioned(
+              duration: BrayTokens.sheetTransition,
+              curve: Curves.ease,
+              right: 12,
+              bottom: controlBarReserved + _currentSheetHeight() - 20,
+              child: FloatingActionButton.small(
                 onPressed: _showAddActions,
                 tooltip: 'Add — Check In / Help Alert / Invite',
                 child: const Icon(Icons.add),
               ),
             ),
-          ),
 
-          // Fixed bottom control bar (SOS + People / Places / Safety
-          // destinations + Settings gear), pinned to the very bottom and always
-          // visible. Drawn last so it sits above the map.
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: SafeArea(
-              top: false,
-              child: MapBottomBar(
-                onSos: _openSos,
-                onPeople: _openPeople,
-                onPlaces: _openPlaces,
-                onSafety: ServerFeatures.instance.smsConfigured
-                    ? _openSafety
-                    : null,
-                onSettings: _openSettings,
+            // Fixed bottom control bar (SOS + People / Places / Safety
+            // destinations + Settings gear), pinned to the very bottom and always
+            // visible. Drawn last so it sits above the map.
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: SafeArea(
+                top: false,
+                child: MapBottomBar(
+                  onSos: _openSos,
+                  onPeople: _onPeoplePressed,
+                  onPlaces: _openPlaces,
+                  onSafety: ServerFeatures.instance.smsConfigured
+                      ? _openSafety
+                      : null,
+                  onSettings: _openSettings,
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1191,12 +1430,25 @@ class _MemberMarkerLayer extends StatelessWidget {
     required this.members,
     required this.expandedClusters,
     required this.onMemberTap,
+    required this.onMemberHold,
     required this.onClusterTap,
+    required this.labelFor,
+    this.selectedId,
   });
 
   final List<Member> members;
   final Set<String> expandedClusters;
   final ValueChanged<Member> onMemberTap;
+
+  /// The face ringed inside a capsule (J:101); null rings nobody.
+  final String? selectedId;
+
+  /// Design list: hold a marker = the full details.
+  final ValueChanged<Member> onMemberHold;
+
+  /// Design list: the focused person's pill says "Dad" / "Mom" / "Me"; null
+  /// keeps the account name.
+  final String? Function(Member) labelFor;
   final void Function(String clusterId, LatLng centroid) onClusterTap;
 
   @override
@@ -1227,6 +1479,7 @@ class _MemberMarkerLayer extends StatelessWidget {
               alignment: CapsuleBubble.markerAlignment,
               child: CapsuleBubble(
                 members: p.clusterMembers,
+                selectedId: selectedId,
                 onTap: () => onClusterTap(p.clusterId!, p.position),
               ),
             )
@@ -1238,7 +1491,9 @@ class _MemberMarkerLayer extends StatelessWidget {
               alignment: MemberAvatarBubble.markerAlignmentFor(p.member!),
               child: MemberAvatarBubble(
                 member: p.member!,
+                label: labelFor(p.member!),
                 onTap: () => onMemberTap(p.member!),
+                onLongPress: () => onMemberHold(p.member!),
               ),
             ),
       ],
@@ -1252,6 +1507,16 @@ class _MemberMarkerLayer extends StatelessWidget {
 /// value; that rule is gone. Top-level (not a _MapScreenState method) so the
 /// widget test can import it.
 bool showRange(Member m) => m.position != null && m.status == MemberStatus.gpsIssue;
+
+/// The bottom bar's People button (theirs) now steps through the levels of
+/// detail: peek → the raised sheet of cards; raised → their PeopleScreen (the
+/// family-wide "full" level). Nothing is removed - the roster is one tap away
+/// from the raised sheet.
+bool peopleButtonOpensRoster(SheetLevel current) => current == SheetLevel.cards;
+
+/// The map area the sheet may cover (S:49 caps it at 62 % of this).
+double sheetMaxHeight({required double screenHeight, required double topInset, required double controlBarReserved}) =>
+    screenHeight - topInset - controlBarReserved;
 
 /// A gentle banner shown on the map when location sharing is off (the user
 /// skipped it during onboarding). Explains the degraded state and offers a

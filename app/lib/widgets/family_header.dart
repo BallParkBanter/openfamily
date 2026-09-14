@@ -1,0 +1,60 @@
+// The Family Viewer's top bar (style.css 33-41, app.js 257-265): a dark
+// gradient the family chip sits on, and a translucent summary chip top-right.
+// The "N home" count needs piece 4's place feed - it is a hook here, never faked.
+import 'package:flutter/material.dart';
+
+import '../models/member.dart';
+import '../theme/bray_tokens.dart';
+
+/// S:37 linear-gradient(180deg, rgba(10,14,22,.92), transparent) behind the
+/// top chrome. Pointer-transparent so the map underneath still pans.
+class FamilyHeaderScrim extends StatelessWidget {
+  const FamilyHeaderScrim({super.key});
+
+  static const double height = 96;   // OPEN: measured - overview.png: the fade reaches the map by y≈190 device px under the toolbar (DPR 2)
+
+  @override
+  Widget build(BuildContext context) => IgnorePointer(
+        child: Container(
+          height: height + MediaQuery.of(context).padding.top,
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                colors: [BrayTokens.headerTop, Color(0x000A0E16)]),
+          ),
+        ),
+      );
+}
+
+/// J:263-265: "🚗 following Dad" while the followed person is driving,
+/// otherwise "N home · M out" - only when a count exists.
+String? summaryText({required Member? following, required String? followingLabel, int? homeCount, int? outCount}) {
+  if (following != null && following.hasDrivingSpeed && followingLabel != null) return '🚗 following $followingLabel';
+  if (homeCount == null) return null;
+  final int out = outCount ?? 0;
+  return '$homeCount home${out > 0 ? ' · $out out' : ''}';
+}
+
+/// J:200: the map only refits itself 12 s after the last gesture, and never
+/// while someone is focused (J:213) or being followed (their follow mode).
+bool autoFitDue({required DateTime? lastGesture, required DateTime now, required bool focused, required bool following}) {
+  if (focused || following) return false;
+  if (lastGesture == null) return true;
+  return now.difference(lastGesture) >= const Duration(seconds: 12);
+}
+
+/// S:40-41 .summary chip.
+class FamilySummaryChip extends StatelessWidget {
+  const FamilySummaryChip({super.key, required this.text});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.fromLTRB(11, 5, 11, 5),                           // S:41 padding:5px 11px
+        decoration: BoxDecoration(
+          color: BrayTokens.summaryBg,                                                // S:41 rgba(10,14,22,.7)
+          border: Border.all(color: BrayTokens.line),                                 // S:41 1px --line
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Text(text, style: const TextStyle(fontSize: BrayTokens.summarySize, fontWeight: FontWeight.w600, color: BrayTokens.muted)), // S:40
+      );
+}

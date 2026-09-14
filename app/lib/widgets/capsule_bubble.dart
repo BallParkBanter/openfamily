@@ -14,10 +14,19 @@ import 'member_avatar_bubble.dart' show BrayChargingBolt, StatusAvatar;
 import 'place_text.dart' show pillStreet;
 
 class CapsuleBubble extends StatelessWidget {
-  const CapsuleBubble({super.key, required this.members, this.onTap});
+  const CapsuleBubble({super.key, required this.members, this.onTap, this.selectedId});
 
   final List<Member> members;
   final VoidCallback? onTap;
+
+  /// Life360 (design list): "the selected person's face gets the ring inside
+  /// the capsule; the others stay plain". J:101 border-color accent,
+  /// border-width 4px.
+  final String? selectedId;
+
+  /// The one face that gets the J:101 ring; key, border and inner size all
+  /// read this so they agree by construction.
+  bool _selected(Member m) => m.id == selectedId;
 
   /// S:66 .fc-caps border:1px solid (colour is [BrayTokens.capsuleBorder]).
   static const double _pillBorder = 1;
@@ -128,6 +137,8 @@ class CapsuleBubble extends StatelessWidget {
                     clipBehavior: Clip.none,
                     children: [
                       for (int i = 0; i < preview.length; i++)
+                        // Selected once per face: key, border and inner size
+                        // agree by construction.
                         Positioned(
                           left: i * step,
                           top: 0,
@@ -144,16 +155,15 @@ class CapsuleBubble extends StatelessWidget {
                               clipBehavior: Clip.none,
                               children: [
                                 Container(
-                                  key: const Key('capsule-avatar'),
+                                  key: Key(_selected(preview[i]) ? 'capsule-avatar-selected' : 'capsule-avatar'),
                                   width: BrayTokens.capsuleAvatar,
                                   height: BrayTokens.capsuleAvatar,
                                   decoration: BoxDecoration(
                                     shape: BoxShape.circle,
                                     color: BrayTokens.ink,
-                                    border: Border.all(
-                                      color: BrayTokens.capsuleGrey,
-                                      width: BrayTokens.capsuleAvatarBorder,
-                                    ),
+                                    border: _selected(preview[i])
+                                        ? Border.all(color: BrayTokens.accentFor(preview[i]), width: BrayTokens.focusRing) // J:101
+                                        : Border.all(color: BrayTokens.capsuleGrey, width: BrayTokens.capsuleAvatarBorder), // S:70
                                   ),
                                   clipBehavior: Clip.antiAlias,
                                   // ClipOval keeps StatusAvatar's status-tinted
@@ -162,7 +172,8 @@ class CapsuleBubble extends StatelessWidget {
                                   child: ClipOval(
                                     child: StatusAvatar(
                                       member: preview[i],
-                                      size: BrayTokens.capsuleAvatar - 2 * BrayTokens.capsuleAvatarBorder,
+                                      size: BrayTokens.capsuleAvatar -
+                                          2 * (_selected(preview[i]) ? BrayTokens.focusRing : BrayTokens.capsuleAvatarBorder),
                                       ringWidth: 0,
                                     ),
                                   ),
