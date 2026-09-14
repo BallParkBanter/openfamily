@@ -14,6 +14,7 @@ import 'package:flutter/material.dart';
 
 import '../models/member.dart';
 import '../models/member_place.dart';
+import '../services/contact_link_store.dart';
 import '../services/member_avatar_cache.dart';
 import '../theme/bray_tokens.dart';
 import 'card_chips.dart';
@@ -28,6 +29,9 @@ class PersonCard extends StatefulWidget {
     this.place,
     this.focused = false,
     this.phone,
+    this.contact,
+    this.onLinkContact,
+    this.launch,
     this.now,
     this.onTap,
     this.onLongPress,
@@ -50,7 +54,23 @@ class PersonCard extends StatefulWidget {
   /// Life360 "Call · Text" row (design list). Members carry no phone number
   /// today (checked 2026-09-13: only the caller's own UserProfile.phone
   /// exists), so this is null from map_screen and the row does not render.
+  /// Kept as the fallback source when no device contact is linked; a linked
+  /// [contact] wins over it.
   final String? phone;
+
+  /// bray: the device contact linked to this member (ContactLinkStore). When
+  /// set, the focused card shows one "📱 Call mobile" / "🏠 Call home" /
+  /// "💼 Call work" chip per number plus "💬 Text" - the real numbers with
+  /// the address book's own labels, never a number typed into OpenFamily.
+  final LinkedContact? contact;
+
+  /// bray: opens the link/re-link/unlink sheet. Null hides the 🔗 chip
+  /// (tests, or a host with nowhere to link from).
+  final VoidCallback? onLinkContact;
+
+  /// The tel:/sms: launcher; defaults to an Android intent. Tests inject one
+  /// to see the exact URI a chip fires.
+  final Future<void> Function(String action, String uri)? launch;
 
   /// Injected clock for tests; DateTime.now() otherwise.
   final DateTime? now;
@@ -102,6 +122,7 @@ class _PersonCardState extends State<PersonCard> {
     final bool low = m.batteryPercent > 0 && m.batteryPercent <= BrayTokens.battLowAt;  // J:271
     final String batt = m.batteryPercent > 0 ? '${m.batteryPercent}' : '—';              // J:282 null → "—"
     final String semantics = '${widget.label} card · battery $batt% · $ago';
+    final List<Widget> actions = _actions(accent);
 
     // container: true - the card is its own accessibility node. Without it
     // the focus-level card (Align child, no list boundary) merged into the
@@ -219,20 +240,32 @@ class _PersonCardState extends State<PersonCard> {
                 ),
               ),
               // S:154-158 the detail row, focused card only, only with something to say.
-              if (widget.focused && (drow.isNotEmpty || widget.phone != null))
+              // Place chips left, Call/Text/🔗 right (S:154 gap:6px). A linked
+              // contact can bring four or five action chips, more than a card
+              // is wide, so the row scrolls sideways instead of overflowing;
+              // when everything fits it lays out exactly as before. OPEN: chosen.
+              if (widget.focused && (drow.isNotEmpty || actions.isNotEmpty))
                 Positioned(
                   left: BrayTokens.cardInset, right: BrayTokens.cardInset, bottom: BrayTokens.drowBottom,
-                  child: Row(
-                    key: const Key('card-drow'),
-                    children: [
-                      for (final String c in drow) ...[_C2(c), const SizedBox(width: 6)],   // S:154 gap:6px
-                      const Spacer(),
-                      if (widget.phone != null) ...[
-                        _ActionChip(key: const Key('card-call'), icon: Icons.call, label: 'Call', accent: accent, onTap: () => _intent('android.intent.action.DIAL', 'tel:${widget.phone}')),
-                        const SizedBox(width: 6),
-                        _ActionChip(key: const Key('card-text'), icon: Icons.sms_outlined, label: 'Text', accent: accent, onTap: () => _intent('android.intent.action.SENDTO', 'sms:${widget.phone}')),
-                      ],
-                    ],
+                  child: LayoutBuilder(
+                    builder: (BuildContext context, BoxConstraints box) => SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      clipBehavior: Clip.none,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(minWidth: box.maxWidth),
+                        child: Row(
+                          key: const Key('card-drow'),
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(mainAxisSize: MainAxisSize.min, children: [
+                              for (final String c in drow) ...[_C2(c), const SizedBox(width: 6)],   // S:154 gap:6px
+                            ]),
+                            if (actions.isNotEmpty) const SizedBox(width: 6),
+                            Row(mainAxisSize: MainAxisSize.min, children: actions),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               // S:137-153 the bottom row: stat chip left, BATTERY right.
@@ -302,10 +335,52 @@ class _PersonCardState extends State<PersonCard> {
     );
   }
 
+  /// The action chips on the right of the detail row, in order:
+  ///  - linked contact: one Call chip per number in the address book's order,
+  ///    labelled by its label, then "💬 Text" (first mobile, else first
+  ///    number), then a bare 🔗 to re-link / unlink;
+  ///  - no link but a profile phone (upstream fallback): Call · Text on it,
+  ///    then "🔗 Link contact";
+  ///  - nothing: "🔗 Link contact" alone (only when a host can open the sheet).
+  List<Widget> _actions(Color accent) {
+    final List<Widget> out = <Widget>[];
+    void add(Widget w) {
+      if (out.isNotEmpty) out.add(const SizedBox(width: 6));   // S:154 gap:6px
+      out.add(w);
+    }
+
+    final LinkedContact? c = widget.contact;
+    if (c != null && c.phones.isNotEmpty) {
+      for (int i = 0; i < c.phones.length; i++) {
+        final LinkedPhone p = c.phones[i];
+        add(_ActionChip(key: Key('card-call-$i'), label: p.callChipText, accent: accent,
+            onTap: () => _intent('android.intent.action.DIAL', dialUri(p.number))));
+      }
+      final LinkedPhone t = c.textPhone!;
+      add(_ActionChip(key: const Key('card-text'), label: '💬 Text', accent: accent,
+          onTap: () => _intent('android.intent.action.SENDTO', smsUri(t.number))));
+      if (widget.onLinkContact != null) {
+        add(_ActionChip(key: const Key('card-link'), label: '🔗', accent: accent, onTap: widget.onLinkContact!));
+      }
+      return out;
+    }
+    if (widget.phone != null) {
+      add(_ActionChip(key: const Key('card-call'), icon: Icons.call, label: 'Call', accent: accent,
+          onTap: () => _intent('android.intent.action.DIAL', dialUri(widget.phone!))));
+      add(_ActionChip(key: const Key('card-text'), icon: Icons.sms_outlined, label: 'Text', accent: accent,
+          onTap: () => _intent('android.intent.action.SENDTO', smsUri(widget.phone!))));
+    }
+    if (widget.onLinkContact != null) {
+      add(_ActionChip(key: const Key('card-link'), label: '🔗 Link contact', accent: accent, onTap: widget.onLinkContact!));
+    }
+    return out;
+  }
+
   /// Dial / SMS via the platform (android_intent_plus is already a dependency,
   /// pubspec.yaml:48). No-op off Android; swallows platform-channel errors so
   /// a card never crashes the app over a failed dial/SMS intent.
   Future<void> _intent(String action, String data) async {
+    if (widget.launch != null) return widget.launch!(action, data);
     if (defaultTargetPlatform != TargetPlatform.android) return;
     try {
       await AndroidIntent(action: action, data: data).launch();
@@ -329,9 +404,11 @@ class _C2 extends StatelessWidget {
 }
 
 /// Life360's Call · Text action (design list). Same chip metrics as _C2, in the accent.
+/// [icon] is optional: the linked-contact chips carry their emoji in the label
+/// ("📱 Call mobile"), the upstream fallback keeps its Material icon.
 class _ActionChip extends StatelessWidget {
-  const _ActionChip({super.key, required this.icon, required this.label, required this.accent, required this.onTap});
-  final IconData icon;
+  const _ActionChip({super.key, this.icon, required this.label, required this.accent, required this.onTap});
+  final IconData? icon;
   final String label;
   final Color accent;
   final VoidCallback onTap;
@@ -346,9 +423,11 @@ class _ActionChip extends StatelessWidget {
             border: Border.all(color: accent.withValues(alpha: 0.6)), // OPEN: chosen - no CSS source for Call/Text (not in the viewer); .6 keeps the accent border visible without matching the fully-opaque .card border
           ),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(icon, size: 13, color: accent),                    // OPEN: chosen - matches _C2's 11.5px text at a legible icon scale, no CSS source
-            const SizedBox(width: 4),                               // OPEN: chosen - icon-to-label gap, no CSS source
-            Text(label, style: TextStyle(fontSize: BrayTokens.c2Size, fontWeight: FontWeight.w700, color: accent)),
+            if (icon != null) ...[
+              Icon(icon, size: 13, color: accent),                  // OPEN: chosen - matches _C2's 11.5px text at a legible icon scale, no CSS source
+              const SizedBox(width: 4),                             // OPEN: chosen - icon-to-label gap, no CSS source
+            ],
+            Text(label, maxLines: 1, style: TextStyle(fontSize: BrayTokens.c2Size, fontWeight: FontWeight.w700, color: accent)),
           ]),
         ),
       );

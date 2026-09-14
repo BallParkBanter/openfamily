@@ -9,6 +9,7 @@ import 'package:flutter/rendering.dart' show ScrollCacheExtent;   // not re-expo
 
 import '../models/member.dart';
 import '../models/member_place.dart';
+import '../services/contact_link_store.dart';
 import '../theme/bray_tokens.dart';
 import 'person_card.dart';
 
@@ -24,6 +25,8 @@ class PeopleSheet extends StatelessWidget {
     required this.chargingFor,
     required this.placeFor,
     this.focusedId,
+    this.contactFor,
+    this.onLinkContact,
     this.bottomInset = 0,
     this.now,
     this.onLevelChanged,
@@ -41,6 +44,13 @@ class PeopleSheet extends StatelessWidget {
   final String? focusedId;
   final bool Function(Member) chargingFor;
   final MemberPlace? Function(Member) placeFor;
+
+  /// bray: the device contact linked to a member (ContactLinkStore), for the
+  /// focused card's Call/Text chips. Null = no linking on this host.
+  final LinkedContact? Function(Member)? contactFor;
+
+  /// bray: the focused card's 🔗 chip - open the link sheet for this member.
+  final ValueChanged<Member>? onLinkContact;
 
   /// System safe-area at the bottom, added under the last card (S:48).
   final double bottomInset;
@@ -105,6 +115,8 @@ class PeopleSheet extends StatelessWidget {
         charging: chargingFor(m),
         place: placeFor(m),
         focused: focused,
+        contact: contactFor?.call(m),
+        onLinkContact: onLinkContact == null ? null : () => onLinkContact!(m),
         now: now,
         onTap: onCardTap == null ? null : () => onCardTap!(m),
         onLongPress: onCardHold == null ? null : () => onCardHold!(m),

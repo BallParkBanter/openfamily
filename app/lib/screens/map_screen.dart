@@ -13,6 +13,7 @@ import '../services/api_client.dart';
 import '../services/app_config.dart';
 import '../services/background_location_service.dart';
 import '../services/battery_optimization_service.dart';
+import '../services/contact_link_store.dart';
 import '../services/device_service.dart';
 import '../services/family_service.dart';
 import '../services/location_reporter.dart';
@@ -30,6 +31,7 @@ import '../utils/focus_rules.dart';
 import '../utils/member_clustering.dart';
 import '../widgets/capsule_bubble.dart';
 import '../widgets/circle_switcher.dart';
+import '../widgets/contact_link_sheet.dart';
 import '../widgets/family_header.dart';
 import '../widgets/focus_trail_layer.dart';
 import '../widgets/home_chip.dart';
@@ -187,6 +189,7 @@ class _MapScreenState extends State<MapScreen>
     _initLocationSharing();
     PushService.sync();
     unawaited(_refreshServerFeatures());
+    unawaited(ContactLinkStore.instance.load());   // bray: device-contact links for the cards' Call/Text
     // One-time Android battery-optimization guidance (keeps background
     // updates alive when the app is closed). No-op elsewhere. Runs after the
     // first frame so the activity is visible.
@@ -828,6 +831,14 @@ class _MapScreenState extends State<MapScreen>
     );
   }
 
+  /// bray: the focused card's 🔗 chip - link / re-link / unlink the member's
+  /// device contact. The sheet writes ContactLinkStore, which the PeopleSheet
+  /// below listens to, so the chips change without a frame from the server.
+  void _linkContact(Member member) {
+    _touch();
+    showContactLinkSheet(context, member: member, label: BrayTokens.labelFor(member, isViewer: member.id == _userId));
+  }
+
   /// Opens the dedicated full-screen family member roster (the People
   /// destination in the bottom bar). It consumes the map's single live member
   /// subscription so statuses stay fresh without a second WebSocket.
@@ -1167,17 +1178,22 @@ class _MapScreenState extends State<MapScreen>
               left: 0,
               right: 0,
               bottom: controlBarReserved,
-              child: PeopleSheet(
-                members: members,
-                level: _sheetLevel,
-                maxHeight: sheetMaxHeight(screenHeight: media.size.height, topInset: media.padding.top, controlBarReserved: controlBarReserved),
-                viewerId: _userId,
-                focusedId: _focus.focusedId,
-                chargingFor: _chargingFor,
-                placeFor: _placeFor,
-                onLevelChanged: _onSheetLevel,
-                onCardTap: _onCardTap,
-                onCardHold: _openMemberDetails,
+              child: ListenableBuilder(
+                listenable: ContactLinkStore.instance,
+                builder: (BuildContext context, _) => PeopleSheet(
+                  members: members,
+                  level: _sheetLevel,
+                  maxHeight: sheetMaxHeight(screenHeight: media.size.height, topInset: media.padding.top, controlBarReserved: controlBarReserved),
+                  viewerId: _userId,
+                  focusedId: _focus.focusedId,
+                  chargingFor: _chargingFor,
+                  placeFor: _placeFor,
+                  contactFor: (Member m) => ContactLinkStore.instance.linkFor(m.id),
+                  onLinkContact: _linkContact,
+                  onLevelChanged: _onSheetLevel,
+                  onCardTap: _onCardTap,
+                  onCardHold: _openMemberDetails,
+                ),
               ),
             ),
             AnimatedPositioned(

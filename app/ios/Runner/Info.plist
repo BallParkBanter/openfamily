@@ -44,6 +44,9 @@
 	<string>OpenFamily tracks your location in the background so your family can see where you are.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>OpenFamily uses your location to show your position on the family map.</string>
+	<!-- bray: "Link contact" on a member's card - reads the one contact picked. -->
+	<key>NSContactsUsageDescription</key>
+	<string>Link a family member to a contact so you can call or text them from their card. Only the contact you pick is read.</string>
 	<!-- Motion & fitness (Core Motion) — requested only on supported devices. -->
 	<key>NSMotionUsageDescription</key>
 	<string>OpenFamily uses motion &amp; fitness to detect when you're driving, biking, or walking.</string>

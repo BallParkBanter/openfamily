@@ -23,6 +23,11 @@
     <uses-permission
         android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <!-- bray: "Link contact" on a family member's card. The OS contact picker
+         returns a contact id; reading that one contact's numbers and labels
+         back (flutter_contacts) needs READ_CONTACTS. Asked for at link time
+         only; the app never lists the address book. -->
+    <uses-permission android:name="android.permission.READ_CONTACTS"/>
 
     <!-- Android 11+ package visibility: let the emergency-contact picker
          resolve the system ACTION_PICK for a phone number. No READ_CONTACTS. -->
@@ -30,6 +35,20 @@
         <intent>
             <action android:name="android.intent.action.PICK"/>
             <data android:mimeType="vnd.android.cursor.dir/phone_v2"/>
+        </intent>
+        <!-- bray: the whole-contact picker behind "Link contact" (flutter_contacts). -->
+        <intent>
+            <action android:name="android.intent.action.PICK"/>
+            <data android:mimeType="vnd.android.cursor.dir/contact"/>
+        </intent>
+        <!-- bray: Call / Text chips on the card (tel: / sms: intents). -->
+        <intent>
+            <action android:name="android.intent.action.DIAL"/>
+            <data android:scheme="tel"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SENDTO"/>
+            <data android:scheme="sms"/>
         </intent>
     </queries>
 
