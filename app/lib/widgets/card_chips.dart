@@ -11,7 +11,7 @@
 // ("📍 Kroger · 4.2 mi", "🏛️ Walton County · Twin Lakes Drive · since 11:12am",
 // "🌆 Dacula").
 import '../models/member_place.dart';
-import 'place_text.dart' show milesText, sinceText;
+import 'place_text.dart' show milesText, nearPoiText, sinceText;
 
 /// The one stat chip bottom-left of every card (J:79-85), or null when there
 /// is nothing true to say. A null [place] still shows "🚗 Driving" (no
@@ -29,6 +29,8 @@ String? statChipText(MemberPlace? place, {required bool driving}) {
   if (place.placeName != null) {
     return metres != null ? '📍 ${place.placeName} · ${milesText(metres)}' : '📍 ${place.placeName}'; // design list; H:79
   }
+  final String? nearPoi = nearPoiText(place); // piece 5: "🏫 Near Hebron Christian Academy" (saved place wins above)
+  if (nearPoi != null) return metres != null ? '$nearPoi · ${milesText(metres)}' : nearPoi;
   if (metres != null) return '${milesText(metres)} away'; // J:84; H:79
   return null;
 }

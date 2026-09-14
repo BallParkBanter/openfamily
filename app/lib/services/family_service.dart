@@ -157,6 +157,10 @@ class FamilyService {
     return _replaceMembers(mapped);
   }
 
+  /// Reloads saved places after the app itself created one (piece 5's
+  /// "Save place"), so the house chip / labels see it without a reconnect.
+  Future<void> refreshPlaces() => _refreshPlaces();
+
   /// Reloads saved places so a member standing still at Home/Work is labeled
   /// with that place instead of a generic "Stationary". Failures keep the
   /// last known list — members still render without place names.

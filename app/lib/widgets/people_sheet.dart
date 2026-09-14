@@ -27,6 +27,7 @@ class PeopleSheet extends StatelessWidget {
     this.focusedId,
     this.contactFor,
     this.onLinkContact,
+    this.onSavePlace,
     this.bottomInset = 0,
     this.now,
     this.onLevelChanged,
@@ -52,6 +53,10 @@ class PeopleSheet extends StatelessWidget {
 
   /// bray: the focused card's 🔗 chip - open the link sheet for this member.
   final ValueChanged<Member>? onLinkContact;
+
+  /// bray piece 5: the focused card's "📍 Save place" chip (shown only when
+  /// the member has a POI) - open the add-place flow prefilled for this member.
+  final ValueChanged<Member>? onSavePlace;
 
   /// System safe-area at the bottom, added under the last card (S:48).
   final double bottomInset;
@@ -121,6 +126,7 @@ class PeopleSheet extends StatelessWidget {
         focused: focused,
         contact: link,
         onLinkContact: onLinkContact == null ? null : () => onLinkContact!(m),
+        onSavePlace: onSavePlace == null ? null : () => onSavePlace!(m),
         now: now,
         onTap: onCardTap == null ? null : () => onCardTap!(m),
         onLongPress: onCardHold == null ? null : () => onCardHold!(m),

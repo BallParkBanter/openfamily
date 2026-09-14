@@ -9,6 +9,7 @@ import 'package:latlong2/latlong.dart' hide Circle;
 
 import '../models/member.dart';
 import '../models/member_place.dart';
+import '../models/place.dart';
 import '../services/api_client.dart';
 import '../services/app_config.dart';
 import '../services/background_location_service.dart';
@@ -20,6 +21,7 @@ import '../services/location_reporter.dart';
 import '../services/location_outbox.dart';
 import '../services/location_service.dart';
 import '../services/location_sharing_service.dart';
+import '../services/place_service.dart';
 import '../services/permission_service.dart';
 import '../services/push_service.dart';
 import '../services/server_features.dart';
@@ -38,12 +40,15 @@ import '../widgets/home_chip.dart';
 import '../widgets/map_bottom_bar.dart';
 import '../widgets/member_avatar_bubble.dart';
 import '../widgets/people_sheet.dart';
+import '../widgets/place_text.dart' show placeTypeForPoiKind;
+import '../widgets/poi_chip.dart';
 import 'check_in_screen.dart';
 import 'help_alert_screen.dart';
 import 'invite_screen.dart';
 import 'join_circle_screen.dart';
 import 'member_profile_screen.dart';
 import 'people_screen.dart';
+import 'place_picker_screen.dart';
 import 'places_screen.dart';
 import 'safety_screen.dart';
 import 'settings_screen.dart';
@@ -839,6 +844,57 @@ class _MapScreenState extends State<MapScreen>
     showContactLinkSheet(context, member: member, label: _labelFor(member));
   }
 
+  /// bray piece 5: the focused card's "📍 Save place" chip - upstream's
+  /// PlacePickerScreen, prefilled through its `initial` argument with the POI
+  /// name, the member's position and street, then created exactly the way
+  /// places_screen._addPlace does it. The backend labels the member with the
+  /// new place on their next fix (updateMemberPlace runs on ingest).
+  Future<void> _savePlace(Member member) async {
+    _touch();
+    final MemberPlace? place = member.place;
+    final LatLng? at = member.position;
+    if (place?.poiName == null || at == null) return;
+    final String type = placeTypeForPoiKind(place!.poiKind);
+    final Place? picked = await Navigator.of(context).push<Place>(
+      MaterialPageRoute<Place>(
+        builder: (_) => PlacePickerScreen(
+          placeName: place.poiName!,
+          icon: Place.iconForType(type),
+          type: type,
+          initial: Place(
+            id: 'poi-${DateTime.now().millisecondsSinceEpoch}',
+            name: place.poiName!,
+            icon: Place.iconForType(type),
+            address: place.street ?? '',
+            position: at,
+            radiusMeters: 152.4, // the picker's own default (~500 ft)
+            type: type,
+          ),
+        ),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    try {
+      await PlaceService.createPlace(
+        name: picked.name,
+        type: picked.type,
+        lat: picked.position.latitude,
+        lon: picked.position.longitude,
+        radiusMeters: picked.radiusMeters,
+        address: picked.address,
+      );
+      await _familyService.refreshPlaces();
+      if (!mounted) return;
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Saved ${picked.name}')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e is ApiException ? e.message : 'Couldn\'t save the place. Please try again.')),
+      );
+    }
+  }
+
   /// The one label for [m] everywhere on this screen - cards, the focused
   /// bubble, the Following pill, the summary chip. OPEN: Bo, 2026-09-14 "take
   /// the perspective of whoever is logged in": "You" for the signed-in
@@ -1046,6 +1102,10 @@ class _MapScreenState extends State<MapScreen>
                 // people"; C:183-186). Places come from the same FamilyService
                 // that labels members with them.
                 HomeChipLayer(places: _familyService.places),
+                // Piece 5: the POI chip (🏫 ✈️ 🛒 ...) under a person parked
+                // at a named feature for 5 min - one per member position,
+                // never for a mover, never at home (the house is there).
+                PoiChipLayer(members: _focus.visible(members)),
                 // Piece 3: the focused person's last 6 h under their marker
                 // (house under the trail under people).
                 FocusTrailLayer(member: focusedMember),
@@ -1195,6 +1255,7 @@ class _MapScreenState extends State<MapScreen>
                   placeFor: _placeFor,
                   contactFor: (Member m) => ContactLinkStore.instance.linkFor(m.id),
                   onLinkContact: _linkContact,
+                  onSavePlace: _savePlace,
                   onLevelChanged: _onSheetLevel,
                   onCardTap: _onCardTap,
                   onCardHold: _openMemberDetails,
