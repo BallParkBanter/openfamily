@@ -16,6 +16,8 @@ class MemberPlace {
     this.atHome = false,
     this.homeDistanceM,
     this.since,
+    this.poiName,
+    this.poiKind,
   });
 
   /// Nominatim road (+ house number), null when unknown or stale.
@@ -35,6 +37,20 @@ class MemberPlace {
   /// When [placeName]/[atHome] last changed.
   final DateTime? since;
 
+  /// Bray piece 5: the nearest named feature from the geocode ("Hebron
+  /// Christian Academy"), the "Near ..." text when the member is not inside
+  /// a saved place ([placeName] wins). Null on a plain street.
+  final String? poiName;
+
+  /// [poiName]'s kind - one of home, school, airport, shop, restaurant,
+  /// park, work, medical, gym, church, other - mapped to an icon by
+  /// place_text.poiIcon. Null when [poiName] is.
+  final String? poiKind;
+
+  /// The text after "Near": the saved place wins, else the POI (design:
+  /// "when the person is inside a saved family place, place_name wins").
+  String? get nearName => placeName ?? poiName;
+
   bool get nearHome => homeDistanceM != null && homeDistanceM! < kHideDotNearHomeMeters;
 
   double? get homeMiles => homeDistanceM == null ? null : homeDistanceM! / 1609.344;
@@ -51,6 +67,8 @@ class MemberPlace {
       atHome: json['at_home'] == true,
       homeDistanceM: (json['home_distance_m'] as num?)?.toDouble(),
       since: since is String ? DateTime.tryParse(since)?.toUtc() : null,
+      poiName: json['poi_name'] as String?,
+      poiKind: json['poi_kind'] as String?,
     );
   }
 }

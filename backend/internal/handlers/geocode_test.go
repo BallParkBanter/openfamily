@@ -21,11 +21,27 @@ func TestValidateGeocodeRequest(t *testing.T) {
 		{Lat: 1, Lon: 1, Street: strings.Repeat("x", 121)},
 		{Lat: 1, Lon: 1, City: strings.Repeat("x", 81)},
 		{Lat: 1, Lon: 1, County: strings.Repeat("x", 81)},
+		{Lat: 1, Lon: 1, PoiName: strings.Repeat("x", 121), PoiKind: "school"},
+		{Lat: 1, Lon: 1, PoiName: "Kroger", PoiKind: "grocery"}, // not in the vocabulary
+		{Lat: 1, Lon: 1, PoiName: "Kroger"},                     // kind missing
+		{Lat: 1, Lon: 1, PoiKind: "shop"},                       // name missing
 	}
 	for i, b := range bad {
 		if err := validateGeocodeRequest(b); err == nil {
 			t.Fatalf("case %d accepted: %#v", i, b)
 		}
+	}
+}
+
+func TestValidateGeocodeRequestAcceptsEveryPoiKindAndNone(t *testing.T) {
+	for _, k := range []string{"home", "school", "airport", "shop", "restaurant", "park", "work", "medical", "gym", "church", "other"} {
+		if err := validateGeocodeRequest(putGeocodeRequest{Lat: 1, Lon: 1, PoiName: "X", PoiKind: k}); err != nil {
+			t.Fatalf("kind %q rejected: %v", k, err)
+		}
+	}
+	// A plain street: both empty (the geocoder sends "" for none).
+	if err := validateGeocodeRequest(putGeocodeRequest{Lat: 1, Lon: 1, Street: "Twin Lakes Road"}); err != nil {
+		t.Fatalf("no POI rejected: %v", err)
 	}
 }
 

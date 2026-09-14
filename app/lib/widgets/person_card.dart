@@ -31,6 +31,7 @@ class PersonCard extends StatefulWidget {
     this.phone,
     this.contact,
     this.onLinkContact,
+    this.onSavePlace,
     this.launch,
     this.now,
     this.onTap,
@@ -67,6 +68,11 @@ class PersonCard extends StatefulWidget {
   /// bray: opens the link/re-link/unlink sheet. Null hides the 🔗 chip
   /// (tests, or a host with nowhere to link from).
   final VoidCallback? onLinkContact;
+
+  /// bray piece 5: "📍 Save place" - turn the POI the member is at into a
+  /// saved family place (opens the add-place flow prefilled). The chip only
+  /// renders when [place] carries a poi_name and a host wired this.
+  final VoidCallback? onSavePlace;
 
   /// The tel:/sms: launcher; defaults to an Android intent. Tests inject one
   /// to see the exact URI a chip fires.
@@ -341,7 +347,9 @@ class _PersonCardState extends State<PersonCard> {
   ///    number), then a bare 🔗 to re-link / unlink;
   ///  - no link but a profile phone (upstream fallback): Call · Text on it,
   ///    then "🔗 Link contact";
-  ///  - nothing: "🔗 Link contact" alone (only when a host can open the sheet).
+  ///  - nothing: "🔗 Link contact" alone (only when a host can open the sheet);
+  ///  - piece 5: "📍 Save place" after the link chip whenever the member is
+  ///    at a named feature (place.poiName) and a host wired [onSavePlace].
   List<Widget> _actions(Color accent) {
     final List<Widget> out = <Widget>[];
     void add(Widget w) {
@@ -349,6 +357,15 @@ class _PersonCardState extends State<PersonCard> {
       out.add(w);
     }
 
+    _contactActions(accent, add);
+    if (widget.onSavePlace != null && widget.place?.poiName != null) {
+      add(_ActionChip(key: const Key('card-save-place'), label: '📍 Save place', accent: accent, onTap: widget.onSavePlace!));
+    }
+    return out;
+  }
+
+  /// The Call / Text / 🔗 chips, appended through [add] (see [_actions]).
+  void _contactActions(Color accent, void Function(Widget) add) {
     final LinkedContact? c = widget.contact;
     if (c != null && c.phones.isNotEmpty) {
       for (int i = 0; i < c.phones.length; i++) {
@@ -362,7 +379,7 @@ class _PersonCardState extends State<PersonCard> {
       if (widget.onLinkContact != null) {
         add(_ActionChip(key: const Key('card-link'), label: '🔗', accent: accent, onTap: widget.onLinkContact!));
       }
-      return out;
+      return;
     }
     if (widget.phone != null) {
       add(_ActionChip(key: const Key('card-call'), icon: Icons.call, label: 'Call', accent: accent,
@@ -373,7 +390,6 @@ class _PersonCardState extends State<PersonCard> {
     if (widget.onLinkContact != null) {
       add(_ActionChip(key: const Key('card-link'), label: '🔗 Link contact', accent: accent, onTap: widget.onLinkContact!));
     }
-    return out;
   }
 
   /// Dial / SMS via the platform (android_intent_plus is already a dependency,
