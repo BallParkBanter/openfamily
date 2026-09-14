@@ -1,6 +1,8 @@
 // app/lib/screens/card_gallery_screen.dart
-// bray: a hidden gallery of ten person-card designs on the app's own dark +
-// lime theme, for Bo to pick from. Bo, 2026-09-14: "you used the cards from
+// bray: a hidden gallery of person-card designs on the app's own dark +
+// lime theme, for Bo to pick from (ten designs, then variant 8 at three
+// sizes - Bo, 2026-09-14: "i kind of like version 8.... but play with the
+// sizes"). Bo, 2026-09-14: "you used the cards from
 // the home assistant version we made ... that does NOT match this green
 // theme ... make me like 10 different variations of the cards ... and show
 // me." Opened by long-pressing the family chip top-left of the map. One
@@ -151,7 +153,8 @@ class CardGalleryScreen extends StatefulWidget {
   final DateTime? now;
   final int initialIndex;
 
-  /// The ten designs, in the order Bo sees them.
+  /// The designs, in the order Bo sees them: the ten originals, then
+  /// variant 8 at three sizes (11-13).
   static final List<CardVariant> variants = <CardVariant>[
     CardVariant(name: 'Lime ledger', note: 'Flat surface, one lime hairline, lined-up numerals. Quietest of the ten.', build: (c, f) => _LimeLedger(f)),
     CardVariant(name: 'Photo left, facts right', note: 'Square photo tile, big first name, two lines of facts, actions stacked on the edge.', build: (c, f) => _PhotoLeft(f)),
@@ -163,6 +166,11 @@ class CardGalleryScreen extends StatefulWidget {
     CardVariant(name: 'Photo backdrop, lime type', note: 'Today\'s layout - photo under a dark veil - but lime and ink, no ghost name.', build: (c, f) => _PhotoBackdrop(f)),
     CardVariant(name: 'Ticket', note: 'Dark body, lime stub torn off on the right with the battery and the last update.', build: (c, f) => _Ticket(f)),
     CardVariant(name: 'Map-native', note: '124 px with its tail: the card is a widened map callout that sits on the map.', height: 124, onMap: true, build: (c, f) => _MapNative(f)),
+    // Bo, 2026-09-14: "i kind of like version 8.... but play with the sizes".
+    // The same card at three sizes; same palette, same content.
+    CardVariant(name: '8 compact', note: '96 px: name 22, facts 14. The most photo per inch of sheet; four people fit.', height: _BackdropSize.compact.card, build: (c, f) => _PhotoBackdrop(f, size: _BackdropSize.compact)),
+    CardVariant(name: '8 standard', note: '128 px: name 28, facts 16, battery 32. A little taller than today\'s 112.', height: _BackdropSize.standard.card, build: (c, f) => _PhotoBackdrop(f, size: _BackdropSize.standard)),
+    CardVariant(name: '8 large', note: '168 px: name 34, facts 18, battery 40, chips 16. Near the focus card\'s height.', height: _BackdropSize.large.card, build: (c, f) => _PhotoBackdrop(f, size: _BackdropSize.large)),
   ];
 
   @override
@@ -511,36 +519,43 @@ class _Action {
 
 /// A small chip: icon + label, 14 px text.
 class _Chip extends StatelessWidget {
-  const _Chip(this.a, {this.fill, this.border, this.fg = AppColors.accentBright, this.iconOnly = false});
+  const _Chip(this.a, {this.fill, this.border, this.fg = AppColors.accentBright, this.iconOnly = false, this.textSize = 14});
   final _Action a;
   final Color? fill;
   final Color? border;
   final Color fg;
   final bool iconOnly;
+
+  /// Label size; the icon and padding scale with it (14 → icon 16, pad 9/4/11/4).
+  final double textSize;
   @override
-  Widget build(BuildContext context) => Container(
-        padding: iconOnly ? const EdgeInsets.all(6) : const EdgeInsets.fromLTRB(9, 4, 11, 4),
+  Widget build(BuildContext context) {
+    final double k = textSize / 14;
+    return Container(
+        padding: iconOnly ? EdgeInsets.all(6 * k) : EdgeInsets.fromLTRB(9 * k, 4 * k, 11 * k, 4 * k),
         decoration: BoxDecoration(color: fill, borderRadius: BorderRadius.circular(99), border: border == null ? null : Border.all(color: border!)),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(a.icon, size: 16, color: fg),
-          if (!iconOnly) ...[const SizedBox(width: 4), Text(a.label, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: fg, height: 1.2))],
+          Icon(a.icon, size: 16 * k, color: fg),
+          if (!iconOnly) ...[SizedBox(width: 4 * k), Text(a.label, style: TextStyle(fontSize: textSize, fontWeight: FontWeight.w700, color: fg, height: 1.2))],
         ]),
       );
+  }
 }
 
 /// A row of chips with a 6 px gap (S:154).
 class _Chips extends StatelessWidget {
-  const _Chips({this.fill, this.border, this.fg = AppColors.accentBright, this.iconOnly = false, this.gap = 6});
+  const _Chips({this.fill, this.border, this.fg = AppColors.accentBright, this.iconOnly = false, this.gap = 6, this.textSize = 14});
   final Color? fill;
   final Color? border;
   final Color fg;
   final bool iconOnly;
   final double gap;
+  final double textSize;
   @override
   Widget build(BuildContext context) => Row(mainAxisSize: MainAxisSize.min, children: [
         for (int i = 0; i < _Action.all.length; i++) ...[
           if (i > 0) SizedBox(width: gap),
-          _Chip(_Action.all[i], fill: fill, border: border, fg: fg, iconOnly: iconOnly),
+          _Chip(_Action.all[i], fill: fill, border: border, fg: fg, iconOnly: iconOnly, textSize: textSize),
         ],
       ]);
 }
@@ -1009,11 +1024,18 @@ class _Outline extends StatelessWidget {
 /// name top-left, "ago" top-right, chip and battery along the bottom - with
 /// the lavender gone: a solid lime name, a lime-outlined ago pill, the
 /// numeral in spark, no ghost.
+///
+/// Variants 11-13 are this card at three sizes ([_BackdropSize]) - Bo,
+/// 2026-09-14: "i kind of like version 8.... but play with the sizes". The
+/// original (#8) is [_BackdropSize.original]; nothing about it moved.
 class _PhotoBackdrop extends StatelessWidget {
-  const _PhotoBackdrop(this.f);
+  const _PhotoBackdrop(this.f, {this.size = _BackdropSize.original});
   final CardFacts f;
+  final _BackdropSize size;
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) {
+    final _BackdropSize z = size;
+    return Container(
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           color: AppColors.nightSurface,
@@ -1030,40 +1052,67 @@ class _PhotoBackdrop extends StatelessWidget {
               ),
             ),
             Positioned(
-              left: 12, top: 9,
-              child: _Name(f, style: _nameStyle.copyWith(fontSize: 26, color: AppColors.accentBright, shadows: const <Shadow>[Shadow(color: Color(0x99000000), blurRadius: 6)])),
+              left: z.padH, top: z.padTop - 1,
+              child: _Name(f, style: _nameStyle.copyWith(fontSize: z.name, color: AppColors.accentBright, shadows: const <Shadow>[Shadow(color: Color(0x99000000), blurRadius: 6)])),
             ),
             Positioned(
-              right: 12, top: 10,
+              right: z.padH, top: z.padTop,
               child: Container(
-                padding: const EdgeInsets.fromLTRB(11, 4, 11, 4),
+                padding: EdgeInsets.fromLTRB(z.facts * 11 / 14, z.facts * 4 / 14, z.facts * 11 / 14, z.facts * 4 / 14),   // #8: 11/4 at 14 px
                 decoration: BoxDecoration(color: AppColors.nightPaper.withValues(alpha: 0.7), borderRadius: BorderRadius.circular(99), border: Border.all(color: AppColors.accentBright.withValues(alpha: 0.7))),
-                child: Text(f.ago, style: _tabular(const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.accentBright, height: 1.2))),
+                child: Text(f.ago, style: _tabular(TextStyle(fontSize: z.facts, fontWeight: FontWeight.w700, color: AppColors.accentBright, height: 1.2))),
               ),
             ),
             Positioned(
-              left: 12, right: 12, bottom: 10,
+              left: z.padH, right: z.padH, bottom: z.padBottom,
               child: _Responsive((bool narrow) => Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Flexible(
                     child: Container(
-                      padding: const EdgeInsets.fromLTRB(12, 5, 12, 5),
+                      padding: EdgeInsets.fromLTRB(z.facts * 12 / 14, z.facts * 5 / 14, z.facts * 12 / 14, z.facts * 5 / 14),   // #8: 12/5 at 14 px
                       decoration: BoxDecoration(color: AppColors.nightPaper.withValues(alpha: 0.75), borderRadius: BorderRadius.circular(99), border: Border.all(color: AppColors.nightBorder)),
-                      child: Text(f.chip ?? f.where, maxLines: 1, overflow: TextOverflow.ellipsis, style: _tabular(const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.accentBright, height: 1.2))),
+                      child: Text(f.chip ?? f.where, maxLines: 1, overflow: TextOverflow.ellipsis, style: _tabular(TextStyle(fontSize: z.facts, fontWeight: FontWeight.w700, color: AppColors.accentBright, height: 1.2))),
                     ),
                   ),
                   const SizedBox(width: 6),
-                  _Chips(fill: AppColors.nightPaper.withValues(alpha: 0.75), border: AppColors.accentBright.withValues(alpha: 0.5), iconOnly: narrow),
+                  _Chips(fill: AppColors.nightPaper.withValues(alpha: 0.75), border: AppColors.accentBright.withValues(alpha: 0.5), iconOnly: narrow, textSize: z.chips),
                   const Spacer(),
                   const SizedBox(width: 8),
-                  _Battery(f, size: 26, color: BrandTheme.night.spark),
+                  _Battery(f, size: z.battery, color: BrandTheme.night.spark),
                 ],
               )),
             ),
           ],
         ),
       );
+  }
+}
+
+/// The metrics of one size of variant 8. [original] reproduces #8 exactly
+/// (112 px, name 26, facts 14, battery 26, chips 14, 12 px sides).
+class _BackdropSize {
+  const _BackdropSize({required this.card, required this.name, required this.facts, required this.battery, required this.chips, required this.padH, required this.padTop, required this.padBottom});
+
+  /// Card height.
+  final double card;
+
+  /// The name, the ago pill / place chip text, the battery numeral, the
+  /// Call / Text / Link chip labels.
+  final double name;
+  final double facts;
+  final double battery;
+  final double chips;
+
+  /// Side padding, and the top / bottom insets of the two rows.
+  final double padH;
+  final double padTop;
+  final double padBottom;
+
+  static const _BackdropSize original = _BackdropSize(card: BrayTokens.cardH, name: 26, facts: 14, battery: 26, chips: 14, padH: 12, padTop: 10, padBottom: 10);
+  static const _BackdropSize compact = _BackdropSize(card: 96, name: 22, facts: 14, battery: 24, chips: 14, padH: 10, padTop: 8, padBottom: 8);
+  static const _BackdropSize standard = _BackdropSize(card: 128, name: 28, facts: 16, battery: 32, chips: 15, padH: 12, padTop: 10, padBottom: 10);
+  static const _BackdropSize large = _BackdropSize(card: 168, name: 34, facts: 18, battery: 40, chips: 16, padH: 16, padTop: 14, padBottom: 14);
 }
 
 /// 9 · Ticket. Two-tone: the dark body carries the person, a lime stub on
