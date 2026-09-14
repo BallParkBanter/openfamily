@@ -17,6 +17,7 @@ import '../models/member_place.dart';
 import '../services/member_avatar_cache.dart';
 import '../theme/bray_tokens.dart';
 import 'card_chips.dart';
+import 'place_text.dart' show isDriving;
 
 class PersonCard extends StatefulWidget {
   const PersonCard({
@@ -90,7 +91,12 @@ class _PersonCardState extends State<PersonCard> {
     final Color accent = BrayTokens.accentFor(m);
     final DateTime now = widget.now ?? DateTime.now();
     final String ago = BrayTokens.agoText(m.lastSeen, now);
-    final bool driving = m.hasDrivingSpeed;
+    // Design list line 42: the "🚗 Driving near X" wording only over 8 mph
+    // (place_text.isDriving, H:92). hasDrivingSpeed is the map pill's rule
+    // (1 mph) - a member rolling at 3 mph in the driveway is at home, not
+    // driving, and a parked one at home must read the home chip (live
+    // 2026-09-14: the card said "Driving near Home" at 0 mph).
+    final bool driving = isDriving(m);
     final String? stat = statChipText(widget.place, driving: driving); // J:80 needs no place
     final List<String> drow = detailChipTexts(widget.place, driving: driving, now: now);
     final bool low = m.batteryPercent > 0 && m.batteryPercent <= BrayTokens.battLowAt;  // J:271
