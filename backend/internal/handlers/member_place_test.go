@@ -68,8 +68,42 @@ func TestMemberJSONOmitsPlaceWithoutAPositionAndUsesTheAgreedKeys(t *testing.T) 
 
 func TestScanTargetsMatchTheColumnList(t *testing.T) {
 	var r memberPlaceRow
-	if n := len(r.scanTargets()); n != 9 {
-		t.Fatalf("memberPlaceColumns selects 9 columns; scanTargets has %d", n)
+	if n := len(r.scanTargets()); n != 11 {
+		t.Fatalf("memberPlaceColumns selects 11 columns; scanTargets has %d", n)
+	}
+	// The two POI columns are the last two, matching scanTargets' tail.
+	if !strings.HasSuffix(strings.TrimSpace(memberPlaceColumns), "g.lat, g.lon, g.poi_name, g.poi_kind") {
+		t.Fatalf("memberPlaceColumns must end with the POI columns: %s", memberPlaceColumns)
+	}
+}
+
+func TestToPlaceCarriesThePoiWithTheGeocodeAndDropsItWhenStale(t *testing.T) {
+	// Fresh: the POI rides along with the street (Bray piece 5).
+	fresh := memberPlaceRow{Street: s("Dacula Road"), PoiName: s("Hebron Christian Academy"), PoiKind: s("school"),
+		GeoLat: f(34.00741), GeoLon: f(-83.91162)}
+	p := fresh.toPlace(f(34.00745), f(-83.91160))
+	if p.PoiName == nil || *p.PoiName != "Hebron Christian Academy" || p.PoiKind == nil || *p.PoiKind != "school" {
+		t.Fatalf("fresh POI dropped: %#v", p)
+	}
+	// Stale (1.5 km away): the POI is withheld like the street.
+	stale := memberPlaceRow{PoiName: s("Kroger"), PoiKind: s("shop"), GeoLat: f(34.0210), GeoLon: f(-83.91162)}
+	p = stale.toPlace(f(34.00741), f(-83.91162))
+	if p.PoiName != nil || p.PoiKind != nil {
+		t.Fatalf("stale POI kept: %#v", p)
+	}
+	// A saved place and a POI are both emitted; the app lets place_name win.
+	both := memberPlaceRow{PlaceName: s("School"), PoiName: s("Hebron Christian Academy"), PoiKind: s("school"),
+		GeoLat: f(34.00741), GeoLon: f(-83.91162)}
+	b, _ := json.Marshal(both.toPlace(f(34.00741), f(-83.91162)))
+	for _, k := range []string{`"place_name":"School"`, `"poi_name":"Hebron Christian Academy"`, `"poi_kind":"school"`} {
+		if !strings.Contains(string(b), k) {
+			t.Fatalf("missing %s in %s", k, b)
+		}
+	}
+	// No POI: the keys are present and null (the app reads them as absent).
+	b, _ = json.Marshal(memberPlaceRow{}.toPlace(f(1), f(1)))
+	if !strings.Contains(string(b), `"poi_name":null,"poi_kind":null`) {
+		t.Fatalf("null POI keys missing: %s", b)
 	}
 }
 
@@ -89,7 +123,7 @@ func TestLocationFrameCarriesPlaceOnlyWhenKnown(t *testing.T) {
 func TestPlaceFrameShape(t *testing.T) {
 	fr := wsPlace{Type: "place", UserID: "u1", Place: &models.MemberPlace{City: s("Dacula"), AtHome: true}}
 	b, _ := json.Marshal(fr)
-	want := `{"type":"place","user_id":"u1","place":{"street":null,"city":"Dacula","county":null,"place_name":null,"at_home":true,"home_distance_m":null,"since":null}}`
+	want := `{"type":"place","user_id":"u1","place":{"street":null,"city":"Dacula","county":null,"place_name":null,"at_home":true,"home_distance_m":null,"since":null,"poi_name":null,"poi_kind":null}}`
 	if string(b) != want {
 		t.Fatalf("got %s\nwant %s", b, want)
 	}

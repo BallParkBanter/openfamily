@@ -100,6 +100,11 @@ type MemberPlace struct {
 	AtHome        bool       `json:"at_home"`
 	HomeDistanceM *float64   `json:"home_distance_m"`
 	Since         *time.Time `json:"since"`
+	// PoiName/PoiKind (Bray piece 5): the nearest named feature from the
+	// same geocode ("Dacula High School" / "school"), for "Near ..." when the
+	// member is not inside a saved place. Nil on a plain street.
+	PoiName *string `json:"poi_name"`
+	PoiKind *string `json:"poi_kind"`
 }
 
 // InviteCode gates registration: a new user presents a valid, unexpired,

@@ -18,11 +18,11 @@ const geocodeStaleMeters = 1000.0
 
 // memberPlaceColumns are appended to a member SELECT whose FROM has the alias
 // `u` (users) and `mp` (member_positions) and includes memberPlaceJoins.
-// Nine columns, scanned by memberPlaceRow.scanTargets() in this order.
+// Eleven columns, scanned by memberPlaceRow.scanTargets() in this order.
 const memberPlaceColumns = `,
 		       mp.place_since, pl.name, (pl.type = 'home'),
 		       ST_Distance(home.geom::geography, ST_SetSRID(ST_MakePoint(mp.lon, mp.lat), 4326)::geography),
-		       g.street, g.city, g.county, g.lat, g.lon`
+		       g.street, g.city, g.county, g.lat, g.lon, g.poi_name, g.poi_kind`
 
 // memberPlaceJoins follow `LEFT JOIN member_positions mp ON mp.user_id = u.id`.
 const memberPlaceJoins = `
@@ -34,7 +34,7 @@ const memberPlaceJoins = `
 		) home ON TRUE
 		LEFT JOIN member_geocodes g ON g.user_id = u.id`
 
-// memberPlaceRow holds the nine memberPlaceColumns as scanned.
+// memberPlaceRow holds the eleven memberPlaceColumns as scanned.
 type memberPlaceRow struct {
 	Since          *time.Time
 	PlaceName      *string
@@ -44,15 +44,18 @@ type memberPlaceRow struct {
 	City           *string
 	County         *string
 	GeoLat, GeoLon *float64
+	PoiName        *string
+	PoiKind        *string
 }
 
 func (r *memberPlaceRow) scanTargets() []any {
-	return []any{&r.Since, &r.PlaceName, &r.AtHome, &r.HomeDistance, &r.Street, &r.City, &r.County, &r.GeoLat, &r.GeoLon}
+	return []any{&r.Since, &r.PlaceName, &r.AtHome, &r.HomeDistance, &r.Street, &r.City, &r.County, &r.GeoLat, &r.GeoLon, &r.PoiName, &r.PoiKind}
 }
 
 // toPlace builds the JSON object for a member at (lat, lon); nil without a
-// position. The geocode rides along only while it is fresh (see
-// geocodeStaleMeters).
+// position. The geocode - street/city/county and the POI - rides along only
+// while it is fresh (see geocodeStaleMeters). place_name (a saved family
+// place) and poi_name are both emitted; the app lets place_name win.
 func (r memberPlaceRow) toPlace(lat, lon *float64) *models.MemberPlace {
 	if lat == nil || lon == nil {
 		return nil
@@ -66,6 +69,7 @@ func (r memberPlaceRow) toPlace(lat, lon *float64) *models.MemberPlace {
 	if r.GeoLat != nil && r.GeoLon != nil &&
 		haversineMeters(*r.GeoLat, *r.GeoLon, *lat, *lon) <= geocodeStaleMeters {
 		p.Street, p.City, p.County = r.Street, r.City, r.County
+		p.PoiName, p.PoiKind = r.PoiName, r.PoiKind
 	}
 	return p
 }

@@ -52,12 +52,24 @@ type putGeocodeRequest struct {
 	Street string  `json:"street"`
 	City   string  `json:"city"`
 	County string  `json:"county"`
+	// PoiName/PoiKind (Bray piece 5): the nearest named feature from the same
+	// reverse call. Both optional; "" means "none" and is stored as NULL.
+	PoiName string `json:"poi_name"`
+	PoiKind string `json:"poi_kind"`
 }
 
 const (
 	maxStreetLen = 120
 	maxCityLen   = 80
 )
+
+// poiKinds is the fixed vocabulary the app maps to an icon. The geocoder
+// derives it from Nominatim's category/type; anything else is a 400 so a
+// typo never reaches the app as an unknown kind.
+var poiKinds = map[string]bool{
+	"home": true, "school": true, "airport": true, "shop": true, "restaurant": true,
+	"park": true, "work": true, "medical": true, "gym": true, "church": true, "other": true,
+}
 
 var uuidRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
@@ -70,6 +82,15 @@ func validateGeocodeRequest(r putGeocodeRequest) error {
 	}
 	if len(r.City) > maxCityLen || len(r.County) > maxCityLen {
 		return errors.New("city/county too long")
+	}
+	if len(r.PoiName) > maxStreetLen {
+		return errors.New("poi_name too long")
+	}
+	if r.PoiKind != "" && !poiKinds[r.PoiKind] {
+		return errors.New("unknown poi_kind")
+	}
+	if (r.PoiName == "") != (r.PoiKind == "") {
+		return errors.New("poi_name and poi_kind go together")
 	}
 	return nil
 }
@@ -94,13 +115,14 @@ func (s *Server) PutMemberGeocode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, err := s.Pool.Exec(r.Context(), `
-		INSERT INTO member_geocodes (user_id, lat, lon, street, city, county, updated_at)
-		VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, ''), NULLIF($6, ''), now())
+		INSERT INTO member_geocodes (user_id, lat, lon, street, city, county, poi_name, poi_kind, updated_at)
+		VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, ''), NULLIF($6, ''), NULLIF($7, ''), NULLIF($8, ''), now())
 		ON CONFLICT (user_id) DO UPDATE SET
 			lat = EXCLUDED.lat, lon = EXCLUDED.lon,
 			street = EXCLUDED.street, city = EXCLUDED.city, county = EXCLUDED.county,
+			poi_name = EXCLUDED.poi_name, poi_kind = EXCLUDED.poi_kind,
 			updated_at = now()`,
-		id, req.Lat, req.Lon, req.Street, req.City, req.County)
+		id, req.Lat, req.Lon, req.Street, req.City, req.County, req.PoiName, req.PoiKind)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23503" { // foreign key: no such user
