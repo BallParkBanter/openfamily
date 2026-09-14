@@ -69,6 +69,18 @@ android {
                 signingConfigs.getByName("debug")
             }
         }
+        debug {
+            // Same key as release when key.properties is present, so
+            // `flutter run` (hot reload) installs in place over the
+            // release-signed build on the device and keeps its login instead
+            // of failing with INSTALL_FAILED_UPDATE_INCOMPATIBLE. Without
+            // key.properties this is the ordinary debug keystore.
+            signingConfig = if (keystorePropertiesFile.exists()) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
+        }
     }
 }
 
