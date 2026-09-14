@@ -38,6 +38,7 @@ import '../widgets/home_chip.dart';
 import '../widgets/map_bottom_bar.dart';
 import '../widgets/member_avatar_bubble.dart';
 import '../widgets/people_sheet.dart';
+import 'card_gallery_screen.dart';
 import 'check_in_screen.dart';
 import 'help_alert_screen.dart';
 import 'invite_screen.dart';
@@ -884,6 +885,19 @@ class _MapScreenState extends State<MapScreen>
         .push(MaterialPageRoute<void>(builder: (_) => const SettingsScreen()));
   }
 
+  /// bray: the hidden card gallery, with the live members so every design is
+  /// judged on real names, places and batteries.
+  void _openCardGallery() {
+    final List<Member> members = _liveMembers();
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => CardGalleryScreen(
+        members: members,
+        viewerId: _userId,
+        contactFor: (Member m) => ContactLinkStore.instance.linkFor(m.id),
+      ),
+    ));
+  }
+
   void _openAddPerson() {
     Navigator.of(context)
         .push(MaterialPageRoute<void>(builder: (_) => const InviteScreen()));
@@ -1091,14 +1105,21 @@ class _MapScreenState extends State<MapScreen>
                 child: Column(
                   children: [
                     // OPEN: S:38 .brand 21px 800 - theirs shows the family name in a chip; left as is, remove nothing
+                    // bray: a long press on the family chip opens the hidden
+                    // card gallery (ten card designs for Bo to pick from).
                     Padding(
                       padding: const EdgeInsets.only(top: 8, left: 12, right: 76),
-                      child: CircleSwitcher(
-                        circles: [_familyName],
-                        selectedIndex: 0,
-                        onSelected: (_) {},
-                        onJoinCircle: _hasFamily ? null : _openJoinCircle,
-                        alignment: Alignment.centerLeft,
+                      child: GestureDetector(
+                        key: const Key('family-chip-hold'),
+                        behavior: HitTestBehavior.opaque,
+                        onLongPress: _openCardGallery,
+                        child: CircleSwitcher(
+                          circles: [_familyName],
+                          selectedIndex: 0,
+                          onSelected: (_) {},
+                          onJoinCircle: _hasFamily ? null : _openJoinCircle,
+                          alignment: Alignment.centerLeft,
+                        ),
                       ),
                     ),
                     if (_locationOff)
