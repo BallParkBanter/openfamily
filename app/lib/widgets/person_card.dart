@@ -141,8 +141,11 @@ class _PersonCardState extends State<PersonCard> {
     final String? place = statChipText(widget.place, driving: driving); // J:80 needs no place
     // #12 keeps every fact the old card had, so the speed rides the driving
     // chip: "🚗 Driving near Loganville Hwy · 61 mph".
-    final String? stat = stale ? 'updated $ago' : (place == null ? null : (mph == null ? place : '$place · $mph mph'));
-    final String? placeChip = stale ? place : null;
+    // Stale: the age badge (top right) already says "Xh ago", so the state
+    // chip is the last known place, not a second "updated" (Bo, live
+    // 2026-09-14: "the 'updated 5h ago' chip duplicates the badge").
+    final String? stat = stale ? place : (place == null ? null : (mph == null ? place : '$place · $mph mph'));
+    final String? placeChip = null;
     final List<String> drow = detailChipTexts(widget.place, driving: driving, now: now);
     final bool low = m.batteryPercent > 0 && m.batteryPercent <= BrayTokens.battLowAt;  // J:271
     final String batt = m.batteryPercent > 0 ? '${m.batteryPercent}' : '—';              // J:282 null → "—"
