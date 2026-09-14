@@ -105,6 +105,79 @@ class BrayTokens {
   // J:140-149 clusters() joins a person to a group when metres() < GROUP_M.
   static const double groupMetres = 120;
 
+  // ------------------------------------------------------------ mock2 (live)
+  // Bo's approved card mockup, /tmp/mock2 (family-app piece 5): everyone-2.html
+  // (B1 one-liner rows, `.v8-xs`) and focus-2.html (B4 card, `.v8-l`) over the
+  // real map at 800x1280 logical, the CSS in index.html. The mockup renders a
+  // 352 CSS px column at `zoom:1.5`, so every value here is CSS px x 1.5 and
+  // cites its selector. The cards float straight over the map - no panel -
+  // left-aligned with the bottom bar's SOS button (Bo, 2026-09-14, after
+  // seeing the centred first cut).
+  static const double m2Scale = 1.5;                             // mock2 everyone-2.html .float .stack zoom:1.5
+  static const double cardColumnW = 352 * m2Scale;               // mock2 everyone-2.html .float .stack width:352px = 528
+  static const double cardColumnLeft = 12;                       // mock2 everyone-2.html .float left:12px = the bottom bar's inset (map_bottom_bar.dart:53 horizontal:12)
+  static const double cardColumnGap = 8;                         // OPEN: measured everyone-2.png - air between the last card and the bar (.float bottom:120px on that frame)
+  static const double cardColumnMargin = 16;                     // OPEN: chosen - a phone narrower than the column keeps 16 each side
+  static const double cardStackGap = 16;                         // brief 2026-09-14 "16 px gap between cards" (index.html --gap 12px would be 18)
+  static const double m2Radius = 18 * m2Scale;                   // mock2 index.html :root --r:18px, .card border-radius:var(--r) = 27
+  static const Color m2Base = Color(0xFF0B1119);                 // mock2 index.html .v8 background:#0B1119 - under the photo
+  static const Color m2Lime = Color(0xFFC6F135);                 // mock2 index.html :root --lime:#C6F135 - the name, facts, chips
+  static const Color m2Dot = Color(0xFF7CFFB2);                  // mock2 index.html .dot background:#7CFFB2
+  static const double m2DotSize = 12 * m2Scale;                  // mock2 index.html .dot 12px = 18
+  static const double m2DotRing = 3 * m2Scale;                   // mock2 index.html .dot box-shadow 0 0 0 3px rgba(124,255,178,.25)
+  static const double m2DotRingAlpha = 0.25;
+  static const double m2DotGap = 8 * m2Scale;                    // mock2 index.html .nm gap:8px
+  // .v8 .shade: two gradients. Left to right rgba(7,11,18) .94 -> .72 @42% -> .22 @78% -> .10;
+  // bottom to top .88 -> .25 @55% -> 0.
+  static const Color m2Shade = Color(0xFF070B12);                // mock2 index.html .v8 .shade rgba(7,11,18,...)
+  static const List<double> m2ShadeXAlphas = <double>[0.94, 0.72, 0.22, 0.10];
+  static const List<double> m2ShadeXStops = <double>[0, 0.42, 0.78, 1];
+  static const List<double> m2ShadeYAlphas = <double>[0.88, 0.25, 0];   // bottom first
+  static const List<double> m2ShadeYStops = <double>[0, 0.55, 1];
+  static const double m2FaceX = 0.66;                            // OPEN: measured everyone-2.png / focus-2.png - the face sits about two thirds across the card
+  static const Color m2TextShadow = Color(0x99000000);           // mock2 index.html .v8 .nm text-shadow 0 1px 2px rgba(0,0,0,.6)
+  static const double m2TextShadowBlur = 2 * m2Scale;
+  static const double m2TextShadowDy = 1 * m2Scale;
+  static const Color m2MetaShadow = Color(0xE6000000);           // mock2 index.html .v8-meta text-shadow 0 1px 3px rgba(0,0,0,.9)
+  static const double m2MetaShadowBlur = 3 * m2Scale;
+  // B1 row (.v8-xs): one line - name, facts, three round icon chips.
+  static const double rowH = 64 * m2Scale;                       // mock2 index.html .v8-xs height:64px = 96
+  static const double rowPadL = 16 * m2Scale;                    // mock2 index.html .v8-xs .v8-in padding:0 12px 0 16px
+  static const double rowPadR = 12 * m2Scale;
+  static const double rowGap = 8 * m2Scale;                      // mock2 index.html .v8-xs .v8-in gap:8px - text block to chips
+  static const double rowNameSize = 22 * m2Scale;                // mock2 index.html .v8-line .nm font-size:22px = 33
+  static const double rowNameGap = 10 * m2Scale;                 // mock2 index.html .v8-line gap:10px - name to facts
+  static const double rowMetaSize = 15 * m2Scale;                // mock2 index.html :root --meta:15px, .v8-meta = 22.5
+  static const double rowMetaAlpha = 0.9;                        // mock2 index.html .v8-meta opacity:.9
+  static const double rowIconChip = 32 * m2Scale;                // mock2 index.html .v8-xs .chip.ico width/height:32px = 48
+  static const double rowIconSize = 16 * m2Scale;                // mock2 index.html .chip.ico font-size:16px = 24
+  static const double rowIconGap = 6 * m2Scale;                  // mock2 index.html .v8-xs .chips gap:6px = 9
+  // B4 card (.v8-l): name, state, facts, chip row, bottom-anchored.
+  static const double focusH = 168 * m2Scale;                    // mock2 index.html .v8-l height:168px = 252
+  static const double focusPadV = 14 * m2Scale;                  // mock2 index.html .v8-in padding:14px 16px
+  static const double focusPadH = 16 * m2Scale;
+  static const double focusNameSize = 28 * m2Scale;              // mock2 index.html .v8-l .nm font-size:28px = 42
+  static const double focusStateSize = 16 * m2Scale;             // mock2 index.html :root --fact:16px, .fact = 24 (the state line)
+  static const double focusStateTop = 4 * m2Scale;               // mock2 index.html .fact margin-top:4px
+  static const double focusStateAlpha = 0.92;                    // mock2 index.html .v8 .fact opacity:.92
+  static const double focusMetaSize = 15 * m2Scale;              // mock2 index.html :root --meta:15px, .meta = 22.5 (the facts line, and the detail line)
+  static const double focusMetaTop = 6 * m2Scale;                // mock2 index.html .meta margin-top:6px
+  static const double focusMetaAlpha = 0.72;                     // mock2 index.html .v8 .meta opacity:.72
+  static const double focusChipsTop = 12 * m2Scale;              // mock2 index.html .chips margin-top:12px
+  static const double focusChipGap = 8 * m2Scale;                // mock2 index.html .chips gap:8px
+  // .chip / .v8 .chip
+  static const double chipFont = 15 * m2Scale;                   // mock2 index.html :root --chip:15px = 22.5
+  static const FontWeight chipWeight = FontWeight.w600;          // mock2 index.html .chip font-weight:600
+  static const double chipPadV = 8 * m2Scale;                    // mock2 index.html .chip padding:8px 11px
+  static const double chipPadH = 11 * m2Scale;
+  static const double chipRadius = 999;                          // mock2 index.html .chip border-radius:999px
+  static const Color m2ChipFill = Color(0x9E070B12);             // mock2 index.html .v8 .chip background:rgba(7,11,18,.62)
+  static const Color m2ChipBorder = Color(0x73C6F135);           // mock2 index.html .v8 .chip border-color:rgba(198,241,53,.45)
+  static const double chipBorder = 1 * m2Scale;                  // mock2 index.html .chip border:1px
+  static const double nameSpacingEm = -0.02;                 // mock2 index.html .nm letter-spacing:-.02em (x font size)
+  static const double nameLineHeight = 1.1;                      // mock2 index.html .nm line-height:1.1
+  static const double textLineHeight = 1.3;                      // mock2 index.html body line-height:1.3
+
   // ---------------------------------------------------------------- piece 3
   // Sheet (S:44-50, S:165 override) and cards (S:112-158). DPR 2 on the tablet
   // goldens: CSS px = device px / 2.

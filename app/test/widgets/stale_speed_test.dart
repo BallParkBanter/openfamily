@@ -4,9 +4,8 @@
 // (Member.isStaleAt / displaySpeedAt, one place): a member greyed by the
 // mapper (MemberStatus.stopped) or whose last fix is older than kStaleAfter
 // (member_mapper's 10 min, now in member.dart) has no live speed to show -
-// no speed pill, no cone, no capsule speed, no "Driving" chip; the card's
-// state chip says "updated 3h ago", the age pill stays, the last known
-// place and street still show.
+// no speed pill, no cone, no capsule speed, no "Driving" state; the card's
+// facts say "updated 3h ago", the last known place and street still show.
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -106,30 +105,34 @@ void main() {
     expect(find.text('65'), findsNothing);
   });
 
-  testWidgets('card: a stale driver says "updated 3h ago", keeps the age pill and the place, and never "Driving"', (t) async {
+  testWidgets('card: a stale driver says "updated 3h ago" in the facts, keeps the last place, and never "Driving"', (t) async {
     final Member stale = m('Heidi Bray', ago: const Duration(hours: 3));
+    // The Everyone row: no state line; the facts carry "updated 3h ago".
     await t.pumpWidget(host(PersonCard(member: stale, label: 'Heidi', charging: false, now: now, place: hwy)));
     expect(find.textContaining('Driving'), findsNothing);
     expect(find.textContaining('mph'), findsNothing);
-    expect(t.widget<Text>(find.descendant(of: find.byKey(const Key('card-stat')), matching: find.byType(Text))).data, 'updated 3h ago');
-    expect(find.text('3h ago'), findsOneWidget);                                       // the age pill stays
-    expect(t.widget<Text>(find.descendant(of: find.byKey(const Key('card-place')), matching: find.byType(Text))).data, '12 mi away');   // the last known place, non-driving wording
-    // Focused: the street shows (J:287 hides it only while driving) with the city.
+    expect(find.byKey(const Key('card-stat')), findsNothing);
+    expect(t.widget<Text>(find.byKey(const Key('card-facts'))).data, 'updated 3h ago · 80%');
+    // Focused: the state line is the last known place (non-driving wording),
+    // the street shows (J:287 hides it only while driving) with the city on
+    // the detail line, and the facts say "updated 3h ago" where the speed would be.
     await t.pumpWidget(host(PersonCard(member: stale, label: 'Heidi', charging: false, now: now, place: hwy, focused: true)));
-    expect(find.text('Loganville Highway'), findsOneWidget);
-    expect(find.text('🌆 Loganville'), findsOneWidget);
+    expect(t.widget<Text>(find.byKey(const Key('card-stat'))).data, '12 mi away');
+    expect(t.widget<Text>(find.byKey(const Key('card-details'))).data, '🌆 Loganville · Loganville Highway');
+    expect(t.widget<Text>(find.byKey(const Key('card-facts'))).data, '80% · updated 3h ago');
     expect(find.textContaining('Driving'), findsNothing);
-    // Fresh again: the driving chip with the speed, no street, no place chip.
+    // Fresh again: the driving state line, the speed in the facts, no street.
     await t.pumpWidget(host(PersonCard(member: m('Heidi Bray', ago: const Duration(minutes: 10)), label: 'Heidi', charging: false, now: now, place: hwy, focused: true)));
-    expect(find.text('🚗 Driving · 65 mph'), findsOneWidget);
-    expect(find.byKey(const Key('card-place')), findsNothing);
+    expect(t.widget<Text>(find.byKey(const Key('card-stat'))).data, '🚗 Driving');
+    expect(t.widget<Text>(find.byKey(const Key('card-facts'))).data, '65 mph · 80% · 10m ago');
+    expect(t.widget<Text>(find.byKey(const Key('card-details'))).data, '🌆 Loganville');
     expect(find.text('Loganville Highway'), findsNothing);
   });
 
   testWidgets('card: the mapper\'s stopped status alone is stale too', (t) async {
     await t.pumpWidget(host(PersonCard(member: m('Heidi Bray', st: MemberStatus.stopped), label: 'Heidi', charging: false, now: now, place: hwy)));
     expect(find.textContaining('Driving'), findsNothing);
-    expect(find.text('updated 2m ago'), findsOneWidget);
+    expect(find.text('updated 2m ago · 80%'), findsOneWidget);
     expect(find.byKey(const Key('card-dot')), findsNothing);
   });
 }

@@ -1327,13 +1327,15 @@ class _MapScreenState extends State<MapScreen>
                 ),
               ),
             ),
-            // The `+` FAB rides the sheet's top edge; with no sheet (the
-            // default now) it sits 12 above the bar.
+            // The `+` FAB: 12 above the bar. The card column (Bo's mockup)
+            // is left-aligned and 528 wide, so on the tablet it never reaches
+            // the FAB and the FAB stays put (everyone-2.png); on a phone the
+            // column spans the width and the FAB rides its top edge instead.
             AnimatedPositioned(
               duration: BrayTokens.sheetTransition,
               curve: Curves.ease,
               right: 12,
-              bottom: controlBarReserved + fabLiftFor(_currentSheetHeight()),
+              bottom: controlBarReserved + fabLiftFor(_currentSheetHeight(), clear: fabClearOfColumn(media.size.width)),
               child: FloatingActionButton.small(
                 onPressed: _showAddActions,
                 tooltip: 'Add — Check In / Help Alert / Invite',
@@ -1680,9 +1682,17 @@ bool showRange(Member m) => m.position != null && m.status == MemberStatus.gpsIs
 /// sheet - it opens their PeopleScreen every time.
 SheetLevel everyoneChipTarget(SheetLevel current) => current == SheetLevel.cards ? SheetLevel.hidden : SheetLevel.cards;
 
-/// Where the `+` FAB sits above the bottom bar: 20 into the sheet's top edge
-/// when there is a sheet, 12 clear of the bar when there is none.
-double fabLiftFor(double sheetHeight) => sheetHeight > 0 ? sheetHeight - 20 : 12;
+/// Where the `+` FAB sits above the bottom bar: 20 into the column's top
+/// edge when the cards are up and would run under it, 12 clear of the bar
+/// when there are no cards or the column is [clear] of the FAB's corner.
+double fabLiftFor(double sheetHeight, {bool clear = false}) => sheetHeight > 0 && !clear ? sheetHeight - 20 : 12;
+
+/// Whether the card column (PeopleSheet.columnLeftFor / columnWidthFor) ends
+/// left of the small `+` FAB (40 wide, 12 from the right) with 8 of air, so
+/// the FAB can stay by the bar (everyone-2.png). 800 wide tablet: 12 + 528 +
+/// 8 = 548 <= 748. 412 wide phone: 16 + 380 + 8 = 404 > 360.
+bool fabClearOfColumn(double screenWidth) =>
+    PeopleSheet.columnLeftFor(screenWidth) + PeopleSheet.columnWidthFor(screenWidth) + 8 <= screenWidth - 12 - 40;
 
 /// The map area the sheet may cover (S:49 caps it at 62 % of this).
 double sheetMaxHeight({required double screenHeight, required double topInset, required double controlBarReserved}) =>

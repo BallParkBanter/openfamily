@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart' show Color;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:openfamily/models/member.dart';
 import 'package:openfamily/services/contact_link_store.dart';
@@ -6,7 +7,27 @@ import 'package:openfamily/theme/bray_tokens.dart';
 Member m(String name) => Member(id: name, name: name, position: null, status: MemberStatus.normal, batteryPercent: 0, address: '');
 
 void main() {
-  test('card geometry: variant 8 standard (Bo, 2026-09-14) on the viewer\'s sheet', () {
+  test('live card geometry: Bo\'s mock2 (2026-09-14) - CSS px x 1.5, cited per selector', () {
+    expect(BrayTokens.m2Scale, 1.5);            // .float .stack zoom:1.5
+    expect(BrayTokens.cardColumnW, 528);        // .float .stack width:352px
+    expect(BrayTokens.cardColumnLeft, 12);      // .float left:12px = the bar's inset
+    expect(BrayTokens.cardStackGap, 16);        // brief: 16 between cards
+    expect(BrayTokens.rowH, 96);                // .v8-xs height:64px
+    expect(BrayTokens.rowNameSize, 33);         // .v8-line .nm 22px
+    expect(BrayTokens.rowMetaSize, 22.5);       // --meta 15px
+    expect(BrayTokens.rowIconChip, 48);         // .v8-xs .chip.ico 32px
+    expect(BrayTokens.focusH, 252);             // .v8-l height:168px
+    expect(BrayTokens.focusNameSize, 42);       // .v8-l .nm 28px
+    expect(BrayTokens.focusStateSize, 24);      // --fact 16px
+    expect(BrayTokens.focusMetaSize, 22.5);     // --meta 15px
+    expect(BrayTokens.chipFont, 22.5);          // --chip 15px
+    expect(BrayTokens.chipRadius, 999);         // .chip border-radius
+    expect(BrayTokens.m2Radius, 27);            // --r 18px
+    expect(BrayTokens.m2Lime, const Color(0xFFC6F135));   // --lime
+    expect(BrayTokens.m2ShadeXAlphas.first, 0.94);        // .v8 .shade left edge
+    expect(BrayTokens.m2ShadeXAlphas.last, 0.10);         // ... right edge
+  });
+  test('card geometry: variant 8 standard (Bo, 2026-09-14) - the gallery\'s copy of the previous live card', () {
     expect(BrayTokens.cardH, 128);          // gallery #12 "8 standard"
     expect(BrayTokens.cardHViewer, 112);    // S:119 - the gallery's originals
     expect(BrayTokens.cardHFocus, 170);     // S:122

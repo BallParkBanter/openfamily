@@ -117,7 +117,7 @@ void main() {
     expect(mk.width, HomeChip.size);
   });
 
-  testWidgets('card: "Near" stat chip, and "📍 Save place" next to Link contact only when a POI exists', (t) async {
+  testWidgets('card: "Near" state line, and "📍 Save place" next to Link only when a POI exists', (t) async {
     int saved = 0;
     await t.pumpWidget(host(PersonCard(member: m('Charlie'), label: 'Charlie', charging: false, focused: true, now: now,
         place: poi('school', name: 'Hebron Christian Academy'), onLinkContact: () {}, onSavePlace: () => saved++)));
@@ -125,8 +125,8 @@ void main() {
     expect(find.byKey(const Key('card-link')), findsOneWidget);
     expect(find.byKey(const Key('card-save-place')), findsOneWidget);
     expect(find.text('📍 Save place'), findsOneWidget);
-    // #12's 15px chips in the test's wide Ahem font push the last one off an
-    // 800px card; the detail row scrolls sideways, so bring it into view.
+    // The 22.5px chips in the test's wide Ahem font push the last one off an
+    // 800px card; the chip row scrolls sideways, so bring it into view.
     await t.ensureVisible(find.byKey(const Key('card-save-place')));
     await t.tap(find.byKey(const Key('card-save-place')));
     expect(saved, 1);
