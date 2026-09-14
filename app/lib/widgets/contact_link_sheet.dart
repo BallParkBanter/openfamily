@@ -32,8 +32,8 @@ class ContactLinkSheet extends StatefulWidget {
 
   final Member member;
 
-  /// "Dad" / "Mom" / first name - the card's label, so the sheet says
-  /// "Link Mom to a contact", not the login name.
+  /// The card's label (BrayTokens.labelFor: linked contact's name, else first
+  /// name), so the sheet says "Link Mom to a contact", not the login name.
   final String label;
   final ContactLinkStore store;
   final DeviceContactLinker linker;

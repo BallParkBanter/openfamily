@@ -24,9 +24,13 @@ import 'day_detail_screen.dart';
 /// Tapping a member bubble on the map opens this screen (not a modal bottom
 /// sheet). Tapping a name in the member list still recenters the map.
 class MemberProfileScreen extends StatelessWidget {
-  const MemberProfileScreen({super.key, required this.member, this.contactStore, this.contactLinker, this.launch});
+  const MemberProfileScreen({super.key, required this.member, this.isViewer = false, this.contactStore, this.contactLinker, this.launch});
 
   final Member member;
+
+  /// bray: true when [member] is the signed-in user (labels read "You").
+  /// Only map_screen knows the viewer; other routes leave it false.
+  final bool isViewer;
 
   /// bray: the device-contact link store and picker; null = the app's own.
   /// Tests inject both.
@@ -133,7 +137,7 @@ class MemberProfileScreen extends StatelessWidget {
             ),
           const SizedBox(height: 16),
           // bray: Call · Text from the linked device contact, and the 🔗 link.
-          _ContactSection(member: member, store: contactStore ?? ContactLinkStore.instance, linker: contactLinker ?? const FlutterContactsLinker(), launch: launch),
+          _ContactSection(member: member, isViewer: isViewer, store: contactStore ?? ContactLinkStore.instance, linker: contactLinker ?? const FlutterContactsLinker(), launch: launch),
           const SizedBox(height: 12),
           _LocationRefreshButton(memberId: member.id),
           const SizedBox(height: 12),
@@ -186,9 +190,10 @@ class MemberProfileScreen extends StatelessWidget {
 /// phone's address book; nothing typed into OpenFamily. OPEN: chosen - no
 /// viewer source for this screen.
 class _ContactSection extends StatefulWidget {
-  const _ContactSection({required this.member, required this.store, required this.linker, this.launch});
+  const _ContactSection({required this.member, required this.isViewer, required this.store, required this.linker, this.launch});
 
   final Member member;
+  final bool isViewer;
   final ContactLinkStore store;
   final DeviceContactLinker linker;
   final Future<void> Function(String action, String uri)? launch;
@@ -217,7 +222,7 @@ class _ContactSectionState extends State<_ContactSection> {
   void _openSheet() {
     showContactLinkSheet(context,
         member: widget.member,
-        label: BrayTokens.labelFor(widget.member, isViewer: false),
+        label: BrayTokens.labelFor(widget.member, isViewer: widget.isViewer, link: widget.store.linkFor(widget.member.id)),
         store: widget.store,
         linker: widget.linker);
   }

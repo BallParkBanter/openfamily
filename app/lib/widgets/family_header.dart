@@ -25,6 +25,11 @@ class FamilyHeaderScrim extends StatelessWidget {
       );
 }
 
+/// The Following pill's text: "Following Heidi" / "Following You", with
+/// " · paused" while a gesture has the follow on hold. Same label as the
+/// cards and the summary chip (BrayTokens.labelFor).
+String followingText({required String label, bool paused = false}) => 'Following $label${paused ? ' · paused' : ''}';
+
 /// J:263-265: "🚗 following Dad" while the followed person is driving,
 /// otherwise "N home · M out" - only when a count exists.
 String? summaryText({required Member? following, required String? followingLabel, int? homeCount, int? outCount}) {

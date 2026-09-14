@@ -826,7 +826,7 @@ class _MapScreenState extends State<MapScreen>
   void _openMemberDetails(Member member) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => MemberProfileScreen(member: member),
+        builder: (_) => MemberProfileScreen(member: member, isViewer: member.id == _userId),
       ),
     );
   }
@@ -836,8 +836,14 @@ class _MapScreenState extends State<MapScreen>
   /// below listens to, so the chips change without a frame from the server.
   void _linkContact(Member member) {
     _touch();
-    showContactLinkSheet(context, member: member, label: BrayTokens.labelFor(member, isViewer: member.id == _userId));
+    showContactLinkSheet(context, member: member, label: _labelFor(member));
   }
+
+  /// The one label for [m] everywhere on this screen - cards, the focused
+  /// bubble, the Following pill, the summary chip. OPEN: Bo, 2026-09-14 "take
+  /// the perspective of whoever is logged in": "You" for the signed-in
+  /// member, the linked device contact's name, else the first name.
+  String _labelFor(Member m) => BrayTokens.labelFor(m, isViewer: m.id == _userId, link: ContactLinkStore.instance.linkFor(m.id));
 
   /// Opens the dedicated full-screen family member roster (the People
   /// destination in the bottom bar). It consumes the map's single live member
@@ -1049,7 +1055,7 @@ class _MapScreenState extends State<MapScreen>
                   members: _focus.visible(members),        // focus: others hidden (J:175-181)
                   expandedClusters: _expandedClusters,
                   selectedId: _followId,                    // J:101: the ringed face inside a capsule
-                  labelFor: (Member m) => _focus.focusedId == m.id ? BrayTokens.labelFor(m, isViewer: m.id == _userId) : null, // design list: Dad / Mom / Me
+                  labelFor: (Member m) => _focus.focusedId == m.id ? _labelFor(m) : null, // labels relative to the viewer (You / contact name / first name)
                   onMemberTap: _focusMember,
                   onMemberHold: _openMemberDetails,         // design list: hold = full details
                   onClusterTap: _expandCluster,
@@ -1122,8 +1128,7 @@ class _MapScreenState extends State<MapScreen>
                     padding: const EdgeInsets.only(top: 8),
                     child: Center(
                       child: _FollowingPill(
-                        member: _followedMember!,
-                        isSelf: _followedMember!.id == _userId,
+                        label: _labelFor(_followedMember!),
                         paused: _followPaused,
                         onProfile: () => _openMemberDetails(_followedMember!),
                         // Piece 3: one focus/follow state - letting go of the
@@ -1150,7 +1155,7 @@ class _MapScreenState extends State<MapScreen>
                       final Member? f = _followedMember;
                       final String? s = summaryText(
                         following: f,
-                        followingLabel: f == null ? null : BrayTokens.labelFor(f, isViewer: f.id == _userId),
+                        followingLabel: f == null ? null : _labelFor(f),
                         homeCount: _homeCountOf(members), outCount: _outCountOf(members),
                       );
                       return s == null ? const SizedBox.shrink() : Padding(padding: const EdgeInsets.only(top: 8), child: FamilySummaryChip(text: s));
@@ -1338,17 +1343,18 @@ class _LayerToggle extends StatelessWidget {
 
 /// The pill shown while the camera is following someone. Names who, opens
 /// their profile, and lets the user stop without having to drag the map.
+/// bray: [label] is the same BrayTokens.labelFor the cards and the summary
+/// chip use ("Following Heidi" / "Following Mom" / "Following You"), never
+/// the raw login name.
 class _FollowingPill extends StatelessWidget {
   const _FollowingPill({
-    required this.member,
-    required this.isSelf,
+    required this.label,
     required this.onProfile,
     required this.onStop,
     this.paused = false,
   });
 
-  final Member member;
-  final bool isSelf;
+  final String label;
 
   /// True while a gesture has the follow on hold; the camera resumes by itself.
   final bool paused;
@@ -1371,8 +1377,7 @@ class _FollowingPill extends StatelessWidget {
                 size: 16, color: theme.accentInk),
             const SizedBox(width: 8),
             Text(
-              (isSelf ? 'Following you' : 'Following ${member.name}') +
-                  (paused ? ' · paused' : ''),
+              followingText(label: label, paused: paused),
               style: Theme.of(context).textTheme.labelLarge,
             ),
             const SizedBox(width: 4),
@@ -1462,7 +1467,9 @@ class _MemberMarkerLayer extends StatelessWidget {
   /// Design list: hold a marker = the full details.
   final ValueChanged<Member> onMemberHold;
 
-  /// Design list: the focused person's pill says "Dad" / "Mom" / "Me"; null
+  /// Labels relative to the viewer (OPEN: Bo, 2026-09-14 "take the
+  /// perspective of whoever is logged in"): the focused person's pill says
+  /// "You" / the linked contact's name / their first name; null
   /// keeps the account name.
   final String? Function(Member) labelFor;
   final void Function(String clusterId, LatLng centroid) onClusterTap;

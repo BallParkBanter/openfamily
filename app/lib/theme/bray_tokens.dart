@@ -5,6 +5,7 @@
 // (ssh bobray@192.168.1.103 "cat -n ~/family-viewer2/<file>"), not the charlie-phone repo copy.
 import 'package:flutter/material.dart';
 import '../models/member.dart';
+import '../services/contact_link_store.dart';
 
 class BrayTokens {
   BrayTokens._();
@@ -169,19 +170,28 @@ class BrayTokens {
   static const Duration idleBack = Duration(minutes: 5); // design list "5 minutes idle = back to everyone"
   static const double focusRing = 4;                 // J:101 border-width:4px for the selected face
 
-  /// Design list "Labels relative to the viewer: Dad, Mom, Me". The viewer is
-  /// "Me"; Bo is "Dad" (P:52) and Heidi "Mom" (P:55); everyone else gets their
-  /// first name (P:60 labels Charlie "Me" only because that viewer IS Charlie;
-  /// from a parent's tablet he is "Charlie" — OPEN: chosen). "Test Dad" /
-  /// "Test Charlie" are the rig's Bray Test family.
-  static String labelFor(Member m, {required bool isViewer}) {
-    if (isViewer) return 'Me';
-    final String n = m.name.trim().toLowerCase();
-    if (n.startsWith('bo') || n.startsWith('test dad')) return 'Dad';
-    if (n.startsWith('heidi')) return 'Mom';
-    if (n.startsWith('test charlie')) return 'Charlie';
-    final String first = m.name.trim().split(RegExp(r'\s+')).first;
-    return first.isEmpty ? m.name : first;
+  /// Labels relative to the viewer. OPEN: Bo, 2026-09-14 "take the
+  /// perspective of whoever is logged in" - the app is not just Charlie's.
+  /// The signed-in member is "You"; anyone else is named the way THIS phone
+  /// knows them: the linked device contact's name when a link exists
+  /// (ContactLinkStore - contact "Mom" -> "Mom", "Heidi Bray" -> "Heidi"),
+  /// else the member's own first name. No name-based special cases. The rig's
+  /// "Test Charlie" / "Test Dad" read past the "Test " prefix ("Charlie",
+  /// "Dad") so the Bray Test family labels like the real one.
+  static String labelFor(Member m, {required bool isViewer, LinkedContact? link}) {
+    if (isViewer) return 'You';
+    final String? fromLink = link == null ? null : _firstWord(link.displayName);
+    if (fromLink != null) return fromLink;
+    return _firstWord(m.name, skipTest: true) ?? m.name;
+  }
+
+  /// First word of [name]; with [skipTest], the word after a leading "Test".
+  /// Null when there is no word at all.
+  static String? _firstWord(String name, {bool skipTest = false}) {
+    final List<String> words = name.trim().split(RegExp(r'\s+')).where((String w) => w.isNotEmpty).toList();
+    if (words.isEmpty) return null;
+    if (skipTest && words.length > 1 && words.first.toLowerCase() == 'test') return words[1];
+    return words.first;
   }
 
   /// Card photo crop: P:53 "center 38%" (Bo), P:56 "center 63%" (Heidi),

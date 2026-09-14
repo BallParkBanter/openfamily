@@ -217,7 +217,7 @@ void main() {
     testWidgets('unlinked with the upstream profile phone: Call · Text on it (cleaned) plus the link chip', (t) async {
       final List<String> fired = <String>[];
       await t.pumpWidget(host(PersonCard(
-        member: m('Bo Bray'), label: 'Me', charging: false, focused: true, now: now,
+        member: m('Bo Bray'), label: 'You', charging: false, focused: true, now: now,
         phone: '+1 404-555-1212', onLinkContact: () {}, launch: (String a, String u) async => fired.add(u),
       )));
       expect(find.byKey(const Key('card-call')), findsOneWidget);
@@ -314,7 +314,7 @@ void main() {
       await t.pumpAndSettle();
       await t.tap(find.byKey(const Key('profile-link-contact')));
       await t.pumpAndSettle();
-      expect(find.text('🔗 Mom is linked'), findsOneWidget);   // same sheet as the card
+      expect(find.text('🔗 Heidi is linked'), findsOneWidget);   // same sheet as the card; labelled from the linked contact ("Heidi Bray"), not a Dad/Mom guess
     });
   });
 }

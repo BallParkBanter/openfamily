@@ -61,8 +61,8 @@ void main() {
   });
   testWidgets('semantics label names the card for the rig', (t) async {
     final SemanticsHandle handle = t.ensureSemantics();
-    await t.pumpWidget(host(PersonCard(member: m('Bo Bray', batt: 64), label: 'Me', charging: false, now: now)));
-    expect(find.bySemanticsLabel(RegExp(r'^Me card · battery 64% · 33m ago')), findsOneWidget);
+    await t.pumpWidget(host(PersonCard(member: m('Bo Bray', batt: 64), label: 'You', charging: false, now: now)));
+    expect(find.bySemanticsLabel(RegExp(r'^You card · battery 64% · 33m ago')), findsOneWidget);
     handle.dispose();
   });
 }

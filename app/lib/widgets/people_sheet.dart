@@ -46,7 +46,8 @@ class PeopleSheet extends StatelessWidget {
   final MemberPlace? Function(Member) placeFor;
 
   /// bray: the device contact linked to a member (ContactLinkStore), for the
-  /// focused card's Call/Text chips. Null = no linking on this host.
+  /// focused card's Call/Text chips and for the card's label (a linked
+  /// contact "Mom" labels the card "Mom"). Null = no linking on this host.
   final LinkedContact? Function(Member)? contactFor;
 
   /// bray: the focused card's 🔗 chip - open the link sheet for this member.
@@ -81,7 +82,8 @@ class PeopleSheet extends StatelessWidget {
     }
   }
 
-  /// Everyone else in roster order, then the viewer - the golden's Dad, Mom, Me.
+  /// Everyone else in roster order, then the viewer - the golden's order
+  /// (others first, "You" last).
   static List<Member> orderedFor(List<Member> members, String? viewerId) {
     final List<Member> others = members.where((m) => m.id != viewerId).toList();
     final List<Member> me = members.where((m) => m.id == viewerId).toList();
@@ -108,19 +110,22 @@ class PeopleSheet extends StatelessWidget {
     }
   }
 
-  PersonCard _card(Member m, {required bool focused}) => PersonCard(
+  PersonCard _card(Member m, {required bool focused}) {
+    final LinkedContact? link = contactFor?.call(m);
+    return PersonCard(
         key: ValueKey<String>('person-${m.id}'),
         member: m,
-        label: BrayTokens.labelFor(m, isViewer: m.id == viewerId),
+        label: BrayTokens.labelFor(m, isViewer: m.id == viewerId, link: link),
         charging: chargingFor(m),
         place: placeFor(m),
         focused: focused,
-        contact: contactFor?.call(m),
+        contact: link,
         onLinkContact: onLinkContact == null ? null : () => onLinkContact!(m),
         now: now,
         onTap: onCardTap == null ? null : () => onCardTap!(m),
         onLongPress: onCardHold == null ? null : () => onCardHold!(m),
       );
+  }
 
   @override
   Widget build(BuildContext context) {

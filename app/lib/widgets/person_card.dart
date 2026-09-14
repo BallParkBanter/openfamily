@@ -39,7 +39,7 @@ class PersonCard extends StatefulWidget {
 
   final Member member;
 
-  /// "Dad" / "Mom" / "Me" / first name - BrayTokens.labelFor, decided by the caller.
+  /// "You" / linked contact's name / first name - BrayTokens.labelFor, decided by the caller.
   final String label;
 
   /// From `Member.charging` (`bool?`, backend `charging`); the caller passes `m.charging ?? false`.

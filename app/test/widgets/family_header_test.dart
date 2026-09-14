@@ -10,9 +10,16 @@ Member m(String name, {int? mph}) => Member(id: name, name: name, position: cons
     batteryPercent: 0, address: '', movement: mph == null ? MovementType.none : MovementType.car, speedMph: mph);
 
 void main() {
+  test('following pill: the card\'s label, "You" for the viewer, " · paused" while held', () {
+    expect(followingText(label: 'Heidi'), 'Following Heidi');
+    expect(followingText(label: 'Mom'), 'Following Mom');
+    expect(followingText(label: 'You'), 'Following You');
+    expect(followingText(label: 'Heidi', paused: true), 'Following Heidi · paused');
+  });
   test('summary: following a driver wins; home count only when the feed gives one; else nothing', () {
-    expect(summaryText(following: m('Bo Bray', mph: 61), followingLabel: 'Dad'), '🚗 following Dad');
-    expect(summaryText(following: m('Bo Bray'), followingLabel: 'Dad', homeCount: 3), '3 home');      // not driving: J:263 needs foc.driving
+    expect(summaryText(following: m('Bo Bray', mph: 61), followingLabel: 'Bo'), '🚗 following Bo');
+    expect(summaryText(following: m('Heidi Bray', mph: 61), followingLabel: 'Mom'), '🚗 following Mom');   // the linked contact's name, same as the card
+    expect(summaryText(following: m('Bo Bray'), followingLabel: 'Bo', homeCount: 3), '3 home');      // not driving: J:263 needs foc.driving
     expect(summaryText(following: null, followingLabel: null, homeCount: 2, outCount: 1), '2 home · 1 out');
     expect(summaryText(following: null, followingLabel: null, homeCount: 3, outCount: 0), '3 home');
     expect(summaryText(following: null, followingLabel: null), isNull);
