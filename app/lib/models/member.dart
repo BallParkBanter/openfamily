@@ -8,6 +8,14 @@ import 'member_place.dart';
 /// "race car with flames".
 const int kSpeedingMph = 70;
 
+/// Speed (mph) below which the map shows no speed pill at all. Bo's design
+/// list: "Speed pill under the face; hidden below ~1 mph". A parked member
+/// keeps [MovementType.car] from their last moving frame (the mapper falls
+/// back to the previous movement when a frame carries no motion string), so
+/// without this floor the map showed "0 mph" under a member sitting at home
+/// (seen live 2026-09-14, build 9040).
+const int kSpeedPillMinMph = 1;
+
 /// Health/accuracy state of a member's location, mapped to the colored
 /// status circle shown on their avatar bubble and list row.
 enum MemberStatus {
@@ -184,9 +192,13 @@ class Member {
       speedMph != null &&
       speedMph! >= kSpeedingMph;
 
-  /// Whether the map pin should render a numeric speed caption.
+  /// Whether the map pin should render a numeric speed caption: driving,
+  /// with a speed, and that speed at least [kSpeedPillMinMph] (a parked car
+  /// shows no "0 mph").
   bool get hasDrivingSpeed =>
-      movement == MovementType.car && speedMph != null;
+      movement == MovementType.car &&
+      speedMph != null &&
+      speedMph! >= kSpeedPillMinMph;
 
   /// Initials used while no avatar is available.
   String get initials {
