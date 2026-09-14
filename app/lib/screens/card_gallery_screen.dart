@@ -2,7 +2,10 @@
 // bray: a hidden gallery of person-card designs on the app's own dark +
 // lime theme, for Bo to pick from (ten designs, then variant 8 at three
 // sizes - Bo, 2026-09-14: "i kind of like version 8.... but play with the
-// sizes"). Bo, 2026-09-14: "you used the cards from
+// sizes" - then, same day, "I told you to PLAY WITH DIFFERENT SIZES!!!":
+// 14-20 are #8 across a real range, 64 px one-liners to a 240 px hero,
+// half-width pairs, 125 / 150 % text, and the focus card alone at 220).
+// Bo, 2026-09-14: "you used the cards from
 // the home assistant version we made ... that does NOT match this green
 // theme ... make me like 10 different variations of the cards ... and show
 // me." Opened by long-pressing the family chip top-left of the map. One
@@ -27,7 +30,7 @@ import '../services/contact_link_store.dart';
 import '../services/member_avatar_cache.dart';
 import '../theme/app_theme.dart';
 import '../theme/bray_tokens.dart';
-import '../widgets/card_chips.dart' show statChipText;
+import '../widgets/card_chips.dart' show detailChipTexts, statChipText;
 import '../widgets/dot_grid.dart';
 import '../widgets/people_sheet.dart' show PeopleSheet;
 import '../widgets/place_text.dart' show isDriving, milesText, pillStreet, sinceText;
@@ -35,13 +38,21 @@ import 'marker_gallery_screen.dart';
 
 /// One design in the gallery.
 class CardVariant {
-  const CardVariant({required this.name, required this.note, required this.build, this.height = BrayTokens.cardHViewer, this.onMap = false});
+  const CardVariant({required this.name, required this.note, required this.build, this.height = BrayTokens.cardHViewer, this.onMap = false, this.buildAll, this.solo = false});
 
   final String name;
 
   /// One line for the header: what makes this one different.
   final String note;
   final Widget Function(BuildContext context, CardFacts facts) build;
+
+  /// Set when the design lays the family out itself (two cards a row, or
+  /// one card alone) instead of one [build] per person down the sheet. Each
+  /// person's card must still be keyed `gallery-card-<id>` at [height].
+  final Widget Function(BuildContext context, List<CardFacts> facts)? buildAll;
+
+  /// True when only the first person is shown (the focus layout, #20).
+  final bool solo;
 
   /// Card height. The viewer's 112 (S:119, BrayTokens.cardHViewer) unless the
   /// design needs otherwise.
@@ -69,6 +80,7 @@ class CardFacts {
     required this.distance,
     required this.since,
     required this.chip,
+    required this.details,
   });
 
   final Member member;
@@ -98,6 +110,16 @@ class CardFacts {
 
   /// The current card's emoji wording ("🚗 Driving near …"), for variant 8.
   final String? chip;
+
+  /// The focused card's detail chips (city, county, street, since), for #20.
+  final List<String> details;
+
+  /// The #8 state chip as the live card (#12) says it: the emoji wording
+  /// with the speed riding along while driving - "🚗 Driving · 61 mph".
+  String get stat {
+    final String base = chip ?? where;
+    return mph == null ? base : '$base · $mph mph';
+  }
 
   static CardFacts of(Member m, {required String label, required bool charging, required DateTime now}) {
     final MemberPlace? p = m.place;
@@ -140,6 +162,7 @@ class CardFacts {
       distance: distance,
       since: since,
       chip: statChipText(p, driving: driving),
+      details: detailChipTexts(p, driving: driving, now: now),
     );
   }
 }
@@ -175,6 +198,16 @@ class CardGalleryScreen extends StatefulWidget {
     CardVariant(name: '8 compact', note: '96 px: name 22, facts 14. The most photo per inch of sheet; four people fit.', height: _BackdropSize.compact.card, build: (c, f) => _PhotoBackdrop(f, size: _BackdropSize.compact)),
     CardVariant(name: '8 standard', note: '128 px: name 28, facts 16, battery 32. A little taller than today\'s 112.', height: _BackdropSize.standard.card, build: (c, f) => _PhotoBackdrop(f, size: _BackdropSize.standard)),
     CardVariant(name: '8 large', note: '168 px: name 34, facts 18, battery 40, chips 16. Near the focus card\'s height.', height: _BackdropSize.large.card, build: (c, f) => _PhotoBackdrop(f, size: _BackdropSize.large)),
+    // Bo, 2026-09-14, after 11-13: "I told you to PLAY WITH DIFFERENT
+    // SIZES!!!" - the same layout at three heights is not a size range.
+    // 14-20: #8's palette at genuinely different sizes and densities.
+    CardVariant(name: 'XS one-liner', note: '64 px: a 40 px face, name and place on one line, ago and battery right. Three people in 216 px.', height: 64, build: (c, f) => _XsOneLiner(f)),
+    CardVariant(name: 'S two-line', note: '84 px: a 48 px face, name over the place line, ago pill over the battery on the right.', height: 84, build: (c, f) => _STwoLine(f)),
+    CardVariant(name: 'XL photo hero', note: '240 px: the face-cropped photo fills the card; name 40, facts 20, battery 48, chips 18.', height: _BackdropSize.hero.card, build: (c, f) => _PhotoBackdrop(f, size: _BackdropSize.hero)),
+    CardVariant(name: 'Half-width pair', note: 'Two 150 px cards a row, facts stacked: Charlie | Heidi, then You. The sheet is half as tall.', height: 150, build: (c, f) => _HalfCard(f), buildAll: (c, all) => _PairSheet(all)),
+    CardVariant(name: 'Text scale 125 %', note: 'The standard 128 px card, every text size x 1.25: name 35, facts 20, battery 40, chips 19. For arm\'s length.', height: _BackdropSize.scale125.card, build: (c, f) => _PhotoBackdrop(f, size: _BackdropSize.scale125)),
+    CardVariant(name: 'Text scale 150 %', note: 'Every text size x 1.5: name 42, facts 24, battery 48, chips 22; the card grows to 160 px to fit.', height: _BackdropSize.scale150.card, build: (c, f) => _PhotoBackdrop(f, size: _BackdropSize.scale150)),
+    CardVariant(name: 'Focused-only tall', note: '220 px, one card alone as when a person is tapped: the detail chips and Call / Text / Link / Save place above the state row.', height: 220, solo: true, build: (c, f) => _FocusTall(f), buildAll: (c, all) => _SoloSheet(all.first)),
   ];
 
   @override
@@ -265,19 +298,21 @@ class _CardGalleryScreenState extends State<CardGalleryScreen> {
                       reverse: true,
                       child: _Sheet(
                         filled: !v.onMap,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            for (int i = 0; i < facts.length; i++) ...[
-                              if (i > 0) const SizedBox(height: BrayTokens.cardGap),
-                              SizedBox(
-                                key: Key('gallery-card-${facts[i].member.id}'),
-                                height: v.height,
-                                child: v.build(context, facts[i]),
+                        child: v.buildAll != null
+                            ? v.buildAll!(context, facts)
+                            : Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  for (int i = 0; i < facts.length; i++) ...[
+                                    if (i > 0) const SizedBox(height: BrayTokens.cardGap),
+                                    SizedBox(
+                                      key: Key('gallery-card-${facts[i].member.id}'),
+                                      height: v.height,
+                                      child: v.build(context, facts[i]),
+                                    ),
+                                  ],
+                                ],
                               ),
-                            ],
-                          ],
-                        ),
                       ),
                     ),
                   ),
@@ -487,18 +522,22 @@ class _Battery extends StatelessWidget {
 
 /// Where + distance, with the icon, on one line.
 class _Where extends StatelessWidget {
-  const _Where(this.f, {this.style = _bodyStyle, this.iconColor = AppColors.nightMuted, this.withSpeed = true, this.withDistance = true});
+  const _Where(this.f, {this.style = _bodyStyle, this.iconColor = AppColors.nightMuted, this.withSpeed = true, this.withDistance = true, this.withSince = false});
   final CardFacts f;
   final TextStyle style;
   final Color iconColor;
   final bool withSpeed;
   final bool withDistance;
+
+  /// Append "since 7:50am" (variant 15, whose one fact line carries it).
+  final bool withSince;
   @override
   Widget build(BuildContext context) {
     final List<String> bits = <String>[
       f.where,
       if (withSpeed && f.mph != null) '${f.mph} mph',
       if (withDistance && f.distance != null) f.distance!,
+      if (withSince && f.since != null) f.since!,
     ];
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -1084,14 +1123,20 @@ class _PhotoBackdrop extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Flexible(
+                    flex: 3,
                     child: Container(
                       padding: EdgeInsets.fromLTRB(z.facts * 12 / 14, z.facts * 5 / 14, z.facts * 12 / 14, z.facts * 5 / 14),   // #8: 12/5 at 14 px
                       decoration: BoxDecoration(color: AppColors.nightPaper.withValues(alpha: 0.75), borderRadius: BorderRadius.circular(99), border: Border.all(color: AppColors.nightBorder)),
-                      child: Text(f.chip ?? f.where, maxLines: 1, overflow: TextOverflow.ellipsis, style: _tabular(TextStyle(fontSize: z.facts, fontWeight: FontWeight.w700, color: AppColors.accentBright, height: 1.2))),
+                      child: Text(f.stat, maxLines: 1, overflow: TextOverflow.ellipsis, style: _tabular(TextStyle(fontSize: z.facts, fontWeight: FontWeight.w700, color: AppColors.accentBright, height: 1.2))),
                     ),
                   ),
                   const SizedBox(width: 6),
-                  _Chips(fill: AppColors.nightPaper.withValues(alpha: 0.75), border: AppColors.accentBright.withValues(alpha: 0.5), iconOnly: narrow, textSize: z.chips),
+                  // Loose, so a phone at the hero / 150 % sizes shrinks the
+                  // chips instead of overflowing; on the tablet they never bite.
+                  Flexible(
+                    flex: 2,
+                    child: _Fit(child: _Chips(fill: AppColors.nightPaper.withValues(alpha: 0.75), border: AppColors.accentBright.withValues(alpha: 0.5), iconOnly: narrow, textSize: z.chips)),
+                  ),
                   const Spacer(),
                   const SizedBox(width: 8),
                   _Battery(f, size: z.battery, color: BrandTheme.night.spark),
@@ -1129,6 +1174,12 @@ class _BackdropSize {
   // The winner (Bo, 2026-09-14) - the live PersonCard reads the same tokens.
   static const _BackdropSize standard = _BackdropSize(card: BrayTokens.cardH, name: BrayTokens.cardNameSize, facts: BrayTokens.cardFactSize, battery: BrayTokens.cardBattSize, chips: BrayTokens.cardChipSize, padH: BrayTokens.cardPadH, padTop: BrayTokens.cardPadTop, padBottom: BrayTokens.cardPadBottom);
   static const _BackdropSize large = _BackdropSize(card: 168, name: 34, facts: 18, battery: 40, chips: 16, padH: 16, padTop: 14, padBottom: 14);
+  // 16 · XL photo hero: the photo is the card.
+  static const _BackdropSize hero = _BackdropSize(card: 240, name: 40, facts: 20, battery: 48, chips: 18, padH: 18, padTop: 16, padBottom: 16);
+  // 18 / 19 · the standard card with its text at 125 % / 150 % (the OS
+  // "larger text" sizes); 125 % still fits 128 px, 150 % needs 160.
+  static const _BackdropSize scale125 = _BackdropSize(card: BrayTokens.cardH, name: 35, facts: 20, battery: 40, chips: 19, padH: BrayTokens.cardPadH, padTop: BrayTokens.cardPadTop, padBottom: BrayTokens.cardPadBottom);
+  static const _BackdropSize scale150 = _BackdropSize(card: 160, name: 42, facts: 24, battery: 48, chips: 22, padH: BrayTokens.cardPadH, padTop: BrayTokens.cardPadTop, padBottom: BrayTokens.cardPadBottom);
 }
 
 /// 9 · Ticket. Two-tone: the dark body carries the person, a lime stub on
@@ -1291,4 +1342,288 @@ class _CalloutPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _CalloutPainter old) => old.accent != accent;
+}
+
+// ---------------------------------------------------------------- 14-20: #8 across a real size range
+
+/// #8's card box: Night surface, 1 px Night border, the 22 px radius.
+BoxDecoration _v8Box({Color? border}) => BoxDecoration(
+      color: AppColors.nightSurface,
+      borderRadius: BorderRadius.circular(BrayTokens.cardRadius),
+      border: Border.all(color: border ?? AppColors.nightBorder),
+    );
+
+/// #8's veil over the photo: light at the top, near-solid at the bottom.
+const Widget _v8Veil = DecoratedBox(
+  decoration: BoxDecoration(
+    gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0x330A0E16), Color(0xE60A0E16)], stops: [0, 0.85]),
+  ),
+);
+
+/// #8's name: lime, w800, a soft shadow so it reads over a photo.
+TextStyle _v8Name(double size) => _nameStyle.copyWith(fontSize: size, color: AppColors.accentBright, shadows: const <Shadow>[Shadow(color: Color(0x99000000), blurRadius: 6)]);
+
+/// #8's ago pill: paper at .70, lime outline at .70, lime tabular text.
+class _AgoPill extends StatelessWidget {
+  const _AgoPill(this.f, {required this.size});
+  final CardFacts f;
+  final double size;
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: EdgeInsets.fromLTRB(size * 11 / 14, size * 4 / 14, size * 11 / 14, size * 4 / 14),
+        decoration: BoxDecoration(color: AppColors.nightPaper.withValues(alpha: 0.7), borderRadius: BorderRadius.circular(99), border: Border.all(color: AppColors.accentBright.withValues(alpha: 0.7))),
+        child: Text(f.ago, maxLines: 1, style: _tabular(TextStyle(fontSize: size, fontWeight: FontWeight.w700, color: AppColors.accentBright, height: 1.2))),
+      );
+}
+
+/// #8's state chip: paper at .75, Night border, lime text - the emoji
+/// wording with the speed while driving ([CardFacts.stat]).
+class _StateChip extends StatelessWidget {
+  const _StateChip(this.f, {required this.size});
+  final CardFacts f;
+  final double size;
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: EdgeInsets.fromLTRB(size * 12 / 14, size * 5 / 14, size * 12 / 14, size * 5 / 14),
+        decoration: BoxDecoration(color: AppColors.nightPaper.withValues(alpha: 0.75), borderRadius: BorderRadius.circular(99), border: Border.all(color: AppColors.nightBorder)),
+        child: Text(f.stat, maxLines: 1, overflow: TextOverflow.ellipsis, style: _tabular(TextStyle(fontSize: size, fontWeight: FontWeight.w700, color: AppColors.accentBright, height: 1.2))),
+      );
+}
+
+/// The focused card's detail chip (city, county, street, since): paper,
+/// Night border, ink text - information, not an action (person_card.dart _C2).
+class _DetailChip extends StatelessWidget {
+  const _DetailChip(this.text, {required this.size});
+  final String text;
+  final double size;
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: EdgeInsets.fromLTRB(size * 9 / 14, size * 4 / 14, size * 11 / 14, size * 4 / 14),
+        decoration: BoxDecoration(color: AppColors.nightPaper.withValues(alpha: 0.75), borderRadius: BorderRadius.circular(99), border: Border.all(color: AppColors.nightBorder)),
+        child: Text(text, maxLines: 1, style: _tabular(TextStyle(fontSize: size, fontWeight: FontWeight.w700, color: AppColors.nightInk, height: 1.2))),
+      );
+}
+
+/// 14 · XS one-liner. 64 px: the photo has no room to be a backdrop, so it
+/// is a 40 px face at the left; the name (lime) and the place line (ink,
+/// with its icon, speed and distance) share one line; the ago pill and the
+/// battery sit right. Three people take 216 px of sheet.
+class _XsOneLiner extends StatelessWidget {
+  const _XsOneLiner(this.f);
+  final CardFacts f;
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: _v8Box(),
+        child: Row(
+          children: [
+            _Face(f, size: 40, ring: f.accent, ringWidth: 2),
+            const SizedBox(width: 10),
+            // The name gets first claim on the line (up to 60 % of it); the
+            // place takes the rest and ellipsizes on a phone.
+            Expanded(
+              child: LayoutBuilder(
+                builder: (_, BoxConstraints c) => Row(children: [
+                  ConstrainedBox(constraints: BoxConstraints(maxWidth: c.maxWidth * 0.6), child: _Name(f, style: _nameStyle.copyWith(fontSize: 20, color: AppColors.accentBright))),
+                  const SizedBox(width: 10),
+                  Expanded(child: _Where(f, style: _bodyStyle.copyWith(fontSize: 14))),
+                ]),
+              ),
+            ),
+            const SizedBox(width: 10),
+            _AgoPill(f, size: 12),
+            const SizedBox(width: 10),
+            _Battery(f, size: 22, color: BrayTokens.v8Spark),
+          ],
+        ),
+      );
+}
+
+/// 15 · S two-line. 84 px: a 48 px face, the name over the place line (with
+/// "since" when there is one), the ago pill over the battery on the right.
+/// On the tablet the Call / Text / Link icons fit between; phones drop them.
+class _STwoLine extends StatelessWidget {
+  const _STwoLine(this.f);
+  final CardFacts f;
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.fromLTRB(12, 0, 14, 0),
+        decoration: _v8Box(),
+        child: _Responsive((bool narrow) => Row(
+          children: [
+            _Face(f, size: 48, ring: f.accent, ringWidth: 2),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _Name(f, style: _nameStyle.copyWith(fontSize: 22, color: AppColors.accentBright)),
+                  const SizedBox(height: 3),
+                  _Where(f, style: _bodyStyle.copyWith(fontSize: 15), withSince: true),
+                ],
+              ),
+            ),
+            if (!narrow) ...[
+              const SizedBox(width: 12),
+              _Chips(iconOnly: true, fill: AppColors.nightPaper.withValues(alpha: 0.75), border: AppColors.accentBright.withValues(alpha: 0.5), gap: 4),
+            ],
+            const SizedBox(width: 12),
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                _AgoPill(f, size: 13),
+                const SizedBox(height: 4),
+                _Battery(f, size: 26, color: BrayTokens.v8Spark),
+              ],
+            ),
+          ],
+        )),
+      );
+}
+
+/// 17 · Half-width pair: the sheet lays the family two to a row, the odd one
+/// (You) alone on the last row at the same half width.
+class _PairSheet extends StatelessWidget {
+  const _PairSheet(this.facts);
+  final List<CardFacts> facts;
+  @override
+  Widget build(BuildContext context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (int i = 0; i < facts.length; i += 2) ...[
+            if (i > 0) const SizedBox(height: BrayTokens.cardGap),
+            Row(
+              children: [
+                for (int j = i; j < i + 2; j++) ...[
+                  if (j > i) const SizedBox(width: BrayTokens.cardGap),
+                  Expanded(
+                    child: j < facts.length
+                        ? SizedBox(key: Key('gallery-card-${facts[j].member.id}'), height: 150, child: _HalfCard(facts[j]))
+                        : const SizedBox(height: 150),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ],
+      );
+}
+
+/// 17 · One half-width card, 150 px, #8 stacked: name, ago pill, then the
+/// state chip, then the icon chips and the battery along the bottom. Narrow
+/// enough that the chips shrink rather than the row overflowing.
+class _HalfCard extends StatelessWidget {
+  const _HalfCard(this.f);
+  final CardFacts f;
+  @override
+  Widget build(BuildContext context) => Container(
+        clipBehavior: Clip.antiAlias,
+        decoration: _v8Box(),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            _PhotoFill(f),
+            _v8Veil,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _Name(f, style: _v8Name(24)),
+                  const SizedBox(height: 5),
+                  _AgoPill(f, size: 13),
+                  const Spacer(),
+                  Row(children: [Flexible(child: _StateChip(f, size: 13))]),
+                  const SizedBox(height: 6),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Expanded(child: _Fit(child: _Chips(iconOnly: true, fill: AppColors.nightPaper.withValues(alpha: 0.75), border: AppColors.accentBright.withValues(alpha: 0.5), gap: 4))),
+                      const SizedBox(width: 8),
+                      _Battery(f, size: 28, color: BrayTokens.v8Spark),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+}
+
+/// 20 · The sheet with one card in it, as when a person is tapped.
+class _SoloSheet extends StatelessWidget {
+  const _SoloSheet(this.f);
+  final CardFacts f;
+  @override
+  Widget build(BuildContext context) => SizedBox(key: Key('gallery-card-${f.member.id}'), height: 220, child: _FocusTall(f));
+}
+
+/// 20 · Focused-only tall. 220 px, #8 at the large metrics (name 34, facts
+/// 18, battery 40, chips 16) with the focused card's detail row above the
+/// state row: city, county, street, since on the left; Call / Text / Link /
+/// Save place on the right (person_card.dart's drow, scrolling sideways when
+/// a phone is too narrow for all of it). The border is the person's colour,
+/// as the live focused card's is.
+class _FocusTall extends StatelessWidget {
+  const _FocusTall(this.f);
+  final CardFacts f;
+  static const _BackdropSize _z = _BackdropSize(card: 220, name: 34, facts: 18, battery: 40, chips: 16, padH: 16, padTop: 14, padBottom: 14);
+  @override
+  Widget build(BuildContext context) {
+    const _BackdropSize z = _z;
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: _v8Box(border: f.accent),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          _PhotoFill(f),
+          _v8Veil,
+          Positioned(left: z.padH, top: z.padTop - 1, child: _Name(f, style: _v8Name(z.name))),
+          Positioned(right: z.padH, top: z.padTop, child: _AgoPill(f, size: z.facts)),
+          Positioned(
+            left: z.padH, right: z.padH, bottom: z.padBottom + z.battery + 8,
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints box) => SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                clipBehavior: Clip.none,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minWidth: box.maxWidth),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(mainAxisSize: MainAxisSize.min, children: [
+                        for (final String c in f.details) ...[_DetailChip(c, size: z.chips), const SizedBox(width: 6)],
+                      ]),
+                      const SizedBox(width: 6),
+                      Row(mainAxisSize: MainAxisSize.min, children: [
+                        _Chips(fill: AppColors.nightPaper.withValues(alpha: 0.75), border: AppColors.accentBright.withValues(alpha: 0.5), textSize: z.chips),
+                        const SizedBox(width: 6),
+                        _Chip(const _Action('Save place', Icons.push_pin_rounded), fill: AppColors.nightPaper.withValues(alpha: 0.75), border: AppColors.accentBright.withValues(alpha: 0.5), textSize: z.chips),
+                      ]),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: z.padH, right: z.padH, bottom: z.padBottom,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Flexible(child: _StateChip(f, size: z.facts)),
+                const Spacer(),
+                const SizedBox(width: 8),
+                _Battery(f, size: z.battery, color: BrayTokens.v8Spark),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
