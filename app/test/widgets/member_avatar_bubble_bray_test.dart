@@ -22,14 +22,15 @@ void main() {
     expect(b.top.width, BrayTokens.ringSolo);
     expect(b.top.color, BrayTokens.accentHeidi);
     expect(t.getSize(find.byKey(const Key('bray-ring'))).width, BrayTokens.soloFace);
-    expect(find.text('Heidi Bray'), findsOneWidget);
+    expect(find.text('Heidi'), findsOneWidget);          // labelFor: the first name, never "Heidi Bray" (2026-09-14)
+    expect(find.text('Heidi Bray'), findsNothing);
     final tag = t.widget<Container>(find.byKey(const Key('bray-name-tag')));
     expect(((tag.decoration as BoxDecoration).border as Border).top.color, BrayTokens.accentHeidi);
     // The pill sits above the ring.
     expect(t.getRect(find.byKey(const Key('bray-name-tag'))).bottom,
         lessThanOrEqualTo(t.getRect(find.byKey(const Key('bray-ring'))).top));
     // OPEN: Bo, 2026-09-13 "too small on tablet screen" - 14px, not S:25's 10.5.
-    final Text name = t.widget<Text>(find.text('Heidi Bray'));
+    final Text name = t.widget<Text>(find.text('Heidi'));
     expect(name.style!.fontSize, BrayTokens.nameTagFont);
     expect(BrayTokens.nameTagFont, 14);
     // The taller pill still fits its zone above the ring. (No width check: the

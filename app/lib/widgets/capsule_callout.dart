@@ -9,6 +9,7 @@
 // Data: Member.place.since (member_place.dart:35-36) - when placeName/atHome
 // last changed for that member.
 import '../models/member.dart';
+import '../theme/bray_tokens.dart';
 
 /// Two arrivals closer than this are "together" (design list: "when everyone
 /// has been at this spot together"). OPEN: chosen - 15 min.
@@ -32,10 +33,13 @@ Member? calloutSubject(List<Member> members) {
 /// - newest = max(since), oldest = min(since).
 /// - newest − oldest < [kCalloutTogether]: "📍 here for <now − oldest>"
 ///   ("41 min", "13 hr, 41 min", "2 d, 3 hr").
-/// - otherwise: "<first name of the newest> arrived <now − newest> ago"
-///   ("41 min ago", "2 hr ago"). The caller is already relabelled "You"
-///   (map_screen._liveMembers), so it reads "You arrived …".
-String? capsuleCallout(List<Member> members, DateTime now) {
+/// - otherwise: "<label of the newest> arrived <now − newest> ago"
+///   ("41 min ago", "2 hr ago"). [labelFor] is the same BrayTokens.labelFor
+///   the cards and the solo pill use ("You" / the linked contact's name /
+///   the first name), threaded from the map; without it, the first name. The
+///   caller is already relabelled "You" (map_screen._liveMembers), so either
+///   way it reads "You arrived …".
+String? capsuleCallout(List<Member> members, DateTime now, {String Function(Member)? labelFor}) {
   if (members.length < 2) return null;
   final List<Member> dated = _dated(members);
   if (dated.isEmpty) return null;
@@ -44,12 +48,8 @@ String? capsuleCallout(List<Member> members, DateTime now) {
   if (newest.place!.since!.difference(oldest) < kCalloutTogether) {
     return '📍 here for ${hereFor(now.difference(oldest))}';
   }
-  return '${_firstName(newest.name)} arrived ${arrivedAgo(now.difference(newest.place!.since!))}';
-}
-
-String _firstName(String name) {
-  final String first = name.trim().split(RegExp(r'\s+')).first;
-  return first.isEmpty ? name : first;
+  final String who = labelFor != null ? labelFor(newest) : BrayTokens.labelFor(newest, isViewer: false);
+  return '$who arrived ${arrivedAgo(now.difference(newest.place!.since!))}';
 }
 
 /// "41 min", "13 hr, 41 min", "2 d, 3 hr" - the two largest units, zero parts

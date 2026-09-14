@@ -40,9 +40,17 @@ class MemberAvatarBubble extends StatelessWidget {
   final Member member;
   final VoidCallback? onTap;
 
-  /// Focus mode shows the viewer-relative label ("Dad") in the pill (golden
-  /// focus_dad.png); null keeps the account name as piece 2 delivered it.
+  /// The name pill's text - BrayTokens.labelFor, decided by the caller the
+  /// same way the cards are (map_screen._labelFor: "You" for the signed-in
+  /// member, the linked device contact's name, else the first name). Null
+  /// falls back to labelFor without a link - the first name - so a bare
+  /// bubble never prints the account name ("Heidi Bray"; seen live
+  /// 2026-09-14, every unfocused marker). The tooltip / a11y label keeps
+  /// member.name for the rig.
   final String? label;
+
+  /// What the pill prints (see [label]).
+  String get pillText => label ?? BrayTokens.labelFor(member, isViewer: false);
   final VoidCallback? onLongPress;
 
   /// Kept for callers; the Bray face is always [BrayTokens.soloFace], so this
@@ -224,7 +232,7 @@ class MemberAvatarBubble extends StatelessWidget {
                             ],
                           ),
                           child: Text(
-                            label ?? member.name,
+                            pillText,
                             maxLines: 1, // S:25 white-space:nowrap
                             softWrap: false,
                             overflow: TextOverflow.ellipsis,

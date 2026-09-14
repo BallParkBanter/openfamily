@@ -10,6 +10,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/member.dart';
+import '../services/contact_link_store.dart';
 import '../theme/bray_tokens.dart';
 import 'capsule_callout.dart';
 import 'heading_cone.dart';
@@ -17,10 +18,19 @@ import 'member_avatar_bubble.dart' show BrayChargingBolt, StatusAvatar;
 import 'place_text.dart' show pillStreet;
 
 class CapsuleBubble extends StatelessWidget {
-  const CapsuleBubble({super.key, required this.members, this.onTap, this.selectedId, this.now});
+  const CapsuleBubble({super.key, required this.members, this.onTap, this.selectedId, this.now, this.viewerId, this.contactFor});
 
   final List<Member> members;
   final VoidCallback? onTap;
+
+  /// The callout's "<name> arrived" names people the way the cards do
+  /// (BrayTokens.labelFor): "You" for [viewerId], the linked device contact's
+  /// name from [contactFor] (threaded like PeopleSheet.contactFor), else the
+  /// first name. Both null = first names.
+  final String? viewerId;
+  final LinkedContact? Function(Member)? contactFor;
+
+  String _labelFor(Member m) => BrayTokens.labelFor(m, isViewer: m.id == viewerId, link: contactFor?.call(m));
 
   /// The clock the callout's "here for" / "arrived … ago" is measured against;
   /// null reads DateTime.now() at build. Tests pass a fixed one.
@@ -137,7 +147,7 @@ class CapsuleBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final List<Member> preview = members.take(3).toList();
     final Member? lead = _lead;
-    final String? callout = capsuleCallout(members, now ?? DateTime.now());
+    final String? callout = capsuleCallout(members, now ?? DateTime.now(), labelFor: _labelFor);
     final String label = _label(callout);
     // S:69 each further face starts 58 - 18 = 40px after the previous one.
     const double step = BrayTokens.capsuleAvatar - BrayTokens.capsuleOverlap;

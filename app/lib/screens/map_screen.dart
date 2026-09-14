@@ -1144,7 +1144,9 @@ class _MapScreenState extends State<MapScreen>
                   members: _focus.visible(members),        // focus: others hidden (J:175-181)
                   expandedClusters: _expandedClusters,
                   selectedId: _followId,                    // J:101: the ringed face inside a capsule
-                  labelFor: (Member m) => _focus.focusedId == m.id ? _labelFor(m) : null, // labels relative to the viewer (You / contact name / first name)
+                  labelFor: _labelFor,                      // every pill: You / contact name / first name (was the focused one only)
+                  viewerId: _userId,
+                  contactFor: (Member m) => ContactLinkStore.instance.linkFor(m.id),
                   onMemberTap: _focusMember,
                   onMemberHold: _openMemberDetails,         // design list: hold = full details
                   onClusterTap: _expandCluster,
@@ -1566,11 +1568,18 @@ class _MemberMarkerLayer extends StatelessWidget {
     required this.onClusterTap,
     required this.labelFor,
     this.selectedId,
+    this.viewerId,
+    this.contactFor,
   });
 
   final List<Member> members;
   final Set<String> expandedClusters;
   final ValueChanged<Member> onMemberTap;
+
+  /// For the capsule's "<name> arrived" callout - the same viewer / contact
+  /// link the sheet gets (PeopleSheet.viewerId / contactFor).
+  final String? viewerId;
+  final LinkedContact? Function(Member)? contactFor;
 
   /// The face ringed inside a capsule (J:101); null rings nobody.
   final String? selectedId;
@@ -1579,10 +1588,11 @@ class _MemberMarkerLayer extends StatelessWidget {
   final ValueChanged<Member> onMemberHold;
 
   /// Labels relative to the viewer (OPEN: Bo, 2026-09-14 "take the
-  /// perspective of whoever is logged in"): the focused person's pill says
-  /// "You" / the linked contact's name / their first name; null
-  /// keeps the account name.
-  final String? Function(Member) labelFor;
+  /// perspective of whoever is logged in"): every pill says "You" / the
+  /// linked contact's name / their first name - BrayTokens.labelFor, the same
+  /// rule as the cards. (Until 2026-09-14 only the focused pill got it; the
+  /// rest printed "Heidi Bray".)
+  final String Function(Member) labelFor;
   final void Function(String clusterId, LatLng centroid) onClusterTap;
 
   @override
@@ -1614,6 +1624,8 @@ class _MemberMarkerLayer extends StatelessWidget {
               child: CapsuleBubble(
                 members: p.clusterMembers,
                 selectedId: selectedId,
+                viewerId: viewerId,
+                contactFor: contactFor,
                 onTap: () => onClusterTap(p.clusterId!, p.position),
               ),
             )

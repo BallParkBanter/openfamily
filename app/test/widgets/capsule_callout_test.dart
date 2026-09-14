@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:openfamily/models/member.dart';
 import 'package:openfamily/models/member_place.dart';
+import 'package:openfamily/services/contact_link_store.dart';
 import 'package:openfamily/theme/bray_tokens.dart';
 import 'package:openfamily/widgets/capsule_bubble.dart';
 import 'package:openfamily/widgets/capsule_callout.dart';
@@ -48,6 +49,16 @@ void main() {
       // The caller is already relabelled "You" (map_screen._liveMembers): "You arrived".
       expect(capsuleCallout([m('You', ago: const Duration(minutes: 5)), m('Charlie', ago: const Duration(hours: 1))], now),
           'You arrived 5 min ago');
+    });
+    test('the arrival is named by labelFor - the linked contact\'s name, "You" for the viewer - like the cards and the solo pill', () {
+      const LinkedContact mom = LinkedContact(contactId: '1', displayName: 'Mom', phones: [LinkedPhone(label: 'mobile', number: '1')]);
+      String label(Member x, {String? viewerId, LinkedContact? link}) => BrayTokens.labelFor(x, isViewer: x.id == viewerId, link: link);
+      final List<Member> late = [m('Heidi Bray', ago: const Duration(minutes: 5)), m('Charlie', ago: const Duration(hours: 1))];
+      expect(capsuleCallout(late, now), 'Heidi arrived 5 min ago');                                    // default: the first name
+      expect(capsuleCallout(late, now, labelFor: (Member x) => label(x, link: x.id == 'Heidi Bray' ? mom : null)), 'Mom arrived 5 min ago');
+      expect(capsuleCallout(late, now, labelFor: (Member x) => label(x, viewerId: 'Heidi Bray', link: mom)), 'You arrived 5 min ago');
+      // The rig's "Test Charlie" reads past the prefix, as everywhere else.
+      expect(capsuleCallout([m('Test Charlie', ago: const Duration(minutes: 5)), m('Bo', ago: const Duration(hours: 1))], now), 'Charlie arrived 5 min ago');
     });
     test('members without since are ignored; none with it, or one member -> null', () {
       expect(capsuleCallout([m('Bo Bray'), m('Charlie')], now), isNull);
@@ -95,6 +106,17 @@ void main() {
       // glyph: "Bo arrived" / "41 min ago" are 140px each in the 149px inner
       // width, so this string is two lines here as it is on the tablet.
       expect(t.renderObject<RenderParagraph>(find.text('Bo arrived 41 min ago')).didExceedMaxLines, isFalse);
+    });
+    testWidgets('the capsule threads viewerId / contactFor like the sheet: "Mom arrived", "You arrived"', (t) async {
+      const LinkedContact mom = LinkedContact(contactId: '1', displayName: 'Mom', phones: [LinkedPhone(label: 'mobile', number: '1')]);
+      final List<Member> late = [m('Charlie', ago: const Duration(hours: 3)), m('Heidi Bray', ago: const Duration(minutes: 41))];
+      await t.pumpWidget(host(CapsuleBubble(members: late, now: now, contactFor: (Member x) => x.id == 'Heidi Bray' ? mom : null)));
+      expect(find.text('Mom arrived 41 min ago'), findsOneWidget);
+      await t.pumpWidget(host(CapsuleBubble(members: late, now: now, viewerId: 'Heidi Bray', contactFor: (Member x) => mom)));
+      expect(find.text('You arrived 41 min ago'), findsOneWidget);
+      await t.pumpWidget(host(CapsuleBubble(members: late, now: now)));
+      expect(find.text('Heidi arrived 41 min ago'), findsOneWidget);
+      expect(find.textContaining('Heidi Bray'), findsNothing);
     });
     testWidgets('no since -> no callout; one member -> no callout', (t) async {
       final handle = t.ensureSemantics();
