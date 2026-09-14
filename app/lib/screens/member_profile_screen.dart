@@ -1,3 +1,5 @@
+import 'package:android_intent_plus/android_intent.dart';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -5,8 +7,12 @@ import 'package:latlong2/latlong.dart';
 import '../models/member.dart';
 import '../services/app_config.dart';
 import '../services/api_client.dart';
+import '../services/contact_link_store.dart';
+import '../services/device_contact_linker.dart';
 import '../services/location_refresh_service.dart';
 import '../theme/app_theme.dart';
+import '../theme/bray_tokens.dart';
+import '../widgets/contact_link_sheet.dart';
 import '../widgets/member_avatar_bubble.dart';
 import '../widgets/movement_icon.dart';
 import 'day_detail_screen.dart';
@@ -18,9 +24,17 @@ import 'day_detail_screen.dart';
 /// Tapping a member bubble on the map opens this screen (not a modal bottom
 /// sheet). Tapping a name in the member list still recenters the map.
 class MemberProfileScreen extends StatelessWidget {
-  const MemberProfileScreen({super.key, required this.member});
+  const MemberProfileScreen({super.key, required this.member, this.contactStore, this.contactLinker, this.launch});
 
   final Member member;
+
+  /// bray: the device-contact link store and picker; null = the app's own.
+  /// Tests inject both.
+  final ContactLinkStore? contactStore;
+  final DeviceContactLinker? contactLinker;
+
+  /// bray: tel:/sms: launcher override for tests.
+  final Future<void> Function(String action, String uri)? launch;
 
   @override
   Widget build(BuildContext context) {
@@ -118,6 +132,9 @@ class MemberProfileScreen extends StatelessWidget {
               value: [member.place?.city, member.place?.county].whereType<String>().join(' · '),
             ),
           const SizedBox(height: 16),
+          // bray: Call · Text from the linked device contact, and the 🔗 link.
+          _ContactSection(member: member, store: contactStore ?? ContactLinkStore.instance, linker: contactLinker ?? const FlutterContactsLinker(), launch: launch),
+          const SizedBox(height: 12),
           _LocationRefreshButton(memberId: member.id),
           const SizedBox(height: 12),
           // Day Detail (location history) entry point.
@@ -160,6 +177,141 @@ class MemberProfileScreen extends StatelessWidget {
     final int metres = acc < 1 ? 1 : acc.round();
     return '± $metres m';
   }
+}
+
+/// bray: the profile's phone block. Linked: the contact's name, one row per
+/// number ("📱 mobile · +1 404…") with call and text buttons, and a
+/// "Linked contact" tile that opens the same sheet the card uses (re-link /
+/// unlink). Not linked: a "Link contact" tile. Numbers come only from the
+/// phone's address book; nothing typed into OpenFamily. OPEN: chosen - no
+/// viewer source for this screen.
+class _ContactSection extends StatefulWidget {
+  const _ContactSection({required this.member, required this.store, required this.linker, this.launch});
+
+  final Member member;
+  final ContactLinkStore store;
+  final DeviceContactLinker linker;
+  final Future<void> Function(String action, String uri)? launch;
+
+  @override
+  State<_ContactSection> createState() => _ContactSectionState();
+}
+
+class _ContactSectionState extends State<_ContactSection> {
+  @override
+  void initState() {
+    super.initState();
+    widget.store.load();
+  }
+
+  Future<void> _intent(String action, String data) async {
+    if (widget.launch != null) return widget.launch!(action, data);
+    if (defaultTargetPlatform != TargetPlatform.android) return;
+    try {
+      await AndroidIntent(action: action, data: data).launch();
+    } catch (_) {
+      // No platform channel / no dialer: the profile must not crash over it.
+    }
+  }
+
+  void _openSheet() {
+    showContactLinkSheet(context,
+        member: widget.member,
+        label: BrayTokens.labelFor(widget.member, isViewer: false),
+        store: widget.store,
+        linker: widget.linker);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Color ink = BrandTheme.of(context).accentInk;
+    return ListenableBuilder(
+      listenable: widget.store,
+      builder: (BuildContext context, _) {
+        final LinkedContact? linked = widget.store.linkFor(widget.member.id);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (linked != null)
+              for (int i = 0; i < linked.phones.length; i++)
+                Padding(
+                  key: Key('profile-phone-$i'),
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: [
+                      SizedBox(width: 22, child: Center(child: Text(LinkedPhone.emojiFor(linked.phones[i].label), style: const TextStyle(fontSize: 18)))),
+                      const SizedBox(width: 14),
+                      SizedBox(
+                        width: 72,
+                        child: Text(
+                          linked.phones[i].label.isEmpty ? 'Phone' : _capitalise(linked.phones[i].label),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 14, color: theme.colorScheme.onSurfaceVariant),
+                        ),
+                      ),
+                      Expanded(
+                        child: Text(linked.phones[i].number, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                      ),
+                      IconButton(
+                        key: Key('profile-call-$i'),
+                        tooltip: 'Call ${linked.phones[i].label}'.trim(),
+                        icon: Icon(Icons.call, color: ink),
+                        onPressed: () => _intent('android.intent.action.DIAL', dialUri(linked.phones[i].number)),
+                      ),
+                      if (linked.phones[i] == linked.textPhone)
+                        IconButton(
+                          key: Key('profile-text-$i'),
+                          tooltip: 'Text',
+                          icon: Icon(Icons.sms_outlined, color: ink),
+                          onPressed: () => _intent('android.intent.action.SENDTO', smsUri(linked.phones[i].number)),
+                        ),
+                    ],
+                  ),
+                ),
+            if (linked != null) const SizedBox(height: 8),
+            Material(
+              color: BrandTheme.of(context).sheet,
+              borderRadius: BorderRadius.circular(14),
+              child: InkWell(
+                key: const Key('profile-link-contact'),
+                borderRadius: BorderRadius.circular(14),
+                onTap: _openSheet,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  child: Row(
+                    children: [
+                      Icon(linked == null ? Icons.link : Icons.contact_phone_outlined, color: ink, size: 24),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          linked == null ? 'Link contact' : 'Linked contact',
+                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: ink),
+                        ),
+                      ),
+                      Flexible(
+                        child: Text(
+                          linked == null ? 'Call · Text from your phone\'s contacts' : linked.displayName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(Icons.chevron_right, color: theme.colorScheme.onSurfaceVariant),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  static String _capitalise(String s) => s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
 }
 
 class _LocationRefreshButton extends StatefulWidget {

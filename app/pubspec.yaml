@@ -34,6 +34,12 @@ dependencies:
   # Native contact picker for emergency contacts. Uses the OS picker so the
   # app never needs READ_CONTACTS / full address-book access.
   flutter_native_contact_picker: ^0.0.12
+  # bray: link a family member to a device contact (Call/Text from the card).
+  # The native picker above returns ONE number with no label or id (Android
+  # picks a phone row). flutter_contacts' openExternalPick returns the whole
+  # contact - every number with its label - after READ_CONTACTS, which the
+  # link sheet asks for at link time only.
+  flutter_contacts: ^1.1.9
   # Current device location (place picker + welcome hero), with graceful
   # fallback when permission is denied or services are off.
   geolocator: ^13.0.2
