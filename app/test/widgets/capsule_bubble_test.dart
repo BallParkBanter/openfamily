@@ -67,5 +67,8 @@ void main() {
     final top = 0.5 * CapsuleBubble.markerHeight * (a.y + 1);
     expect(CapsuleBubble.markerWidth - left, closeTo(CapsuleBubble.markerWidth / 2, 0.001));
     expect(CapsuleBubble.markerHeight - top, closeTo(CapsuleBubble.markerHeight - BrayTokens.dotSize / 2, 0.001));
+    // The callout zone (Life360 callout, S:93-99) sits on top of the 88px
+    // capsule marker: pill 66 + lift 17 + half dot 5. The box grew upward only.
+    expect(CapsuleBubble.markerHeight, CapsuleBubble.calloutZone + 66 + BrayTokens.capsuleLift + BrayTokens.dotSize / 2);
   });
 }

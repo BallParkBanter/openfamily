@@ -68,6 +68,24 @@ class BrayTokens {
   static const Color speedPillText = Color(0xFF141B36);         // S:78 .fc-pill color
   static const double speedPillFont = 11;                       // OPEN: Bo, 2026-09-13 "too small on tablet screen" (S:78 .fc-pill font:700 9px/1.2; Bo reads this while driving)
 
+  // S:93-101 selected-person callout (.fc-call), reused as the group capsule's
+  // Life360 callout ("📍 here for 13 hr, 41 min" / "Bo arrived 41 min ago").
+  static const double calloutBottom = 100;                      // S:95 translate(… calc(-100% - 100px)): bottom edge 100px above the point
+  static const double calloutMaxW = 180;                        // S:96 max-width:180px (width:max-content, wraps, never spans the map)
+  static const Color calloutBg = Color(0xF0101426);             // S:97 background:rgba(16,20,38,.94)
+  static const double calloutBorder = 1.5;                      // S:97 border:1.5px solid var(--a) (colour = accentFor the subject)
+  static const double calloutRadius = 16;                       // S:97 border-radius:16px
+  static const double calloutPadTop = 7;                        // S:97 padding:7px 14px 8px
+  static const double calloutPadH = 14;
+  static const double calloutPadBottom = 8;
+  static const double calloutFont = 14;                         // S:98 font:800 14px/1.15
+  static const FontWeight calloutWeight = FontWeight.w800;      // S:98
+  static const double calloutLineHeight = 1.15;                 // S:98
+  static const int calloutMaxLines = 2;                         // S:93 "wraps to a 2nd line"
+  static const Color calloutShadow = Color(0x80000000);         // S:99 box-shadow:0 6px 18px rgba(0,0,0,.5)
+  static const double calloutShadowBlur = 18;
+  static const double calloutShadowDy = 6;
+
   // J:42 GROUP_M = 120 - "people within this many metres draw as one capsule";
   // J:140-149 clusters() joins a person to a group when metres() < GROUP_M.
   static const double groupMetres = 120;

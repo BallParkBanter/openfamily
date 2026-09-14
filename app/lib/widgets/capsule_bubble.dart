@@ -1,7 +1,8 @@
 // app/lib/widgets/capsule_bubble.dart
 // The Family Viewer's grouping capsule (style.css 62-86, app.js 99-121): a grey
 // pill of overlapping faces floating ABOVE the location, a tail, and a dot ON the
-// location - the group never covers the spot. One speed for the group.
+// location - the group never covers the spot. One speed for the group. Above
+// the pill, the Life360 callout (S:93-99 .fc-call; rule in capsule_callout.dart).
 //
 // Every visual constant is a BrayTokens value or a bare number with its source:
 //   S = family-viewer2/static/style.css   J = family-viewer2/static/app.js
@@ -10,14 +11,19 @@ import 'package:flutter/material.dart';
 
 import '../models/member.dart';
 import '../theme/bray_tokens.dart';
+import 'capsule_callout.dart';
 import 'member_avatar_bubble.dart' show BrayChargingBolt, StatusAvatar;
 import 'place_text.dart' show pillStreet;
 
 class CapsuleBubble extends StatelessWidget {
-  const CapsuleBubble({super.key, required this.members, this.onTap, this.selectedId});
+  const CapsuleBubble({super.key, required this.members, this.onTap, this.selectedId, this.now});
 
   final List<Member> members;
   final VoidCallback? onTap;
+
+  /// The clock the callout's "here for" / "arrived … ago" is measured against;
+  /// null reads DateTime.now() at build. Tests pass a fixed one.
+  final DateTime? now;
 
   /// Life360 (design list): "the selected person's face gets the ring inside
   /// the capsule; the others stay plain". J:101 border-color accent,
@@ -47,8 +53,28 @@ class CapsuleBubble extends StatelessWidget {
   /// and pokes 3px into the capsule's padding; it never leaves the capsule.
   static const double _speedPillDrop = 3;
 
-  /// pill + lift + the dot's lower half: 66 + 17 + 5 = 88.
-  static const double markerHeight = _pillH + _underH;
+  /// The callout at its tallest (S:93 "wraps to a 2nd line"): two lines of
+  /// S:98 14px/1.15, S:97 padding 7px top + 8px bottom, 1.5px border each
+  /// side = 50.2.
+  static const double _calloutH = BrayTokens.calloutMaxLines * BrayTokens.calloutFont * BrayTokens.calloutLineHeight +
+      BrayTokens.calloutPadTop +
+      BrayTokens.calloutPadBottom +
+      2 * BrayTokens.calloutBorder;
+
+  /// Clear space between the callout's bottom edge and the capsule's top
+  /// edge. S:95 puts the callout's bottom 100px above the point; the capsule's
+  /// top sits 17 + 66 = 83px above it: 17.
+  static const double _calloutGap = BrayTokens.calloutBottom - BrayTokens.capsuleLift - _pillH;
+
+  /// The zone above the capsule (like MemberAvatarBubble.nameTagZone above the
+  /// face): the tallest callout plus its gap = 67.2. Reserved whether or not a
+  /// callout is showing, so the marker box - and the dot's place in it - never
+  /// changes size; the callout is bottom-aligned in it, so a one-line callout
+  /// leaves its spare room at the top, not at the capsule.
+  static const double calloutZone = _calloutH + _calloutGap;
+
+  /// callout zone + pill + lift + the dot's lower half: 67.2 + 66 + 17 + 5 = 155.2.
+  static const double markerHeight = calloutZone + _pillH + _underH;
 
   /// Room for three faces (58 + 2 * 40, S:69) plus the capsule's edges and its
   /// 16px shadow (S:67) on either side.
@@ -78,9 +104,9 @@ class CapsuleBubble extends StatelessWidget {
   }
 
   /// ClusterBubble-compatible: "N people here" first, each name with its status
-  /// and movement, and the group's one "… mph" at the end (the test rig reads
-  /// this through uiautomator).
-  String _label() {
+  /// and movement, the group's one "… mph", and the callout last (the test rig
+  /// reads this through uiautomator).
+  String _label(String? callout) {
     final StringBuffer sb = StringBuffer('${members.length} people here');
     for (final Member m in members.take(3)) {
       sb.write(' · ${m.name}: ${m.status.description}');
@@ -94,6 +120,7 @@ class CapsuleBubble extends StatelessWidget {
       final String? street = pillStreet(lead.place?.street);
       if (street != null) sb.write(' · $street');
     }
+    if (callout != null) sb.write(' · $callout');
     return sb.toString();
   }
 
@@ -101,7 +128,8 @@ class CapsuleBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final List<Member> preview = members.take(3).toList();
     final Member? lead = _lead;
-    final String label = _label();
+    final String? callout = capsuleCallout(members, now ?? DateTime.now());
+    final String label = _label(callout);
     // S:69 each further face starts 58 - 18 = 40px after the previous one.
     const double step = BrayTokens.capsuleAvatar - BrayTokens.capsuleOverlap;
     final double stackW = BrayTokens.capsuleAvatar + step * (preview.length - 1);
@@ -117,6 +145,21 @@ class CapsuleBubble extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
+              // The callout zone (S:93-99 .fc-call), bottom-aligned so the
+              // callout sits _calloutGap above the capsule whatever its line
+              // count; empty (transparent, not tappable) when there is none.
+              SizedBox(
+                height: calloutZone,
+                child: callout == null
+                    ? null
+                    : Align(
+                        alignment: Alignment.bottomCenter,
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: _calloutGap),
+                          child: _Callout(text: callout, accent: BrayTokens.accentFor(calloutSubject(members)!)),
+                        ),
+                      ),
+              ),
               // The pill (S:63-67).
               Container(
                 key: const Key('capsule-pill'),
@@ -256,6 +299,49 @@ class CapsuleBubble extends StatelessWidget {
       ),
     );
   }
+}
+
+/// S:93-99 .fc-call: a dark translucent pill (S:97 rgba(16,20,38,.94)) with a
+/// 1.5px outline in the subject's accent (S:97 var(--a)), 16px radius, 7/14/8
+/// padding, 800 14px/1.15 white text (S:98), centred, at most 180px wide and
+/// two lines (S:93, S:96), with S:99's 0 6px 18px shadow. Text is centred
+/// (S:96 text-align:center) and wraps (S:99 white-space:normal).
+class _Callout extends StatelessWidget {
+  const _Callout({required this.text, required this.accent});
+
+  final String text;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        key: const Key('capsule-callout'),
+        constraints: const BoxConstraints(maxWidth: BrayTokens.calloutMaxW), // S:96
+        padding: const EdgeInsets.fromLTRB(
+            BrayTokens.calloutPadH, BrayTokens.calloutPadTop, BrayTokens.calloutPadH, BrayTokens.calloutPadBottom), // S:97
+        decoration: BoxDecoration(
+          color: BrayTokens.calloutBg, // S:97
+          border: Border.all(color: accent, width: BrayTokens.calloutBorder), // S:97
+          borderRadius: BorderRadius.circular(BrayTokens.calloutRadius), // S:97
+          boxShadow: const [
+            BoxShadow(
+                color: BrayTokens.calloutShadow,
+                blurRadius: BrayTokens.calloutShadowBlur,
+                offset: Offset(0, BrayTokens.calloutShadowDy)), // S:99
+          ],
+        ),
+        child: Text(
+          text,
+          textAlign: TextAlign.center, // S:96
+          maxLines: BrayTokens.calloutMaxLines, // S:93
+          overflow: TextOverflow.ellipsis, // OPEN: chosen - a 3rd line would push into the reserved zone
+          style: const TextStyle(
+            fontSize: BrayTokens.calloutFont, // S:98
+            fontWeight: BrayTokens.calloutWeight, // S:98
+            height: BrayTokens.calloutLineHeight, // S:98
+            color: Colors.white, // S:98
+          ),
+        ),
+      );
 }
 
 /// S:75-80 .fc-pill: white, 1px 5px padding, "61" in 700 ink (S:78 9px, raised
