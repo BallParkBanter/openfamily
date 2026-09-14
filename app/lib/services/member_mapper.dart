@@ -4,6 +4,8 @@ import '../models/member.dart';
 import '../models/member_place.dart';
 import '../models/place.dart';
 
+export '../models/member.dart' show kStaleAfter;
+
 /// Maps backend member JSON (from `GET /family/members` and the `/ws/stream`
 /// `members` frame) into a [Member].
 ///
@@ -207,8 +209,9 @@ Member memberFromPresenceUpdate(Member existing, Map<String, dynamic> json) {
   );
 }
 
-/// A member is "stale" when their last report is older than this.
-const Duration kStaleAfter = Duration(minutes: 10);
+// kStaleAfter (10 min) lives in models/member.dart now, next to the display
+// rules that read it (Member.isStaleAt / displaySpeedAt); this file re-exports
+// it (see the directives at the top) so callers keep compiling.
 
 /// Battery percentage at or below which a member is flagged as a warning.
 const int kLowBatteryThreshold = 15;

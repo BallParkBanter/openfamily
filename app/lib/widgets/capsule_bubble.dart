@@ -115,26 +115,28 @@ class CapsuleBubble extends StatelessWidget {
   );
 
   /// The group's speed is its fastest driver (every phone lags a little
-  /// differently) - one pill for the capsule, as the upstream ClusterBubble did.
-  Member? get _lead {
-    final List<Member> driving = members.where((m) => m.hasDrivingSpeed).toList();
+  /// differently) - one pill for the capsule, as the upstream ClusterBubble
+  /// did. Only speeds worth showing count (Member.displaySpeedAt: a stale
+  /// fix has none), so a group of quiet phones shows no speed.
+  Member? _lead(DateTime now) {
+    final List<Member> driving = members.where((m) => m.displaySpeedAt(now) != null).toList();
     if (driving.isEmpty) return null;
-    return driving.reduce((a, b) => (a.speedMph ?? 0) >= (b.speedMph ?? 0) ? a : b);
+    return driving.reduce((a, b) => (a.displaySpeedAt(now) ?? 0) >= (b.displaySpeedAt(now) ?? 0) ? a : b);
   }
 
   /// ClusterBubble-compatible: "N people here" first, each name with its status
   /// and movement, the group's one "… mph", and the callout last (the test rig
   /// reads this through uiautomator).
-  String _label(String? callout) {
+  String _label(String? callout, DateTime now) {
     final StringBuffer sb = StringBuffer('${members.length} people here');
     for (final Member m in members.take(3)) {
       sb.write(' · ${m.name}: ${m.status.description}');
-      if (m.movement != MovementType.none) sb.write(' ${m.movement.label}');
+      if (m.movement != MovementType.none && !m.isStaleAt(now)) sb.write(' ${m.movement.label}');
       if (m.place?.atHome == true) sb.write(' at Home');
     }
-    final Member? lead = _lead;
+    final Member? lead = _lead(now);
     if (lead != null) {
-      sb.write(' ${lead.speedMph} mph');
+      sb.write(' ${lead.displaySpeedAt(now)} mph');
       // The pill's second line (the rig reads "… 61 mph · Peachtree Ind.").
       final String? street = pillStreet(lead.place?.street);
       if (street != null) sb.write(' · $street');
@@ -145,17 +147,18 @@ class CapsuleBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final DateTime at = now ?? DateTime.now();
     final List<Member> preview = members.take(3).toList();
-    final Member? lead = _lead;
-    final String? callout = capsuleCallout(members, now ?? DateTime.now(), labelFor: _labelFor);
-    final String label = _label(callout);
+    final Member? lead = _lead(at);
+    final String? callout = capsuleCallout(members, at, labelFor: _labelFor);
+    final String label = _label(callout, at);
     // S:69 each further face starts 58 - 18 = 40px after the previous one.
     const double step = BrayTokens.capsuleAvatar - BrayTokens.capsuleOverlap;
     final double stackW = BrayTokens.capsuleAvatar + step * (preview.length - 1);
     // Life360 direction cone (piece 5): one for the group, only when everyone
     // in it is moving the same way (heading_cone.dart capsuleHeading); in the
     // lead driver's accent, like the speed pill.
-    final double? heading = capsuleHeading(members);
+    final double? heading = capsuleHeading(members, now: at);
 
     return Tooltip(
       message: label,
@@ -285,7 +288,7 @@ class CapsuleBubble extends StatelessWidget {
                                 bottom: -_speedPillDrop,
                                 child: Center(
                                   child: _SpeedPill(
-                                    mph: lead.speedMph!,
+                                    mph: lead.displaySpeedAt(at)!,
                                     street: pillStreet(lead.place?.street),
                                   ),
                                 ),

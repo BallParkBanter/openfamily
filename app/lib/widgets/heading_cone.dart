@@ -85,13 +85,15 @@ class HeadingCone extends StatelessWidget {
 }
 
 /// The one heading a capsule may show, or null for none. Every member must
-/// be moving with a known heading ([Member.hasHeadingCone]) and every pair of
-/// headings within [BrayTokens.coneAgreeDeg] of each other (two people in one
-/// car); a mixed group - someone parked, someone heading-less, or headings
-/// that disagree - gets no cone rather than a misleading one. OPEN: chosen.
-/// The result is the circular mean, so 350 and 10 give 0, not 180.
-double? capsuleHeading(List<Member> members) {
-  if (members.isEmpty || !members.every((m) => m.hasHeadingCone)) return null;
+/// be moving with a known heading ([Member.showsConeAt] - a stale fix is not
+/// moving) and every pair of headings within [BrayTokens.coneAgreeDeg] of
+/// each other (two people in one car); a mixed group - someone parked,
+/// someone heading-less, or headings that disagree - gets no cone rather
+/// than a misleading one. OPEN: chosen. The result is the circular mean, so
+/// 350 and 10 give 0, not 180. [now] null reads the wall clock.
+double? capsuleHeading(List<Member> members, {DateTime? now}) {
+  final DateTime at = now ?? DateTime.now();
+  if (members.isEmpty || !members.every((m) => m.showsConeAt(at))) return null;
   final List<double> headings = members.map((m) => m.headingDeg!).toList();
   for (int i = 0; i < headings.length; i++) {
     for (int j = i + 1; j < headings.length; j++) {

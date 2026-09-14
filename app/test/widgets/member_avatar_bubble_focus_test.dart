@@ -43,13 +43,18 @@ void main() {
   });
   testWidgets('"updated 3h ago" pill on a stale icon; nothing on a live one', (t) async {
     final DateTime seen = DateTime.now().subtract(const Duration(hours: 3));
+    final DateTime fresh = DateTime.now().subtract(const Duration(minutes: 2));
     await t.pumpWidget(host(MemberAvatarBubble(member: m('Heidi Bray', st: MemberStatus.stopped, seen: seen), onTap: () {})));
     expect(find.byKey(const Key('bray-age-pill')), findsOneWidget);
     expect(find.text('updated 3h ago'), findsOneWidget);
+    // A fix three hours old is stale whatever the status says (Member.isStaleAt -
+    // the greying timer may not have ticked yet; stale_speed_test).
     await t.pumpWidget(host(MemberAvatarBubble(member: m('Heidi Bray', seen: seen), onTap: () {})));
+    expect(find.byKey(const Key('bray-age-pill')), findsOneWidget);
+    await t.pumpWidget(host(MemberAvatarBubble(member: m('Heidi Bray', seen: fresh), onTap: () {})));
     expect(find.byKey(const Key('bray-age-pill')), findsNothing);
     // warning = low battery on a LIVE member (member_mapper.dart:214), not stale.
-    await t.pumpWidget(host(MemberAvatarBubble(member: m('Heidi Bray', st: MemberStatus.warning, seen: seen), onTap: () {})));
+    await t.pumpWidget(host(MemberAvatarBubble(member: m('Heidi Bray', st: MemberStatus.warning, seen: fresh), onTap: () {})));
     expect(find.byKey(const Key('bray-age-pill')), findsNothing);
   });
 }

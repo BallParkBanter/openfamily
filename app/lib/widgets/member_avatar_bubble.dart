@@ -35,10 +35,16 @@ class MemberAvatarBubble extends StatelessWidget {
     this.label,
     this.onLongPress,
     this.radius = 22,
+    this.now,
   });
 
   final Member member;
   final VoidCallback? onTap;
+
+  /// The clock the speed pill / cone / age pill are judged against
+  /// (Member.isStaleAt); null reads DateTime.now() at build. Tests pass a
+  /// fixed one; the map passes one per layer build.
+  final DateTime? now;
 
   /// The name pill's text - BrayTokens.labelFor, decided by the caller the
   /// same way the cards are (map_screen._labelFor: "You" for the signed-in
@@ -108,10 +114,12 @@ class MemberAvatarBubble extends StatelessWidget {
   /// readable, not ellipsized. The Stack is Clip.none, so nothing is cut.
   static const double _pillReach = (markerWidth - BrayTokens.soloFace) / 2;
 
-  static Size markerSizeFor(Member member) {
+  /// [now] as for the widget: the pill's slot exists only while there is a
+  /// speed to show (Member.displaySpeedAt - a stale fix has none).
+  static Size markerSizeFor(Member member, {DateTime? now}) {
     return Size(
       markerWidth,
-      member.hasDrivingSpeed
+      member.displaySpeedAt(now ?? DateTime.now()) != null
           ? avatarBox + speedGap + speedCaptionH
           : avatarBox,
     );
@@ -147,8 +155,8 @@ class MemberAvatarBubble extends StatelessWidget {
   /// OPEN: Bo, 2026-09-14 "my icon overlaps the home icon and it should not".
   static const double atHomeLift = 6; // HomeChip.size/2 (20) - the hidden dot (10) - tailDotGap (4): tail tip on the chip edge
 
-  static Alignment markerAlignmentFor(Member member) {
-    final double h = markerSizeFor(member).height;
+  static Alignment markerAlignmentFor(Member member, {DateTime? now}) {
+    final double h = markerSizeFor(member, now: now).height;
     final double lift = member.place?.atHome == true ? atHomeLift : 0;
     return Alignment(0, 1 - 2 * (pointFromTop + lift) / h);
   }
@@ -159,16 +167,21 @@ class MemberAvatarBubble extends StatelessWidget {
   /// bs 2/3). Null means the client never said - no bolt, same as false.
   static bool _isCharging(Member member) => member.charging == true;
 
-  /// Stale = FamilyService's staleness timer flipped the status to `stopped`
-  /// (member_mapper.dart:376-399) and the last fix time is known. `warning`
-  /// (low battery) and `gpsIssue` (poor accuracy) are live members with a
-  /// problem, not stale ones (design list: "updated 2m ago on stale icons").
-  static bool _isStale(Member m) => m.status == MemberStatus.stopped && m.lastSeen != null;
+  /// Stale = Member.isStaleAt (FamilyService's timer flipped the status to
+  /// `stopped`, member_mapper.dart refreshStaleness, OR the last fix is
+  /// simply older than kStaleAfter and the timer has not caught up) and the
+  /// last fix time is known, so the pill has an age to print. `warning` (low
+  /// battery) and `gpsIssue` (poor accuracy) on a fresh fix are live members
+  /// with a problem, not stale ones (design list: "updated 2m ago on stale
+  /// icons").
+  static bool _isStale(Member m, DateTime now) => m.isStaleAt(now) && m.lastSeen != null;
 
   @override
   Widget build(BuildContext context) {
-    final String tooltip = _tooltip();
-    final Size size = markerSizeFor(member);
+    final DateTime now = this.now ?? DateTime.now();
+    final int? mph = member.displaySpeedAt(now);
+    final String tooltip = _tooltip(now);
+    final Size size = markerSizeFor(member, now: now);
     final Color accent = BrayTokens.accentFor(member);
 
     return Tooltip(
@@ -189,7 +202,7 @@ class MemberAvatarBubble extends StatelessWidget {
               clipBehavior: Clip.none,
               fit: StackFit.expand,
               children: [
-                if (member.hasHeadingCone)
+                if (member.showsConeAt(now))
                   Positioned(
                     left: markerWidth / 2 - coneLength,
                     top: ringCentreFromTop - coneLength,
@@ -286,7 +299,7 @@ class MemberAvatarBubble extends StatelessWidget {
                             bottom: -1, // S:72 bottom:-1px
                             child: BrayChargingBolt(),
                           ),
-                        if (member.hasDrivingSpeed)
+                        if (mph != null)
                           Positioned(
                             // design list line 41: the slot spans the marker
                             // width (symmetric, so the pill stays centred on the
@@ -297,12 +310,12 @@ class MemberAvatarBubble extends StatelessWidget {
                             child: Center(
                               child: _BraySpeedPill(
                                 key: const Key('bray-speed-pill'),
-                                mph: member.speedMph!,
+                                mph: mph,
                                 street: pillStreet(member.place?.street),
                               ),
                             ),
                           )
-                        else if (_isStale(member))
+                        else if (_isStale(member, now))
                           // Design list: "updated 2m ago on stale icons" - same slot and
                           // metrics as the speed pill (S:75-80; the slot spans the
                           // marker width so "updated 12m ago" fits on one line),
@@ -314,7 +327,7 @@ class MemberAvatarBubble extends StatelessWidget {
                             child: Center(
                               child: _BrayAgePill(
                                 key: const Key('bray-age-pill'),
-                                text: 'updated ${BrayTokens.agoText(member.lastSeen, DateTime.now())}',
+                                text: 'updated ${BrayTokens.agoText(member.lastSeen, now)}',
                               ),
                             ),
                           ),
@@ -359,13 +372,15 @@ class MemberAvatarBubble extends StatelessWidget {
   }
 
   /// Colorblind-safe, screen-reader-friendly description of this bubble.
-  String _tooltip() {
+  /// A stale member's movement is history, not a state: no "Driving", no mph.
+  String _tooltip(DateTime now) {
     final StringBuffer sb = StringBuffer(member.name);
     sb.write(' — ${member.status.description}');
-    if (member.movement != MovementType.none) {
+    final int? mph = member.displaySpeedAt(now);
+    if (member.movement != MovementType.none && !member.isStaleAt(now)) {
       sb.write(' · ${member.isSpeeding ? 'Speeding' : member.movement.label}');
-      if (member.hasDrivingSpeed) {
-        sb.write(' ${member.speedMph} mph');
+      if (mph != null) {
+        sb.write(' $mph mph');
         // The pill's second line, so a screen reader (and the rig) hears the
         // same street the map shows.
         final String? street = pillStreet(member.place?.street);

@@ -1598,6 +1598,9 @@ class _MemberMarkerLayer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final MapCamera camera = MapCamera.of(context);
+    // One clock per layer build: every marker's speed / cone / age is judged
+    // against the same instant (Member.isStaleAt).
+    final DateTime now = DateTime.now();
     final List<BubblePlacement> placements = placeBubbles(
       members,
       toScreenOffset: (latLng) {
@@ -1626,6 +1629,7 @@ class _MemberMarkerLayer extends StatelessWidget {
                 selectedId: selectedId,
                 viewerId: viewerId,
                 contactFor: contactFor,
+                now: now,
                 onTap: () => onClusterTap(p.clusterId!, p.position),
               ),
             )
@@ -1633,11 +1637,12 @@ class _MemberMarkerLayer extends StatelessWidget {
             Marker(
               point: p.position,
               width: MemberAvatarBubble.markerWidth,
-              height: MemberAvatarBubble.markerSizeFor(p.member!).height,
-              alignment: MemberAvatarBubble.markerAlignmentFor(p.member!),
+              height: MemberAvatarBubble.markerSizeFor(p.member!, now: now).height,
+              alignment: MemberAvatarBubble.markerAlignmentFor(p.member!, now: now),
               child: MemberAvatarBubble(
                 member: p.member!,
                 label: labelFor(p.member!),
+                now: now,
                 onTap: () => onMemberTap(p.member!),
                 onLongPress: () => onMemberHold(p.member!),
               ),

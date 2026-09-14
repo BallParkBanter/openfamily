@@ -16,6 +16,8 @@ import 'package:openfamily/widgets/capsule_bubble.dart';
 import 'package:openfamily/widgets/member_avatar_bubble.dart';
 import 'package:openfamily/widgets/person_card.dart';
 
+// The members were seen at `now`, so the bubbles must judge them against the
+// same clock (a fix from 08:00 is stale by the wall clock - stale_speed_test).
 final DateTime now = DateTime(2026, 9, 14, 8, 0);
 Member m(String name, {int? mph, MemberPlace? place}) => Member(
     id: name, name: name, status: MemberStatus.normal, position: const LatLng(33.9, -84.205),
@@ -32,18 +34,18 @@ void main() {
   });
 
   testWidgets('solo marker: no speed pill at 0 mph, pill from 1 mph', (t) async {
-    await t.pumpWidget(host(MemberAvatarBubble(member: m('Bo Bray', mph: 0), onTap: () {})));
+    await t.pumpWidget(host(MemberAvatarBubble(member: m('Bo Bray', mph: 0), now: now, onTap: () {})));
     expect(find.textContaining('mph'), findsNothing);
     expect(find.byKey(const Key('bray-speed-pill')), findsNothing);
     // the marker box shrinks with the pill, so the dot stays on the point
-    expect(MemberAvatarBubble.markerSizeFor(m('Bo Bray', mph: 0)), MemberAvatarBubble.markerSizeFor(m('Bo Bray')));
-    await t.pumpWidget(host(MemberAvatarBubble(member: m('Bo Bray', mph: 1), onTap: () {})));
+    expect(MemberAvatarBubble.markerSizeFor(m('Bo Bray', mph: 0), now: now), MemberAvatarBubble.markerSizeFor(m('Bo Bray'), now: now));
+    await t.pumpWidget(host(MemberAvatarBubble(member: m('Bo Bray', mph: 1), now: now, onTap: () {})));
     expect(find.byKey(const Key('bray-speed-pill')), findsOneWidget);
   });
 
   testWidgets('solo marker a11y: no "mph" in the label at 0 mph', (t) async {
     final SemanticsHandle h = t.ensureSemantics();
-    await t.pumpWidget(host(MemberAvatarBubble(member: m('Bo Bray', mph: 0), onTap: () {})));
+    await t.pumpWidget(host(MemberAvatarBubble(member: m('Bo Bray', mph: 0), now: now, onTap: () {})));
     final SemanticsNode n = t.getSemantics(find.byType(MemberAvatarBubble));
     expect(n.label, isNot(contains('mph')));
     h.dispose();
@@ -51,11 +53,11 @@ void main() {
 
   testWidgets('capsule: two parked people show no speed pill; the label carries no mph', (t) async {
     final SemanticsHandle h = t.ensureSemantics();
-    await t.pumpWidget(host(CapsuleBubble(members: [m('Bo Bray', mph: 0), m('Charlie', mph: 0)])));
+    await t.pumpWidget(host(CapsuleBubble(members: [m('Bo Bray', mph: 0), m('Charlie', mph: 0)], now: now)));
     expect(find.textContaining('mph'), findsNothing);
     expect(t.getSemantics(find.byType(CapsuleBubble)).label, isNot(contains('mph')));
     h.dispose();
-    await t.pumpWidget(host(CapsuleBubble(members: [m('Bo Bray', mph: 0), m('Charlie', mph: 12)])));
+    await t.pumpWidget(host(CapsuleBubble(members: [m('Bo Bray', mph: 0), m('Charlie', mph: 12)], now: now)));
     expect(find.text('12'), findsOneWidget);   // the one mover still gets the pill
   });
 

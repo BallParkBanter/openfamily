@@ -7,7 +7,9 @@ import 'package:openfamily/theme/bray_tokens.dart';
 import 'package:openfamily/widgets/person_card.dart';
 
 final DateTime now = DateTime(2026, 9, 13, 12, 0);
-Member m(String name, {int batt = 100, MemberStatus st = MemberStatus.normal, int? mph, Duration ago = const Duration(minutes: 33)}) => Member(
+// Seen 3 min ago: fresh. (A fix older than kStaleAfter - 10 min - is stale
+// and the card reads "updated Nm ago" instead of the state; stale_speed_test.)
+Member m(String name, {int batt = 100, MemberStatus st = MemberStatus.normal, int? mph, Duration ago = const Duration(minutes: 3)}) => Member(
     id: name, name: name, position: null, status: st, batteryPercent: batt, address: '',
     movement: mph == null ? MovementType.none : MovementType.car, speedMph: mph, lastSeen: now.subtract(ago));
 Widget host(Widget w) => MaterialApp(home: Scaffold(body: SizedBox(width: 800, child: w)));
@@ -33,11 +35,11 @@ void main() {
     expect(batt.style!.fontSize, BrayTokens.cardBattSize);
     expect(batt.style!.fontSize, 32);
     expect(batt.style!.color, BrayTokens.v8Spark);
-    final Text ago = t.widget<Text>(find.text('33m ago'));                               // no 📡, no lavender badge
+    final Text ago = t.widget<Text>(find.text('3m ago'));                               // no 📡, no lavender badge
     expect(ago.style!.fontSize, BrayTokens.cardFactSize);
     expect(ago.style!.fontSize, 16);
     expect(ago.style!.color, BrayTokens.v8Lime);
-    expect(find.text('📡 33m ago'), findsNothing);
+    expect(find.text('📡 3m ago'), findsNothing);
     expect(find.byKey(const Key('card-bolt')), findsNothing);
     expect(find.byKey(const Key('card-stat')), findsNothing);   // no place yet: no chip, nothing faked
     expect(find.byKey(const Key('card-drow')), findsNothing);
@@ -100,7 +102,7 @@ void main() {
   testWidgets('semantics label names the card for the rig', (t) async {
     final SemanticsHandle handle = t.ensureSemantics();
     await t.pumpWidget(host(PersonCard(member: m('Bo Bray', batt: 64), label: 'You', charging: false, now: now)));
-    expect(find.bySemanticsLabel(RegExp(r'^You card · battery 64% · 33m ago')), findsOneWidget);
+    expect(find.bySemanticsLabel(RegExp(r'^You card · battery 64% · 3m ago')), findsOneWidget);
     handle.dispose();
   });
   testWidgets('a long label at a phone width ellipsizes instead of running under the ago pill', (t) async {

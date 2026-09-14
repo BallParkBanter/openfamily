@@ -16,6 +16,11 @@ const int kSpeedingMph = 70;
 /// (seen live 2026-09-14, build 9040).
 const int kSpeedPillMinMph = 1;
 
+/// A member is "stale" when their last report is older than this. The one
+/// threshold: member_mapper.dart derives the grey `stopped` status from it
+/// (_statusFrom, refreshStaleness) and the display rules below read it.
+const Duration kStaleAfter = Duration(minutes: 10);
+
 /// Health/accuracy state of a member's location, mapped to the colored
 /// status circle shown on their avatar bubble and list row.
 enum MemberStatus {
@@ -199,19 +204,49 @@ class Member {
       speedMph != null &&
       speedMph! >= kSpeedingMph;
 
-  /// Whether the map pin should render a numeric speed caption: driving,
-  /// with a speed, and that speed at least [kSpeedPillMinMph] (a parked car
-  /// shows no "0 mph").
+  /// Whether the last report carried a driving speed: driving, with a speed,
+  /// and that speed at least [kSpeedPillMinMph] (a parked car shows no
+  /// "0 mph"). This is the raw reading; what the map and the cards SHOW is
+  /// [displaySpeedAt], which also drops it once the report is stale.
   bool get hasDrivingSpeed =>
       movement == MovementType.car &&
       speedMph != null &&
       speedMph! >= kSpeedPillMinMph;
 
-  /// Whether the map marker draws the direction cone: moving (the same
-  /// [hasDrivingSpeed] floor as the speed pill, so a parked car has no cone)
-  /// and a known heading. Life360 shows its wedge only while the person is
-  /// on the move.
+  /// The raw cone rule: a driving speed ([hasDrivingSpeed]) and a known
+  /// heading. What the marker draws is [showsConeAt], which also drops it
+  /// once the report is stale.
   bool get hasHeadingCone => hasDrivingSpeed && headingDeg != null;
+
+  /// Stale for display, as of [now]: the mapper has already greyed them
+  /// ([MemberStatus.stopped]), or their last fix is older than [kStaleAfter]
+  /// even though the staleness timer has not ticked yet. A member who has
+  /// never reported ([lastSeen] null) with a live status is not stale - there
+  /// is nothing to be stale about.
+  ///
+  /// Live 2026-09-14: Heidi's phone went quiet mid-drive; three hours later
+  /// her marker still read "65 mph" with a cone and her card "🚗 Driving".
+  /// A reading that old is not a speed, it is a memory: the pill, the cone,
+  /// the card's driving chip and the capsule's one speed all read this.
+  bool isStaleAt(DateTime now) =>
+      status == MemberStatus.stopped ||
+      (lastSeen != null && now.difference(lastSeen!) > kStaleAfter);
+
+  /// [isStaleAt] the wall clock.
+  bool get isStale => isStaleAt(DateTime.now());
+
+  /// The speed to show as of [now], or null for none: [hasDrivingSpeed] and
+  /// not [isStaleAt]. The one rule behind the marker's speed pill, the
+  /// capsule's group speed and the card's "· 61 mph".
+  int? displaySpeedAt(DateTime now) => hasDrivingSpeed && !isStaleAt(now) ? speedMph : null;
+
+  /// [displaySpeedAt] the wall clock.
+  int? get displaySpeed => displaySpeedAt(DateTime.now());
+
+  /// Whether the marker draws the direction cone as of [now]: a speed to
+  /// show ([displaySpeedAt]) and a known heading. Life360 shows its wedge
+  /// only while the person is on the move - and a stale fix is not moving.
+  bool showsConeAt(DateTime now) => displaySpeedAt(now) != null && headingDeg != null;
 
   /// Initials used while no avatar is available.
   String get initials {

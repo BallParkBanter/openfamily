@@ -130,12 +130,19 @@ class _PersonCardState extends State<PersonCard> {
     // (1 mph) - a member rolling at 3 mph in the driveway is at home, not
     // driving, and a parked one at home must read the home chip (live
     // 2026-09-14: the card said "Driving near Home" at 0 mph).
-    final bool driving = isDriving(m);
-    final int? mph = driving && m.hasDrivingSpeed ? m.speedMph : null;
-    final String? statBase = statChipText(widget.place, driving: driving); // J:80 needs no place
+    // A stale fix (Member.isStaleAt: greyed by the mapper, or older than
+    // kStaleAfter) is not driving, whatever speed it carried: the state chip
+    // reads "updated 3h ago", the place chip keeps the last known place
+    // (non-driving wording, so no "Driving near"), the age pill stays, and
+    // the focused row shows the street (J:287 hides it only while driving).
+    final bool stale = m.isStaleAt(now);
+    final bool driving = !stale && isDriving(m);
+    final int? mph = driving ? m.displaySpeedAt(now) : null;
+    final String? place = statChipText(widget.place, driving: driving); // J:80 needs no place
     // #12 keeps every fact the old card had, so the speed rides the driving
     // chip: "🚗 Driving near Loganville Hwy · 61 mph".
-    final String? stat = statBase == null ? null : (mph == null ? statBase : '$statBase · $mph mph');
+    final String? stat = stale ? 'updated $ago' : (place == null ? null : (mph == null ? place : '$place · $mph mph'));
+    final String? placeChip = stale ? place : null;
     final List<String> drow = detailChipTexts(widget.place, driving: driving, now: now);
     final bool low = m.batteryPercent > 0 && m.batteryPercent <= BrayTokens.battLowAt;  // J:271
     final String batt = m.batteryPercent > 0 ? '${m.batteryPercent}' : '—';              // J:282 null → "—"
@@ -276,9 +283,13 @@ class _PersonCardState extends State<PersonCard> {
                     Expanded(
                       child: Align(
                         alignment: Alignment.bottomLeft,
-                        child: stat == null
-                            ? const SizedBox.shrink()
-                            : _StateChip(stat, key: const Key('card-stat')),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          if (stat != null) Flexible(child: _StateChip(stat, key: const Key('card-stat'))),
+                          if (placeChip != null) ...[
+                            const SizedBox(width: 6),
+                            Flexible(child: _StateChip(placeChip, key: const Key('card-place'))),
+                          ],
+                        ]),
                       ),
                     ),
                     const SizedBox(width: 8),
