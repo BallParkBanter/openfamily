@@ -76,6 +76,6 @@ void main() {
     expect(find.textContaining('Driving'), findsNothing);
     expect(find.text('📍 Loganville Hwy · 3.2 mi'), findsOneWidget);
     await t.pumpWidget(host(PersonCard(member: m('Bo Bray', mph: 8, place: hwy), label: 'Dad', charging: false, now: now, place: hwy)));
-    expect(find.text('🚗 Driving near Loganville Hwy'), findsOneWidget);
+    expect(find.text('🚗 Driving near Loganville Hwy · 8 mph'), findsOneWidget);   // #12: the speed rides the chip
   });
 }

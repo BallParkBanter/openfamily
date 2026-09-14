@@ -1,11 +1,19 @@
 // app/lib/widgets/person_card.dart
-// One person card, the Family Viewer's "PHOTO x GHOST NAME" design
-// (style.css 112-158, app.js 268-291): the photo IS the background under a
-// veil, a big translucent gradient first name top-left, "📡 33m ago" badge
-// top-right, one stat chip bottom-left, BATTERY with a big numeral
-// bottom-right. Focused (S:122 .card.sel): 170 tall, accent border, and the
-// detail chip row (S:154-158). Sources: S = style.css, J = app.js, verified
-// 2026-09-13 on the live viewer; "design list" = Joplin 41a4e11794924c8d9cc1921f07fc2ab1.
+// One person card - gallery variant 8 ("Photo backdrop, lime type") at its
+// "standard" size, #12 (card_gallery_screen.dart _PhotoBackdrop /
+// _BackdropSize.standard). Bo, 2026-09-14: "i kind of like version 8.... but
+// play with the sizes" - then the 128px one. The photo IS the background under
+// an ink veil; the first name top-left in solid lime (28px) with the online
+// dot after it; the "33m ago" pill top-right (lime outline); the one state
+// chip bottom-left ("🚗 Driving near Loganville Hwy · 61 mph", "🏠 Home",
+// "📍 Kroger · 4.2 mi"); the battery numeral bottom-right in spark with the
+// lime bolt while charging. Focused: 170 tall (S:122, unchanged), the accent
+// border, and the detail row - place chips left, Call / Text / 🔗 / Save
+// place right - in the same idiom above the bottom row. No lavender, no ghost
+// name, no BATTERY label: those were the Family Viewer's "PHOTO x GHOST NAME"
+// card (style.css 112-158), retired 2026-09-14; its tokens stay in
+// bray_tokens.dart as the record. Sizes: BrayTokens.card*; colours:
+// BrayTokens.v8* (each cites app_theme.dart).
 import 'dart:typed_data';
 
 import 'package:android_intent_plus/android_intent.dart';
@@ -123,12 +131,16 @@ class _PersonCardState extends State<PersonCard> {
     // driving, and a parked one at home must read the home chip (live
     // 2026-09-14: the card said "Driving near Home" at 0 mph).
     final bool driving = isDriving(m);
-    final String? stat = statChipText(widget.place, driving: driving); // J:80 needs no place
+    final int? mph = driving && m.hasDrivingSpeed ? m.speedMph : null;
+    final String? statBase = statChipText(widget.place, driving: driving); // J:80 needs no place
+    // #12 keeps every fact the old card had, so the speed rides the driving
+    // chip: "🚗 Driving near Loganville Hwy · 61 mph".
+    final String? stat = statBase == null ? null : (mph == null ? statBase : '$statBase · $mph mph');
     final List<String> drow = detailChipTexts(widget.place, driving: driving, now: now);
     final bool low = m.batteryPercent > 0 && m.batteryPercent <= BrayTokens.battLowAt;  // J:271
     final String batt = m.batteryPercent > 0 ? '${m.batteryPercent}' : '—';              // J:282 null → "—"
     final String semantics = '${widget.label} card · battery $batt% · $ago';
-    final List<Widget> actions = _actions(accent);
+    final List<Widget> actions = _actions();
 
     // container: true - the card is its own accessibility node. Without it
     // the focus-level card (Align child, no list boundary) merged into the
@@ -145,114 +157,95 @@ class _PersonCardState extends State<PersonCard> {
           duration: BrayTokens.sheetTransition,                       // S:121 height .18s ease
           curve: Curves.ease,
           height: widget.focused ? BrayTokens.cardHFocus : BrayTokens.cardH,
-          clipBehavior: Clip.antiAlias,                                 // S:120 overflow:hidden
+          clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
-            color: BrayTokens.cardBg,                                    // S:121
+            color: BrayTokens.v8Surface,
             borderRadius: BorderRadius.circular(BrayTokens.cardRadius),  // S:119
-            // S:120 gives 1px rgba(255,255,255,.10) and S:122 the accent when
-            // selected; the design list wants a "thin rounded accent border"
-            // on every card. OPEN: chosen - accent at .45 at rest, full when focused.
-            border: Border.all(color: widget.focused ? accent : accent.withValues(alpha: 0.45)),
+            // #8: a 1px Night border. Focused: the person's accent - the one
+            // place identity shows on the card, like the marker ring and the
+            // sheet's top line (people_sheet.dart).
+            border: Border.all(color: widget.focused ? accent : BrayTokens.v8Border),
           ),
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // S:123 .ph - the photo as the background, face-cropped per person.
-              if (_photo != null)
+              // #8 _PhotoFill: the photo as the background, face-cropped per
+              // person; the accent at 22 % when there is no photo.
+              if (_photo == null)
+                ColoredBox(color: accent.withValues(alpha: 0.22))
+              else
                 FutureBuilder<Uint8List?>(
                   future: _photo,
                   builder: (_, snap) => snap.data == null
-                      ? const SizedBox.shrink()
+                      ? ColoredBox(color: accent.withValues(alpha: 0.22))
                       : Image.memory(snap.data!, fit: BoxFit.cover, alignment: BrayTokens.photoAlignFor(m), gaplessPlayback: true),
                 ),
-              // S:126 the 115deg tint - in the person's colour (design list).
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft, end: Alignment.bottomRight,   // OPEN: measured - 115deg ≈ topLeft→bottomRight on a 800x112 card
-                    colors: [accent.withValues(alpha: BrayTokens.veilAlphaTop), accent.withValues(alpha: BrayTokens.veilAlphaMid), accent.withValues(alpha: BrayTokens.veilAlphaTop)],
-                    stops: const [0, 0.44, 1],
-                  ),
-                ),
-              ),
-              // S:125 the dark veil that keeps the text readable.
+              // #8: the ink veil, light at the top, near-solid by 85 %.
               const DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topCenter, end: Alignment.bottomCenter,
-                    colors: [BrayTokens.veilDarkTop, BrayTokens.veilDarkBottom],
-                    stops: [0, 0.84],
+                    colors: [BrayTokens.v8VeilTop, BrayTokens.v8VeilBottom],
+                    stops: [0, BrayTokens.v8VeilStop],
                   ),
                 ),
               ),
-              // S:127-130 the ghost name, with the online dot after it (design list).
+              // #8 _Name: the label in solid lime with the online dot after it.
               Positioned(
-                left: BrayTokens.ghostLeft,
-                top: BrayTokens.ghostTop,
+                left: BrayTokens.cardPadH,
+                top: BrayTokens.cardPadTop - 1,
+                right: BrayTokens.cardPadH + 140,   // OPEN: chosen - leave the ago pill's corner alone on a phone
                 child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Opacity(
-                      key: const Key('card-ghost'),
-                      opacity: BrayTokens.ghostOpacity,
-                      child: ShaderMask(
-                        blendMode: BlendMode.srcIn,
-                        shaderCallback: (Rect r) => const LinearGradient(
-                          begin: Alignment.topLeft, end: Alignment.bottomRight,   // S:129 130deg
-                          colors: [BrayTokens.ghostA, BrayTokens.ghostB],
-                        ).createShader(r),
-                        child: Text(
-                          widget.label,
-                          style: const TextStyle(
-                            fontSize: BrayTokens.ghostSize,       // S:128
-                            fontWeight: FontWeight.w800,          // S:127 (Sora is not bundled - OPEN: theme font)
-                            letterSpacing: BrayTokens.ghostSpacing,
-                            height: 1,                            // S:128 line-height:1
-                            color: Colors.white,
-                          ),
+                    Flexible(
+                      child: Text(
+                        widget.label,
+                        key: const Key('card-name'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: BrayTokens.cardNameSize,
+                          fontWeight: FontWeight.w800,
+                          color: BrayTokens.v8Lime,
+                          letterSpacing: -0.4,
+                          height: 1.1,
+                          shadows: <Shadow>[Shadow(color: BrayTokens.v8NameShadow, blurRadius: BrayTokens.v8NameShadowBlur)],
                         ),
                       ),
                     ),
                     if (m.status == MemberStatus.normal) ...[
-                      const SizedBox(width: 8),                     // OPEN: chosen - gap between ghost name and online dot, no CSS source
+                      const SizedBox(width: 8),
                       Container(
                         key: const Key('card-dot'),
-                        width: 9, height: 9,                       // OPEN: chosen - Life360's dot is ~8-10 CSS px
+                        width: 9, height: 9,                       // design list "green online dot"
                         decoration: const BoxDecoration(shape: BoxShape.circle, color: BrayTokens.run),
                       ),
                     ],
                   ],
                 ),
               ),
-              // S:131-136 "📡 33m ago" badge.
+              // #8: the "33m ago" pill, lime on paper with a lime outline.
               Positioned(
-                right: BrayTokens.cardInset, top: 10,                // S:131 right:12px top:10px
+                right: BrayTokens.cardPadH, top: BrayTokens.cardPadTop,
                 child: Container(
                   key: const Key('card-upd'),
-                  padding: const EdgeInsets.fromLTRB(11, 4, 11, 4), // S:132 padding:4px 11px
+                  padding: const EdgeInsets.fromLTRB(_pillPadH, _pillPadV, _pillPadH, _pillPadV),
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(99),        // S:132 border-radius:99px
-                    gradient: const LinearGradient(
-                      begin: Alignment.topLeft, end: Alignment.bottomRight,   // S:133 130deg
-                      colors: [BrayTokens.updBadgeA, BrayTokens.updBadgeB, BrayTokens.updBadgeC],
-                      stops: [0, 0.55, 1],
-                    ),
-                    border: Border.all(color: BrayTokens.updBorder),          // S:135
-                    boxShadow: const [BoxShadow(color: Color(0x66000000), blurRadius: 10, offset: Offset(0, 2))], // S:136
+                    color: BrayTokens.v8Paper.withValues(alpha: BrayTokens.v8AgoPillAlpha),
+                    borderRadius: BorderRadius.circular(99),
+                    border: Border.all(color: BrayTokens.v8Lime.withValues(alpha: BrayTokens.v8AgoBorderAlpha)),
                   ),
-                  child: Text('📡 $ago',
-                      style: const TextStyle(fontSize: BrayTokens.updSize, fontWeight: FontWeight.w700, color: Colors.white,
-                          shadows: [Shadow(color: Color(0x66000000), blurRadius: 3, offset: Offset(0, 1))])), // S:135
+                  child: Text(ago, style: _tabular(const TextStyle(fontSize: BrayTokens.cardFactSize, fontWeight: FontWeight.w700, color: BrayTokens.v8Lime, height: 1.2))),
                 ),
               ),
-              // S:154-158 the detail row, focused card only, only with something to say.
-              // Place chips left, Call/Text/🔗 right (S:154 gap:6px). A linked
-              // contact can bring four or five action chips, more than a card
-              // is wide, so the row scrolls sideways instead of overflowing;
-              // when everything fits it lays out exactly as before. OPEN: chosen.
+              // The detail row, focused card only, only with something to say:
+              // place chips left, Call/Text/🔗/Save place right, 6px apart. A
+              // linked contact can bring four or five action chips, more than
+              // a card is wide, so the row scrolls sideways instead of
+              // overflowing; when everything fits it lays out exactly as before.
               if (widget.focused && (drow.isNotEmpty || actions.isNotEmpty))
                 Positioned(
-                  left: BrayTokens.cardInset, right: BrayTokens.cardInset, bottom: BrayTokens.drowBottom,
+                  left: BrayTokens.cardPadH, right: BrayTokens.cardPadH, bottom: BrayTokens.cardDrowBottom,
                   child: LayoutBuilder(
                     builder: (BuildContext context, BoxConstraints box) => SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
@@ -264,7 +257,7 @@ class _PersonCardState extends State<PersonCard> {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Row(mainAxisSize: MainAxisSize.min, children: [
-                              for (final String c in drow) ...[_C2(c), const SizedBox(width: 6)],   // S:154 gap:6px
+                              for (final String c in drow) ...[_C2(c), const SizedBox(width: 6)],
                             ]),
                             if (actions.isNotEmpty) const SizedBox(width: 6),
                             Row(mainAxisSize: MainAxisSize.min, children: actions),
@@ -274,9 +267,9 @@ class _PersonCardState extends State<PersonCard> {
                     ),
                   ),
                 ),
-              // S:137-153 the bottom row: stat chip left, BATTERY right.
+              // #8: the bottom row - state chip left, battery right.
               Positioned(
-                left: BrayTokens.cardInset, right: BrayTokens.cardInset, bottom: BrayTokens.cardInsetBottom,
+                left: BrayTokens.cardPadH, right: BrayTokens.cardPadH, bottom: BrayTokens.cardPadBottom,
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
@@ -285,52 +278,11 @@ class _PersonCardState extends State<PersonCard> {
                         alignment: Alignment.bottomLeft,
                         child: stat == null
                             ? const SizedBox.shrink()
-                            : Container(
-                                key: const Key('card-stat'),
-                                padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),           // S:140 padding:6px 12px
-                                decoration: BoxDecoration(
-                                  color: BrayTokens.statChipBg,                              // S:141
-                                  borderRadius: BorderRadius.circular(99),                   // S:140 border-radius:99px
-                                  border: Border.all(color: BrayTokens.statChipBorder),      // S:142
-                                ),
-                                child: Text(stat, maxLines: 1, overflow: TextOverflow.ellipsis,   // S:143
-                                    style: TextStyle(fontSize: BrayTokens.statSize, fontWeight: FontWeight.w700, color: accent)), // S:142 color:var(--a)
-                              ),
+                            : _StateChip(stat, key: const Key('card-stat')),
                       ),
                     ),
-                    const SizedBox(width: 8),                                                  // S:138 gap:8px
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Text('BATTERY',
-                            style: TextStyle(fontSize: BrayTokens.battLabelSize, fontWeight: FontWeight.w700,
-                                letterSpacing: BrayTokens.battLabelSpacing, color: BrayTokens.battLabel,
-                                shadows: [Shadow(color: Color(0xCC000000), blurRadius: 6, offset: Offset(0, 1))])), // S:145-146
-                        const SizedBox(height: 2),                                             // S:146 margin-bottom:2px
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (widget.charging)
-                              Padding(
-                                padding: const EdgeInsets.only(right: 3, bottom: 2),          // S:152 margin-right:3px, vertical-align:-2px
-                                // S:152 fills #9affc0; the design list says "bolt in the
-                                // person's accent when charging" - the list wins.
-                                child: Icon(Icons.bolt, key: const Key('card-bolt'), size: 15, color: accent), // S:270 11x15 svg
-                              ),
-                            low
-                                ? Text(batt, key: const Key('card-batt'), style: const TextStyle(fontSize: BrayTokens.battValueSize, fontWeight: FontWeight.w800, height: 1, color: BrayTokens.battLow)) // S:150
-                                : ShaderMask(
-                                    blendMode: BlendMode.srcIn,
-                                    shaderCallback: (Rect r) => const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [BrayTokens.ghostA, BrayTokens.ghostB]).createShader(r), // S:148
-                                    child: Text(batt, key: const Key('card-batt'), style: const TextStyle(fontSize: BrayTokens.battValueSize, fontWeight: FontWeight.w800, height: 1, color: Colors.white)),
-                                  ),
-                            Text('%', style: TextStyle(fontSize: BrayTokens.battUnitSize, fontWeight: FontWeight.w800, height: 1, color: low ? BrayTokens.battLow : BrayTokens.ghostB)), // S:151
-                          ],
-                        ),
-                      ],
-                    ),
+                    const SizedBox(width: 8),
+                    _Battery(text: batt, low: low, charging: widget.charging),
                   ],
                 ),
               ),
@@ -341,6 +293,10 @@ class _PersonCardState extends State<PersonCard> {
     );
   }
 
+  /// #8: the ago pill's padding is 11 / 4 at 14px, scaled with the fact size.
+  static const double _pillPadH = BrayTokens.cardFactSize * 11 / 14;
+  static const double _pillPadV = BrayTokens.cardFactSize * 4 / 14;
+
   /// The action chips on the right of the detail row, in order:
   ///  - linked contact: one Call chip per number in the address book's order,
   ///    labelled by its label, then "💬 Text" (first mobile, else first
@@ -350,45 +306,45 @@ class _PersonCardState extends State<PersonCard> {
   ///  - nothing: "🔗 Link contact" alone (only when a host can open the sheet);
   ///  - piece 5: "📍 Save place" after the link chip whenever the member is
   ///    at a named feature (place.poiName) and a host wired [onSavePlace].
-  List<Widget> _actions(Color accent) {
+  List<Widget> _actions() {
     final List<Widget> out = <Widget>[];
     void add(Widget w) {
       if (out.isNotEmpty) out.add(const SizedBox(width: 6));   // S:154 gap:6px
       out.add(w);
     }
 
-    _contactActions(accent, add);
+    _contactActions(add);
     if (widget.onSavePlace != null && widget.place?.poiName != null) {
-      add(_ActionChip(key: const Key('card-save-place'), label: '📍 Save place', accent: accent, onTap: widget.onSavePlace!));
+      add(_ActionChip(key: const Key('card-save-place'), label: '📍 Save place', onTap: widget.onSavePlace!));
     }
     return out;
   }
 
   /// The Call / Text / 🔗 chips, appended through [add] (see [_actions]).
-  void _contactActions(Color accent, void Function(Widget) add) {
+  void _contactActions(void Function(Widget) add) {
     final LinkedContact? c = widget.contact;
     if (c != null && c.phones.isNotEmpty) {
       for (int i = 0; i < c.phones.length; i++) {
         final LinkedPhone p = c.phones[i];
-        add(_ActionChip(key: Key('card-call-$i'), label: p.callChipText, accent: accent,
+        add(_ActionChip(key: Key('card-call-$i'), label: p.callChipText,
             onTap: () => _intent('android.intent.action.DIAL', dialUri(p.number))));
       }
       final LinkedPhone t = c.textPhone!;
-      add(_ActionChip(key: const Key('card-text'), label: '💬 Text', accent: accent,
+      add(_ActionChip(key: const Key('card-text'), label: '💬 Text',
           onTap: () => _intent('android.intent.action.SENDTO', smsUri(t.number))));
       if (widget.onLinkContact != null) {
-        add(_ActionChip(key: const Key('card-link'), label: '🔗', accent: accent, onTap: widget.onLinkContact!));
+        add(_ActionChip(key: const Key('card-link'), label: '🔗', onTap: widget.onLinkContact!));
       }
       return;
     }
     if (widget.phone != null) {
-      add(_ActionChip(key: const Key('card-call'), icon: Icons.call, label: 'Call', accent: accent,
+      add(_ActionChip(key: const Key('card-call'), icon: Icons.call, label: 'Call',
           onTap: () => _intent('android.intent.action.DIAL', dialUri(widget.phone!))));
-      add(_ActionChip(key: const Key('card-text'), icon: Icons.sms_outlined, label: 'Text', accent: accent,
+      add(_ActionChip(key: const Key('card-text'), icon: Icons.sms_outlined, label: 'Text',
           onTap: () => _intent('android.intent.action.SENDTO', smsUri(widget.phone!))));
     }
     if (widget.onLinkContact != null) {
-      add(_ActionChip(key: const Key('card-link'), label: '🔗 Link contact', accent: accent, onTap: widget.onLinkContact!));
+      add(_ActionChip(key: const Key('card-link'), label: '🔗 Link contact', onTap: widget.onLinkContact!));
     }
   }
 
@@ -406,44 +362,102 @@ class _PersonCardState extends State<PersonCard> {
   }
 }
 
-/// S:156-158 .c2 detail chip.
+TextStyle _tabular(TextStyle s) => s.copyWith(fontFeatures: const <FontFeature>[FontFeature.tabularFigures()]);
+
+/// #8: the state chip - "🚗 Driving near Loganville Hwy · 61 mph", "🏠 Home",
+/// "📍 Kroger · 4.2 mi" - lime on paper with the Night border.
+class _StateChip extends StatelessWidget {
+  const _StateChip(this.text, {super.key});
+  final String text;
+  static const double _padH = BrayTokens.cardFactSize * 12 / 14;   // #8: 12 / 5 at 14px
+  static const double _padV = BrayTokens.cardFactSize * 5 / 14;
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.fromLTRB(_padH, _padV, _padH, _padV),
+        decoration: BoxDecoration(
+          color: BrayTokens.v8Paper.withValues(alpha: BrayTokens.v8ChipAlpha),
+          borderRadius: BorderRadius.circular(99),
+          border: Border.all(color: BrayTokens.v8Border),
+        ),
+        child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: _tabular(const TextStyle(fontSize: BrayTokens.cardFactSize, fontWeight: FontWeight.w700, color: BrayTokens.v8Lime, height: 1.2))),
+      );
+}
+
+/// #8 _Battery: "96%" with the lime bolt while charging; the numeral in
+/// spark, the % sign smaller, red at or under 20 % (J:271).
+class _Battery extends StatelessWidget {
+  const _Battery({required this.text, required this.low, required this.charging});
+  final String text;
+  final bool low;
+  final bool charging;
+  @override
+  Widget build(BuildContext context) {
+    final Color c = low ? BrayTokens.v8Low : BrayTokens.v8Spark;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.alphabetic,
+      children: [
+        if (charging)
+          const Padding(
+            padding: EdgeInsets.only(right: 2),
+            child: Icon(Icons.bolt_rounded, key: Key('card-bolt'), size: BrayTokens.cardBattSize * 0.8, color: BrayTokens.v8Lime),
+          ),
+        Text(text, key: const Key('card-batt'), style: _tabular(TextStyle(fontSize: BrayTokens.cardBattSize, fontWeight: FontWeight.w800, color: c, height: 1))),
+        Text('%', style: TextStyle(fontSize: BrayTokens.cardBattSize * 0.55, fontWeight: FontWeight.w800, color: c, height: 1)),
+      ],
+    );
+  }
+}
+
+/// The chips' padding: #8's 9 / 4 / 11 / 4 at 14px, scaled to the chip size.
+const double _chipK = BrayTokens.cardChipSize / 14;
+const EdgeInsets _chipPad = EdgeInsets.fromLTRB(9 * _chipK, 4 * _chipK, 11 * _chipK, 4 * _chipK);
+
+/// The focused card's detail chip (city, county, street, since) in the #8
+/// idiom: paper fill, Night border, ink text - information, not an action.
 class _C2 extends StatelessWidget {
   const _C2(this.text);
   final String text;
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.fromLTRB(9, 4, 9, 4),                           // S:156 padding:4px 9px
-        decoration: BoxDecoration(color: BrayTokens.c2Bg, borderRadius: BorderRadius.circular(99) /* S:156 border-radius:99px */, border: Border.all(color: BrayTokens.c2Border)),
+        padding: _chipPad,
+        decoration: BoxDecoration(
+          color: BrayTokens.v8Paper.withValues(alpha: BrayTokens.v8ChipAlpha),
+          borderRadius: BorderRadius.circular(99),
+          border: Border.all(color: BrayTokens.v8Border),
+        ),
         child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: BrayTokens.c2Size, fontWeight: FontWeight.w700, color: BrayTokens.c2Text)),
+            style: _tabular(const TextStyle(fontSize: BrayTokens.cardChipSize, fontWeight: FontWeight.w700, color: BrayTokens.v8Ink, height: 1.2))),
       );
 }
 
-/// Life360's Call · Text action (design list). Same chip metrics as _C2, in the accent.
+/// #8 _Chip: an action (Call / Text / 🔗 / Save place) - paper fill, lime
+/// outline at .5, lime text; lime is the action colour (app_theme.dart:7).
 /// [icon] is optional: the linked-contact chips carry their emoji in the label
 /// ("📱 Call mobile"), the upstream fallback keeps its Material icon.
 class _ActionChip extends StatelessWidget {
-  const _ActionChip({super.key, this.icon, required this.label, required this.accent, required this.onTap});
+  const _ActionChip({super.key, this.icon, required this.label, required this.onTap});
   final IconData? icon;
   final String label;
-  final Color accent;
   final VoidCallback onTap;
   @override
   Widget build(BuildContext context) => GestureDetector(
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.fromLTRB(9, 4, 9, 4),
+          padding: _chipPad,
           decoration: BoxDecoration(
-            color: BrayTokens.c2Bg,
-            borderRadius: BorderRadius.circular(99),               // S:156 border-radius:99px (same chip metrics as _C2)
-            border: Border.all(color: accent.withValues(alpha: 0.6)), // OPEN: chosen - no CSS source for Call/Text (not in the viewer); .6 keeps the accent border visible without matching the fully-opaque .card border
+            color: BrayTokens.v8Paper.withValues(alpha: BrayTokens.v8ChipAlpha),
+            borderRadius: BorderRadius.circular(99),
+            border: Border.all(color: BrayTokens.v8Lime.withValues(alpha: BrayTokens.v8ActionBorderAlpha)),
           ),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             if (icon != null) ...[
-              Icon(icon, size: 13, color: accent),                  // OPEN: chosen - matches _C2's 11.5px text at a legible icon scale, no CSS source
-              const SizedBox(width: 4),                             // OPEN: chosen - icon-to-label gap, no CSS source
+              Icon(icon, size: 16 * _chipK, color: BrayTokens.v8Lime),
+              const SizedBox(width: 4 * _chipK),
             ],
-            Text(label, maxLines: 1, style: TextStyle(fontSize: BrayTokens.c2Size, fontWeight: FontWeight.w700, color: accent)),
+            Text(label, maxLines: 1, style: const TextStyle(fontSize: BrayTokens.cardChipSize, fontWeight: FontWeight.w700, color: BrayTokens.v8Lime, height: 1.2)),
           ]),
         ),
       );

@@ -6,6 +6,7 @@
 import 'package:flutter/material.dart';
 import '../models/member.dart';
 import '../services/contact_link_store.dart';
+import 'app_theme.dart';
 
 class BrayTokens {
   BrayTokens._();
@@ -107,10 +108,49 @@ class BrayTokens {
   // ---------------------------------------------------------------- piece 3
   // Sheet (S:44-50, S:165 override) and cards (S:112-158). DPR 2 on the tablet
   // goldens: CSS px = device px / 2.
-  static const double cardH = 112;                   // S:119 .card height:112px
-  static const double cardHFocus = 170;              // S:122 .card.sel height:170px
-  static const double cardRadius = 22;               // S:119 border-radius:22px
-  static const double cardGap = 12;                  // S:118 .cards gap:12px
+  //
+  // The LIVE card is gallery variant 8 at its "standard" size (#12) - Bo,
+  // 2026-09-14: "i kind of like version 8.... but play with the sizes". Its
+  // metrics and palette are the v8* / card* tokens right below; the viewer's
+  // own card numbers (S:112-158) follow them, kept for the gallery's ten
+  // originals and as the record of where the first card came from.
+  static const double cardH = 128;                   // gallery #12 "8 standard" (card_gallery_screen.dart _BackdropSize.standard); was S:119 112
+  static const double cardHViewer = 112;             // S:119 .card height:112px - the gallery's originals (#1-#10) and #8 at its first size
+  static const double cardHFocus = 170;              // S:122 .card.sel height:170px - unchanged: the tall card is 128 + the detail row
+  static const double cardNameSize = 28;             // #12: the name, lime, w800
+  static const double cardFactSize = 16;             // #12: the ago pill and the state chip text
+  static const double cardBattSize = 32;             // #12: the battery numeral (the % sign is 0.55 of it, the bolt 0.8)
+  static const double cardChipSize = 15;             // #12: the action / detail chips (Call, Text, Link, Save place, city, county ...)
+  static const double cardPadH = 12;                 // #12: side inset of both rows
+  static const double cardPadTop = 10;               // #12: top inset of the name row (the name itself sits 1px higher)
+  static const double cardPadBottom = 10;            // #12: bottom inset of the chip / battery row
+  /// The focused card's detail row sits above the bottom row: bottom inset +
+  /// the battery numeral + 8px of air = 50 (was S:154's 54 on the 24px numeral).
+  static const double cardDrowBottom = cardPadBottom + cardBattSize + 8;
+
+  // Variant 8's palette - the app's own Night theme (app_theme.dart), no
+  // lavender, no ghost gradient: "lime is the ACTION colour ... everything
+  // else is the Night surfaces" (card_gallery_screen.dart header).
+  static const Color v8Surface = AppColors.nightSurface;       // app_theme.dart:61 - the card body under the photo
+  static const Color v8Border = AppColors.nightBorder;         // app_theme.dart:64 - the card's 1px border at rest, the state chip's border
+  static const Color v8Paper = AppColors.nightPaper;           // app_theme.dart:60 - the pills' fill (at .70 for the ago pill, .75 for the chips)
+  static const Color v8Lime = AppColors.accentBright;          // app_theme.dart:13 - the name, the ago pill, the state chip text, the action chips, the bolt
+  static const Color v8Ink = AppColors.nightInk;               // app_theme.dart:62 - the detail chips' text (city, county, street, since)
+  static const Color v8Spark = Color(0xFFD9F99D);              // app_theme.dart:103 BrandTheme.night.spark - the battery numeral
+  static const Color v8Low = AppColors.statusRed;              // app_theme.dart:40 - the numeral at or under battLowAt
+  static const Color v8VeilTop = Color(0x330A0E16);            // #8: ink (S:2 --ink 0a0e16) at .20 over the photo's top
+  static const Color v8VeilBottom = Color(0xE60A0E16);         // #8: ink at .90 by 85% down, so the bottom row reads
+  static const double v8VeilStop = 0.85;
+  static const double v8AgoPillAlpha = 0.70;                   // #8: paper behind the ago pill
+  static const double v8ChipAlpha = 0.75;                      // #8: paper behind the state / action / detail chips
+  static const double v8AgoBorderAlpha = 0.70;                 // #8: lime outline of the ago pill
+  static const double v8ActionBorderAlpha = 0.50;              // #8: lime outline of the action chips
+  static const Color v8NameShadow = Color(0x99000000);         // #8: the name's 6px shadow over the photo
+  static const double v8NameShadowBlur = 6;
+  static const double cardRadius = 22;               // S:119 border-radius:22px (#8 keeps it)
+  static const double cardGap = 12;                  // S:118 .cards gap:12px (#8 keeps it)
+  // The viewer's "PHOTO x GHOST NAME" card (S:112-158) - retired from the live
+  // card on 2026-09-14 (variant 8 replaced it); the numbers stay as the record.
   static const Color cardBorder = Color(0x1AFFFFFF); // S:120 1px rgba(255,255,255,.10)
   static const Color cardBg = Color(0xFF0A0E1A);     // S:121 background:#0a0e1a
   static const Color ghostA = Color(0xFF9FD4FF);     // S:129 gradient #9fd4ff

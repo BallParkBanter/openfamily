@@ -125,6 +125,9 @@ void main() {
     expect(find.byKey(const Key('card-link')), findsOneWidget);
     expect(find.byKey(const Key('card-save-place')), findsOneWidget);
     expect(find.text('📍 Save place'), findsOneWidget);
+    // #12's 15px chips in the test's wide Ahem font push the last one off an
+    // 800px card; the detail row scrolls sideways, so bring it into view.
+    await t.ensureVisible(find.byKey(const Key('card-save-place')));
     await t.tap(find.byKey(const Key('card-save-place')));
     expect(saved, 1);
     // No POI: no Save place chip (nothing to save), Link contact stays.

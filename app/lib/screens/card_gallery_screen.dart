@@ -8,7 +8,9 @@
 // me." Opened by long-pressing the family chip top-left of the map. One
 // variant at a time, full width, at the people sheet's real size, with the
 // real members; Prev / Next at the bottom. Nothing here is wired into the
-// live sheet - the winner gets ported into person_card.dart afterwards.
+// live sheet; the winner - #12, variant 8 "standard" - was ported into
+// person_card.dart on 2026-09-14 and reads its sizes from BrayTokens (card*)
+// and its colours from BrayTokens (v8*). The gallery stays for the next round.
 //
 // Palette rule, from app_theme.dart: lime is the ACTION colour (chips,
 // hairlines, gauges); the person's accent (BrayTokens.accentFor) marks
@@ -32,7 +34,7 @@ import '../widgets/place_text.dart' show isDriving, milesText, pillStreet, since
 
 /// One design in the gallery.
 class CardVariant {
-  const CardVariant({required this.name, required this.note, required this.build, this.height = BrayTokens.cardH, this.onMap = false});
+  const CardVariant({required this.name, required this.note, required this.build, this.height = BrayTokens.cardHViewer, this.onMap = false});
 
   final String name;
 
@@ -40,7 +42,8 @@ class CardVariant {
   final String note;
   final Widget Function(BuildContext context, CardFacts facts) build;
 
-  /// Card height. 112 (S:119) unless the design needs otherwise.
+  /// Card height. The viewer's 112 (S:119, BrayTokens.cardHViewer) unless the
+  /// design needs otherwise.
   final double height;
 
   /// True when the card is meant to float on the map itself (no sheet fill).
@@ -731,7 +734,7 @@ class _PhotoLeft extends StatelessWidget {
         decoration: BoxDecoration(color: AppColors.nightSurface, borderRadius: BorderRadius.circular(18)),
         child: Row(
           children: [
-            _Face(f, size: BrayTokens.cardH, radius: 0),
+            _Face(f, size: BrayTokens.cardHViewer, radius: 0),
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
@@ -1109,9 +1112,10 @@ class _BackdropSize {
   final double padTop;
   final double padBottom;
 
-  static const _BackdropSize original = _BackdropSize(card: BrayTokens.cardH, name: 26, facts: 14, battery: 26, chips: 14, padH: 12, padTop: 10, padBottom: 10);
+  static const _BackdropSize original = _BackdropSize(card: BrayTokens.cardHViewer, name: 26, facts: 14, battery: 26, chips: 14, padH: 12, padTop: 10, padBottom: 10);
   static const _BackdropSize compact = _BackdropSize(card: 96, name: 22, facts: 14, battery: 24, chips: 14, padH: 10, padTop: 8, padBottom: 8);
-  static const _BackdropSize standard = _BackdropSize(card: 128, name: 28, facts: 16, battery: 32, chips: 15, padH: 12, padTop: 10, padBottom: 10);
+  // The winner (Bo, 2026-09-14) - the live PersonCard reads the same tokens.
+  static const _BackdropSize standard = _BackdropSize(card: BrayTokens.cardH, name: BrayTokens.cardNameSize, facts: BrayTokens.cardFactSize, battery: BrayTokens.cardBattSize, chips: BrayTokens.cardChipSize, padH: BrayTokens.cardPadH, padTop: BrayTokens.cardPadTop, padBottom: BrayTokens.cardPadBottom);
   static const _BackdropSize large = _BackdropSize(card: 168, name: 34, facts: 18, battery: 40, chips: 16, padH: 16, padTop: 14, padBottom: 14);
 }
 

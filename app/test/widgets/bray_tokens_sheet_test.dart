@@ -6,9 +6,14 @@ import 'package:openfamily/theme/bray_tokens.dart';
 Member m(String name) => Member(id: name, name: name, position: null, status: MemberStatus.normal, batteryPercent: 0, address: '');
 
 void main() {
-  test('card geometry matches style.css', () {
-    expect(BrayTokens.cardH, 112);          // S:119
+  test('card geometry: variant 8 standard (Bo, 2026-09-14) on the viewer\'s sheet', () {
+    expect(BrayTokens.cardH, 128);          // gallery #12 "8 standard"
+    expect(BrayTokens.cardHViewer, 112);    // S:119 - the gallery's originals
     expect(BrayTokens.cardHFocus, 170);     // S:122
+    expect(BrayTokens.cardNameSize, 28);    // #12: name 28, facts 16, battery 32
+    expect(BrayTokens.cardFactSize, 16);
+    expect(BrayTokens.cardBattSize, 32);
+    expect(BrayTokens.cardDrowBottom, 50);  // 10 + 32 + 8
     expect(BrayTokens.cardRadius, 22);      // S:119
     expect(BrayTokens.cardGap, 12);         // S:118
     expect(BrayTokens.sheetMaxFrac, 0.62);  // S:49 max-height:62vh
