@@ -122,6 +122,9 @@ class FamilyService {
   /// The current member list (live-updated).
   List<Member> get members => List<Member>.unmodifiable(_members);
 
+  /// The family's saved places as last fetched (Home is drawn on the map).
+  List<Place> get places => List<Place>.unmodifiable(_places);
+
   /// `GET /family` → the family name.
   Future<String> fetchFamilyName() async {
     final FamilyInfo info = await fetchFamily();
@@ -343,6 +346,9 @@ class FamilyService {
       case 'avatar':
         _applyAvatar(map);
         break;
+      case 'place':
+        _applyPlace(map);
+        break;
     }
   }
 
@@ -355,6 +361,17 @@ class FamilyService {
       memberFromLocationUpdate(_members[index], map),
       _places,
     );
+    onMembersChanged?.call(_members);
+  }
+
+  void _applyPlace(Map<String, dynamic> map) {
+    final String? id = map['user_id'] as String?;
+    if (id == null) return;
+    final int index = _members.indexWhere((Member m) => m.id == id);
+    if (index < 0) return;
+    final Member updated = memberFromPlaceUpdate(_members[index], map);
+    if (identical(updated, _members[index])) return;
+    _members[index] = updated;
     onMembersChanged?.call(_members);
   }
 

@@ -26,6 +26,7 @@ import '../theme/app_theme.dart';
 import '../utils/member_clustering.dart';
 import '../widgets/capsule_bubble.dart';
 import '../widgets/circle_switcher.dart';
+import '../widgets/home_chip.dart';
 import '../widgets/map_bottom_bar.dart';
 import '../widgets/member_avatar_bubble.dart';
 import 'check_in_screen.dart';
@@ -823,6 +824,11 @@ class _MapScreenState extends State<MapScreen>
                       ),
                 ],
               ),
+              // Home: the house chip at the family's Home place, drawn UNDER
+              // the members (design list: "House chip at home, drawn under
+              // people"; C:183-186). Places come from the same FamilyService
+              // that labels members with them.
+              HomeChipLayer(places: _familyService.places),
               // Member bubbles, clustered by on-screen proximity at
               // the current zoom (rebuilds as the camera moves).
               _MemberMarkerLayer(

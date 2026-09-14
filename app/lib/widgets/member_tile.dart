@@ -4,6 +4,7 @@ import '../models/member.dart';
 import '../theme/app_theme.dart';
 import 'member_avatar_bubble.dart';
 import 'movement_icon.dart';
+import 'place_text.dart';
 
 /// A single member rendered as a rich list row — the roster entry shared by
 /// every surface that lists family members (the dedicated People screen).
@@ -62,7 +63,7 @@ class MemberTile extends StatelessWidget {
                         child: Text(
                           member.position == null
                               ? 'No location yet'
-                              : member.address,
+                              : statusLine(member),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(

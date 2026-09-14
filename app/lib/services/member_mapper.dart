@@ -1,6 +1,7 @@
 import 'package:latlong2/latlong.dart';
 
 import '../models/member.dart';
+import '../models/member_place.dart';
 import '../models/place.dart';
 
 /// Maps backend member JSON (from `GET /family/members` and the `/ws/stream`
@@ -62,6 +63,7 @@ Member memberFromJson(Map<String, dynamic> json) {
     lastSeen: effectiveLastSeen,
     accuracyMeters: accuracy?.toDouble(),
     charging: charging,
+    place: MemberPlace.fromJson(json['place']),
   );
 }
 
@@ -150,7 +152,17 @@ Member memberFromLocationUpdate(Member existing, Map<String, dynamic> json) {
     lastSeen: timestamp,
     accuracyMeters: accuracy?.toDouble() ?? existing.accuracyMeters,
     charging: charging ?? existing.charging,
+    place: MemberPlace.fromJson(json['place']) ?? existing.place,
   );
+}
+
+/// Applies a `/ws/stream` `place` frame (the geocoder wrote a new street, or
+/// the member's saved-place state changed without a new fix). Only the place
+/// changes; a malformed frame returns [existing] unchanged.
+Member memberFromPlaceUpdate(Member existing, Map<String, dynamic> json) {
+  final MemberPlace? place = MemberPlace.fromJson(json['place']);
+  if (place == null) return existing;
+  return existing.copyWith(place: place);
 }
 
 /// Applies a `/ws/stream` `presence` frame to [existing].

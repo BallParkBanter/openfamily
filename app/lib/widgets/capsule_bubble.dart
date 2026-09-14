@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import '../models/member.dart';
 import '../theme/bray_tokens.dart';
 import 'member_avatar_bubble.dart' show BrayChargingBolt, StatusAvatar;
+import 'place_text.dart' show pillStreet;
 
 class CapsuleBubble extends StatelessWidget {
   const CapsuleBubble({super.key, required this.members, this.onTap});
@@ -75,9 +76,15 @@ class CapsuleBubble extends StatelessWidget {
     for (final Member m in members.take(3)) {
       sb.write(' · ${m.name}: ${m.status.description}');
       if (m.movement != MovementType.none) sb.write(' ${m.movement.label}');
+      if (m.place?.atHome == true) sb.write(' at Home');
     }
     final Member? lead = _lead;
-    if (lead != null) sb.write(' ${lead.speedMph} mph');
+    if (lead != null) {
+      sb.write(' ${lead.speedMph} mph');
+      // The pill's second line (the rig reads "… 61 mph · Peachtree Ind.").
+      final String? street = pillStreet(lead.place?.street);
+      if (street != null) sb.write(' · $street');
+    }
     return sb.toString();
   }
 
@@ -180,7 +187,12 @@ class CapsuleBubble extends StatelessWidget {
                           left: 0,
                           right: 0,
                           bottom: -_speedPillDrop,
-                          child: Center(child: _SpeedPill(mph: lead.speedMph!)),
+                          child: Center(
+                            child: _SpeedPill(
+                              mph: lead.speedMph!,
+                              street: pillStreet(lead.place?.street),
+                            ),
+                          ),
                         ),
                     ],
                   ),
@@ -202,23 +214,28 @@ class CapsuleBubble extends StatelessWidget {
                         painter: const _TailPainter(BrayTokens.capsuleGrey),
                       ),
                     ),
-                    Positioned(
-                      bottom: 0,
-                      child: Container(
-                        key: const Key('capsule-dot'),
-                        width: BrayTokens.dotSize,
-                        height: BrayTokens.dotSize,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: BrayTokens.dotFill,
-                          border: Border.all(color: Colors.white, width: BrayTokens.dotRing),
-                          boxShadow: const [
-                            // S:86 box-shadow:0 1px 4px rgba(0,0,0,.4)
-                            BoxShadow(color: Color(0x66000000), blurRadius: 4, offset: Offset(0, 1)),
-                          ],
+                    // C:167-176 (family-cluster.js): within 60 m of Home the
+                    // house chip IS the location mark, so the dot goes. A
+                    // capsule stands at one spot, so "everyone near home" is
+                    // the honest reading; one person away keeps the dot.
+                    if (!members.every((m) => m.place?.nearHome == true))
+                      Positioned(
+                        bottom: 0,
+                        child: Container(
+                          key: const Key('capsule-dot'),
+                          width: BrayTokens.dotSize,
+                          height: BrayTokens.dotSize,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: BrayTokens.dotFill,
+                            border: Border.all(color: Colors.white, width: BrayTokens.dotRing),
+                            boxShadow: const [
+                              // S:86 box-shadow:0 1px 4px rgba(0,0,0,.4)
+                              BoxShadow(color: Color(0x66000000), blurRadius: 4, offset: Offset(0, 1)),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
                   ],
                 ),
               ),
@@ -233,10 +250,17 @@ class CapsuleBubble extends StatelessWidget {
 /// S:75-80 .fc-pill: white, 1px 5px padding, "61" in 700 ink (S:78 9px, raised
 /// to BrayTokens.speedPillFont for the tablet) with a 7px "mph" beside it. Two Text widgets (the CSS is `${speed}<i>mph</i>` with
 /// gap:1px), so the number is findable on its own.
+///
+/// With a [street] (design list line 41: "Street under the speed") a second
+/// line sits under the speed row in the "mph" unit style (S:80 7px, .7
+/// opacity); null draws the one-line pill.
 class _SpeedPill extends StatelessWidget {
-  const _SpeedPill({required this.mph});
+  const _SpeedPill({required this.mph, this.street});
 
   final int mph;
+
+  /// Already abbreviated by [pillStreet] ("Peachtree Ind.").
+  final String? street;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -250,25 +274,40 @@ class _SpeedPill extends StatelessWidget {
             BoxShadow(color: Color(0x4D000000), blurRadius: 4, offset: Offset(0, 1)),
           ],
         ),
-        child: Row(
+        child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center, // S:76 align-items:center
           children: [
-            Text(
-              '$mph',
-              style: const TextStyle(
-                fontSize: BrayTokens.speedPillFont, // OPEN: Bo, 2026-09-13 "too small on tablet screen" (S:78 was 9)
-                height: 1.2, // S:78 font:700 9px/1.2
-                fontWeight: FontWeight.w700,
-                color: BrayTokens.speedPillText,
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center, // S:76 align-items:center
+              children: [
+                Text(
+                  '$mph',
+                  style: const TextStyle(
+                    fontSize: BrayTokens.speedPillFont, // OPEN: Bo, 2026-09-13 "too small on tablet screen" (S:78 was 9)
+                    height: 1.2, // S:78 font:700 9px/1.2
+                    fontWeight: FontWeight.w700,
+                    color: BrayTokens.speedPillText,
+                  ),
+                ),
+                const SizedBox(width: 1), // S:76 gap:1px
+                const Text(
+                  'mph',
+                  // S:80 .fc-pill i: 7px, opacity .7 (0xB3 of the ink)
+                  style: TextStyle(fontSize: 7, height: 1.2, color: Color(0xB3141B36)),
+                ),
+              ],
+            ),
+            if (street != null)
+              Text(
+                street!,
+                key: const Key('capsule-pill-street'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                // S:80 .fc-pill i: 7px, opacity .7 (0xB3 of the ink) - the
+                // unit style, reused for the street line.
+                style: const TextStyle(fontSize: 7, height: 1.2, color: Color(0xB3141B36)),
               ),
-            ),
-            const SizedBox(width: 1), // S:76 gap:1px
-            const Text(
-              'mph',
-              // S:80 .fc-pill i: 7px, opacity .7 (0xB3 of the ink)
-              style: TextStyle(fontSize: 7, height: 1.2, color: Color(0xB3141B36)),
-            ),
           ],
         ),
       );

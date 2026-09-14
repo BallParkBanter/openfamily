@@ -33,6 +33,9 @@ type Config struct {
 	// JWTSecret signs access and refresh tokens. Must be a long random string.
 	JWTSecret string
 
+	// GeocodeWriterKey lets the family geocoder write member streets (GEOCODE_WRITER_KEY). Empty disables /api/geocode.
+	GeocodeWriterKey string
+
 	// AccessTokenTTL is the lifetime of a short-lived access token.
 	AccessTokenTTL time.Duration
 
@@ -178,6 +181,7 @@ func Load() Config {
 		HTTPAddr:              getenv("HTTP_ADDR", ":8080"),
 		DatabaseURL:           getenv("DATABASE_URL", defaultDatabaseURL),
 		JWTSecret:             getenv("JWT_SECRET", ""),
+		GeocodeWriterKey:      getenv("GEOCODE_WRITER_KEY", ""),
 		AccessTokenTTL:        getenvDuration("ACCESS_TOKEN_TTL", 15*time.Minute),
 		RefreshTokenTTL:       getenvDuration("REFRESH_TOKEN_TTL", 30*24*time.Hour),
 		AllowedOrigin:         getenv("ALLOWED_ORIGIN", ""),

@@ -36,7 +36,8 @@ type wsMember struct {
 	// position's timestamp) when the member is stationary and only heartbeats
 	// are arriving; clients use it to keep "last seen" fresh without moving
 	// the pin.
-	LastSeenAt *time.Time `json:"last_seen_at,omitempty"`
+	LastSeenAt *time.Time          `json:"last_seen_at,omitempty"`
+	Place      *models.MemberPlace `json:"place,omitempty"`
 }
 
 // wsLocation is a live location update broadcast to a family.
@@ -52,6 +53,8 @@ type wsLocation struct {
 	SpeedMPS       *float64  `json:"speed_mps"`
 	MotionState    *string   `json:"motion_state"`
 	AccuracyMeters *float64  `json:"accuracy_meters"`
+	// Place: where the member is in words (Bray piece 4); omitted when unknown.
+	Place *models.MemberPlace `json:"place,omitempty"`
 }
 
 // wsPresence is a liveness announcement broadcast when a device reports but its
@@ -232,13 +235,13 @@ func (s *Server) familyMembersSnapshot(ctx context.Context, familyID, callerID s
 		SELECT u.id, u.email, u.name, u.role,
 		       u.avatar_data IS NOT NULL, u.avatar_version, u.avatar_updated_at,
 		       mp.lat, mp.lon, mp.ts, mp.battery_pct, mp.charging, mp.speed_mps, mp.motion_state, mp.accuracy_meters,
-		       d.last_seen
+		       d.last_seen`+memberPlaceColumns+`
 		FROM users u
 		LEFT JOIN member_positions mp ON mp.user_id = u.id
 		LEFT JOIN (
 			SELECT user_id, MAX(last_seen) AS last_seen
 			FROM devices GROUP BY user_id
-		) d ON d.user_id = u.id
+		) d ON d.user_id = u.id`+memberPlaceJoins+`
 		WHERE u.family_id = $1
 		ORDER BY u.name`, familyID)
 	if err != nil {
@@ -262,8 +265,10 @@ func (s *Server) familyMembersSnapshot(ctx context.Context, familyID, callerID s
 			accuracy        *float64
 			lastSeenAt      *time.Time
 		)
-		if err := rows.Scan(&id, &email, &name, &role, &hasAvatar, &avatarVersion, &avatarUpdatedAt,
-			&lat, &lon, &ts, &battery, &charging, &speed, &motion, &accuracy, &lastSeenAt); err != nil {
+		var pr memberPlaceRow
+		targets := append([]any{&id, &email, &name, &role, &hasAvatar, &avatarVersion, &avatarUpdatedAt,
+			&lat, &lon, &ts, &battery, &charging, &speed, &motion, &accuracy, &lastSeenAt}, pr.scanTargets()...)
+		if err := rows.Scan(targets...); err != nil {
 			return nil, err
 		}
 		m := wsMember{
@@ -282,6 +287,7 @@ func (s *Server) familyMembersSnapshot(ctx context.Context, familyID, callerID s
 			MotionState:     motion,
 			AccuracyMeters:  accuracy,
 			LastSeenAt:      lastSeenAt,
+			Place:           pr.toPlace(lat, lon),
 		}
 		// Redact email for non-manager (child) viewers, matching ListMembers.
 		if canManage {

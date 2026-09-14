@@ -167,6 +167,10 @@ func (s *Server) IngestLocation(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "failed to update member position")
 			return
 		}
+		if err := updateMemberPlace(r.Context(), tx, ownerID, req.Lon, req.Lat, ts); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update member place")
+			return
+		}
 		if err := tx.Commit(r.Context()); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to commit")
 			return
@@ -180,6 +184,9 @@ func (s *Server) IngestLocation(w http.ResponseWriter, r *http.Request) {
 		// Presence is liveness, so use server receipt time rather than the GPS
 		// fix timestamp. A delayed fix must never move "last seen" backwards.
 		go s.broadcastPresence(ownerID, time.Now().UTC(), req.BatteryPct, req.Charging)
+		// The presence frame carries no place, so a parked phone would never
+		// tell a live tablet it is now at a newly created place. Announce it.
+		go s.broadcastPlace(ownerID)
 
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status": "deduplicated",
@@ -215,6 +222,11 @@ func (s *Server) IngestLocation(w http.ResponseWriter, r *http.Request) {
 		nullIfEmpty(req.MotionState), req.AccuracyMeters, req.DeviceID, req.Charging,
 	); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to store member position")
+		return
+	}
+
+	if err := updateMemberPlace(r.Context(), tx, ownerID, req.Lon, req.Lat, ts); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update member place")
 		return
 	}
 
@@ -255,6 +267,9 @@ func (s *Server) IngestLocation(w http.ResponseWriter, r *http.Request) {
 		if req.MotionState != "" {
 			motionState = &req.MotionState
 		}
+		placeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		place := s.loadMemberPlace(placeCtx, ownerID)
+		cancel()
 		s.broadcastLocation(ownerID, wsLocation{
 			Type:           "location",
 			UserID:         ownerID,
@@ -267,6 +282,7 @@ func (s *Server) IngestLocation(w http.ResponseWriter, r *http.Request) {
 			SpeedMPS:       req.SpeedMPS,
 			MotionState:    motionState,
 			AccuracyMeters: req.AccuracyMeters,
+			Place:          place,
 		})
 	}()
 

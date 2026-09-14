@@ -81,6 +81,25 @@ type MemberWithLocation struct {
 	// are arriving; clients use it to keep "last seen" fresh without moving
 	// the pin.
 	LastSeenAt *time.Time `json:"last_seen_at,omitempty"`
+	// Place is where the member is, in words (Bray piece 4): the last
+	// reverse-geocode of their position plus the saved place they are in.
+	// Nil when the member has no position.
+	Place *MemberPlace `json:"place,omitempty"`
+}
+
+// MemberPlace is the agreed JSON shape read by the app's cards and map.
+// Street/City/County come from the family geocoder (member_geocodes) and are
+// nil when no geocode exists or it is farther than geocodeStaleMeters from
+// the current position. PlaceName/AtHome/HomeDistanceM/Since come from the
+// family's places table.
+type MemberPlace struct {
+	Street        *string    `json:"street"`
+	City          *string    `json:"city"`
+	County        *string    `json:"county"`
+	PlaceName     *string    `json:"place_name"`
+	AtHome        bool       `json:"at_home"`
+	HomeDistanceM *float64   `json:"home_distance_m"`
+	Since         *time.Time `json:"since"`
 }
 
 // InviteCode gates registration: a new user presents a valid, unexpired,
