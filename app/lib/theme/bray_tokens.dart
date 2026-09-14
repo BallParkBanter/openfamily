@@ -66,7 +66,8 @@ class BrayTokens {
   static const Color dotFill = Color(0xFF141B36);               // S:85 .fc-dot background
   static const double dotRing = 2;                              // S:85 .fc-dot border:2px solid #fff
   static const Color speedPillText = Color(0xFF141B36);         // S:78 .fc-pill color
-  static const double speedPillFont = 11;                       // OPEN: Bo, 2026-09-13 "too small on tablet screen" (S:78 .fc-pill font:700 9px/1.2; Bo reads this while driving)
+  static const double speedPillFont = 11;
+  static const double agePillFont = 14;                         // OPEN: Bo, 2026-09-14 "the text size of 'updated 2m ago' is too small"                       // OPEN: Bo, 2026-09-13 "too small on tablet screen" (S:78 .fc-pill font:700 9px/1.2; Bo reads this while driving)
 
   // S:93-101 selected-person callout (.fc-call), reused as the group capsule's
   // Life360 callout ("📍 here for 13 hr, 41 min" / "Bo arrived 41 min ago").

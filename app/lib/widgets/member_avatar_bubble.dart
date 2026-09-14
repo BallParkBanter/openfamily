@@ -133,9 +133,16 @@ class MemberAvatarBubble extends StatelessWidget {
   /// Marker.computePixelAlignment (marker.dart:66-76). For the point d px from
   /// the top: h - top = d, so y = 1 - 2d/h. (Upstream's 2d/h - 1 is the mirror
   /// image; it was only right while the avatar sat at the top of the box.)
+  /// At home the dot is hidden and the 🏠 chip (40px, centred on the spot)
+  /// takes its place; the whole pin lifts by half the chip so the tail tip
+  /// rests on the chip's top edge instead of stabbing through it.
+  /// OPEN: Bo, 2026-09-14 "my icon overlaps the home icon and it should not".
+  static const double atHomeLift = 6; // HomeChip.size/2 (20) - the hidden dot (10) - tailDotGap (4): tail tip on the chip edge
+
   static Alignment markerAlignmentFor(Member member) {
     final double h = markerSizeFor(member).height;
-    return Alignment(0, 1 - 2 * pointFromTop / h);
+    final double lift = member.place?.atHome == true ? atHomeLift : 0;
+    return Alignment(0, 1 - 2 * (pointFromTop + lift) / h);
   }
 
   /// The bolt shows only on an explicit `charging: true` from the backend
@@ -922,7 +929,7 @@ class _BrayAgePill extends StatelessWidget {
         child: Text(
           text,
           style: const TextStyle(
-            fontSize: BrayTokens.speedPillFont, // S:78 (raised, see speedPillFont)
+            fontSize: BrayTokens.agePillFont, // OPEN: Bo, 2026-09-14 (was speedPillFont)
             height: 1.2, // S:78 font:700 9px/1.2
             fontWeight: FontWeight.w700,
             color: BrayTokens.speedPillText,
