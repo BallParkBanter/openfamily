@@ -92,7 +92,7 @@ class _PersonCardState extends State<PersonCard> {
     final String ago = BrayTokens.agoText(m.lastSeen, now);
     final bool driving = m.hasDrivingSpeed;
     final String? stat = statChipText(widget.place, driving: driving); // J:80 needs no place
-    final List<String> drow = detailChipTexts(widget.place, driving: driving);
+    final List<String> drow = detailChipTexts(widget.place, driving: driving, now: now);
     final bool low = m.batteryPercent > 0 && m.batteryPercent <= BrayTokens.battLowAt;  // J:271
     final String batt = m.batteryPercent > 0 ? '${m.batteryPercent}' : '—';              // J:282 null → "—"
     final String semantics = '${widget.label} card · battery $batt% · $ago';

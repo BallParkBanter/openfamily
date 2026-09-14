@@ -46,7 +46,7 @@ void main() {
         place: MemberPlace(atHome: true, county: 'Walton County', since: DateTime(2026, 9, 13, 11, 12)))));
     expect(find.text('🏠 Home'), findsOneWidget);
     expect(find.text('🏛️ Walton County'), findsOneWidget);
-    expect(find.text('since 11:12 am'), findsOneWidget);
+    expect(find.text('since 11:12am'), findsOneWidget);   // H:75-77 form via place_text.sinceText
   });
   testWidgets('Call · Text only with a phone number; taps reach the callbacks', (t) async {
     int taps = 0, holds = 0;
