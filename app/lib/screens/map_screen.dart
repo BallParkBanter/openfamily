@@ -163,8 +163,11 @@ class _MapScreenState extends State<MapScreen>
 
   /// Piece 3: the levels of detail. FocusRules owns who is focused and the
   /// idle clock; the sheet level is derived from it (FocusRules.levelFor).
+  /// Bo, 2026-09-14: the default is no sheet at all - the map, the top chips
+  /// and the bottom bar. The Everyone chip (top right) raises all the cards;
+  /// a face or a card shows one. (Replaces the plan's "peek" level.)
   final FocusRules _focus = FocusRules();
-  SheetLevel _sheetLevel = SheetLevel.peek;
+  SheetLevel _sheetLevel = SheetLevel.hidden;
   Timer? _idleTimer;
 
   /// Piece 4's geocode feed rides on the member (Member.place); null still
@@ -379,8 +382,9 @@ class _MapScreenState extends State<MapScreen>
     }
   }
 
-  /// Back to everyone: map tap, tap-again, swipe the focus sheet down, the
-  /// system back button, or 5 idle minutes.
+  /// Back to the map alone: map tap, tap-again, swipe the focus sheet down,
+  /// the system back button, or 5 idle minutes. Bo, 2026-09-14: "back" is
+  /// the map with no sheet (FocusRules.levelFor lands on hidden).
   void _leaveFocus() {
     _idleTimer?.cancel();
     _focus.clear();
@@ -403,23 +407,35 @@ class _MapScreenState extends State<MapScreen>
   void _onSheetLevel(SheetLevel level) {
     _touch();
     // Focus is "others hidden + one card" (J:175-181). Any other level while
-    // focused - peek (swipe down) or cards (People button) - is a request for
-    // everyone, so it leaves focus first; a raised sheet of everyone is not
-    // focus and must not leave the map drawing one person.
+    // focused - hidden (swipe down) or cards (Everyone chip) - is a request
+    // for everyone, so it leaves focus first; a raised sheet of everyone is
+    // not focus and must not leave the map drawing one person.
     if (_focus.focusedId != null && level != SheetLevel.focus) {
       _leaveFocus();
-      if (level == SheetLevel.peek) return;
+      if (level == SheetLevel.hidden) return;
     }
     setState(() => _sheetLevel = level);
   }
 
-  void _onPeoplePressed() {
-    if (peopleButtonOpensRoster(_sheetLevel)) {
-      _openPeople();
-    } else {
-      _onSheetLevel(SheetLevel.cards);
+  /// The Everyone chip (top right). Bo, 2026-09-14: "only want to see all
+  /// cards if i tap the everyone or all thing in the top right corner of the
+  /// app" - tap: the sheet rises with every card; tap again: gone.
+  void _onEveryonePressed() => _onSheetLevel(everyoneChipTarget(_sheetLevel));
+
+  /// A tap on the map: leave focus, or drop the all-cards sheet (Bo,
+  /// 2026-09-14: "tap again or tap the map → hidden"). Design list: tap the
+  /// map = back.
+  void _onMapTap() {
+    if (_focus.focusedId != null) {
+      _leaveFocus();
+    } else if (_sheetLevel != SheetLevel.hidden) {
+      _onSheetLevel(SheetLevel.hidden);
     }
   }
+
+  /// The bottom bar's People button keeps opening their PeopleScreen (Bo,
+  /// 2026-09-14: the Everyone chip owns the card sheet now; remove nothing).
+  void _onPeoplePressed() => _openPeople();
 
   /// J:208-211: project the target, push it down by half the sheet, unproject
   /// - the pin lands in the visible strip of map above the sheet.
@@ -1056,9 +1072,10 @@ class _MapScreenState extends State<MapScreen>
     final double controlBarReserved = MapBottomBar.height + safeBottom;
 
     return PopScope(
-      canPop: _focus.focusedId == null,
+      // Back steps out of focus, then drops the all-cards sheet, then leaves.
+      canPop: _focus.focusedId == null && _sheetLevel == SheetLevel.hidden,
       onPopInvokedWithResult: (bool didPop, Object? _) {
-        if (!didPop) _leaveFocus();
+        if (!didPop) _onMapTap();
       },
       child: Scaffold(
         body: Stack(
@@ -1082,9 +1099,7 @@ class _MapScreenState extends State<MapScreen>
                 },
                 onPositionChanged: (camera, hasGesture) =>
                     _onCameraChanged(camera, hasGesture),
-                onTap: (_, __) {
-                  if (_focus.focusedId != null) _leaveFocus();   // design list: tap the map = back
-                },
+                onTap: (_, __) => _onMapTap(),   // design list: tap the map = back; Bo 2026-09-14: also drops the all-cards sheet
               ),
               children: [
                 TileLayer(
@@ -1232,6 +1247,10 @@ class _MapScreenState extends State<MapScreen>
                 bottom: false,
                 child: Column(
                   children: [
+                    // The Everyone chip: the "N home · M out" summary as a
+                    // button that raises the sheet of all cards (Bo,
+                    // 2026-09-14). Always shown - "Everyone" when there is
+                    // no count yet - so the cards are always one tap away.
                     Builder(builder: (BuildContext context) {
                       final Member? f = _followedMember;
                       final String? s = summaryText(
@@ -1239,7 +1258,15 @@ class _MapScreenState extends State<MapScreen>
                         followingLabel: f == null ? null : _labelFor(f),
                         homeCount: _homeCountOf(members), outCount: _outCountOf(members),
                       );
-                      return s == null ? const SizedBox.shrink() : Padding(padding: const EdgeInsets.only(top: 8), child: FamilySummaryChip(text: s));
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: FamilySummaryChip(
+                          text: everyoneChipText(s),
+                          semanticsLabel: everyoneChipLabel(s),
+                          active: _sheetLevel == SheetLevel.cards,
+                          onTap: _onEveryonePressed,
+                        ),
+                      );
                     }),
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
@@ -1283,11 +1310,13 @@ class _MapScreenState extends State<MapScreen>
                 ),
               ),
             ),
+            // The `+` FAB rides the sheet's top edge; with no sheet (the
+            // default now) it sits 12 above the bar.
             AnimatedPositioned(
               duration: BrayTokens.sheetTransition,
               curve: Curves.ease,
               right: 12,
-              bottom: controlBarReserved + _currentSheetHeight() - 20,
+              bottom: controlBarReserved + fabLiftFor(_currentSheetHeight()),
               child: FloatingActionButton.small(
                 onPressed: _showAddActions,
                 tooltip: 'Add — Check In / Help Alert / Invite',
@@ -1613,11 +1642,15 @@ class _MemberMarkerLayer extends StatelessWidget {
 /// widget test can import it.
 bool showRange(Member m) => m.position != null && m.status == MemberStatus.gpsIssue;
 
-/// The bottom bar's People button (theirs) now steps through the levels of
-/// detail: peek → the raised sheet of cards; raised → their PeopleScreen (the
-/// family-wide "full" level). Nothing is removed - the roster is one tap away
-/// from the raised sheet.
-bool peopleButtonOpensRoster(SheetLevel current) => current == SheetLevel.cards;
+/// The Everyone chip toggles the sheet of all cards (Bo, 2026-09-14): hidden
+/// → cards; cards → hidden; focus → cards (everyone, so focus is left first
+/// by _onSheetLevel). The bottom bar's People button no longer touches the
+/// sheet - it opens their PeopleScreen every time.
+SheetLevel everyoneChipTarget(SheetLevel current) => current == SheetLevel.cards ? SheetLevel.hidden : SheetLevel.cards;
+
+/// Where the `+` FAB sits above the bottom bar: 20 into the sheet's top edge
+/// when there is a sheet, 12 clear of the bar when there is none.
+double fabLiftFor(double sheetHeight) => sheetHeight > 0 ? sheetHeight - 20 : 12;
 
 /// The map area the sheet may cover (S:49 caps it at 62 % of this).
 double sheetMaxHeight({required double screenHeight, required double topInset, required double controlBarReserved}) =>

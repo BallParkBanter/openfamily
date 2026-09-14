@@ -1,9 +1,16 @@
 // app/lib/widgets/people_sheet.dart
 // The Family Viewer's bottom sheet (style.css 44-50, the S:165 override; cards
-// list app.js 267-295) as a Flutter widget with the three levels of detail
-// from the design spec: peek (handle + first card), cards (everyone, raised),
-// focus (one tall card). It only draws and reports gestures; the map screen
-// owns the level and the focused person.
+// list app.js 267-295) as a Flutter widget with the levels of detail: hidden
+// (nothing on the map), cards (everyone, raised), focus (one tall card). It
+// only draws and reports gestures; the map screen owns the level and the
+// focused person.
+//
+// Bo, 2026-09-14 (replaces the plan's "peek" level): "only want to see all
+// cards if i tap the everyone or all thing in the top right corner of the
+// app; and then only want to see a SINGLE card if i tap on that person's
+// icon...it then focuses on them and shows card". So the default is hidden
+// - map, top chips and the bottom bar only - the Everyone chip raises all
+// the cards, and a face shows one. Peek is gone.
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;   // not re-exported by material
 
@@ -13,7 +20,9 @@ import '../services/contact_link_store.dart';
 import '../theme/bray_tokens.dart';
 import 'person_card.dart';
 
-enum SheetLevel { peek, cards, focus }
+/// hidden: the default - no sheet at all (height 0). cards: everyone, raised
+/// (the Everyone chip). focus: one tall card (a face or card tap).
+enum SheetLevel { hidden, cards, focus }
 
 class PeopleSheet extends StatelessWidget {
   const PeopleSheet({
@@ -72,11 +81,14 @@ class PeopleSheet extends StatelessWidget {
   /// Fling faster than this (px/s) changes level. OPEN: chosen.
   static const double _flingVelocity = 400;
 
+  /// S:46 border-top 1px - inside the box, so the body is one shorter.
+  static const double _borderTop = 1;
+
   static double heightFor(SheetLevel level, int count, double maxHeight, double bottomInset) {
     final double frame = handleZone + BrayTokens.sheetPadBottom + bottomInset;
     switch (level) {
-      case SheetLevel.peek:
-        return frame + BrayTokens.cardH;
+      case SheetLevel.hidden:
+        return 0;
       case SheetLevel.focus:
         return frame + BrayTokens.cardHFocus;
       case SheetLevel.cards:
@@ -106,12 +118,10 @@ class PeopleSheet extends StatelessWidget {
     final double v = d.primaryVelocity ?? 0;
     if (v < -_flingVelocity) {
       // up
-      if (level == SheetLevel.peek) onLevelChanged?.call(SheetLevel.cards);
       if (level == SheetLevel.focus && _focused != null) onCardTap?.call(_focused!);   // spec: swipe up = full
     } else if (v > _flingVelocity) {
-      // down
-      if (level == SheetLevel.cards) onLevelChanged?.call(SheetLevel.peek);
-      if (level == SheetLevel.focus) onLevelChanged?.call(SheetLevel.peek);           // back to everyone
+      // down: away (Bo, 2026-09-14 - there is no peek to land on)
+      if (level == SheetLevel.cards || level == SheetLevel.focus) onLevelChanged?.call(SheetLevel.hidden);
     }
   }
 
@@ -135,10 +145,12 @@ class PeopleSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bool hidden = level == SheetLevel.hidden;
     final Member? f = level == SheetLevel.focus ? _focused : null;
     final Color line = f == null ? BrayTokens.line : BrayTokens.accentFor(f);   // S:46 border-top --line; focus recolours it
     final List<Member> ordered = orderedFor(members, viewerId);
     final String levelName = level.name;
+    final double height = heightFor(level, members.length, maxHeight, bottomInset);
 
     return Semantics(
       label: 'People sheet · $levelName',
@@ -150,62 +162,82 @@ class PeopleSheet extends StatelessWidget {
           key: const Key('sheet'),
           duration: BrayTokens.sheetTransition,
           curve: Curves.ease,
-          height: heightFor(level, members.length, maxHeight, bottomInset),
+          height: height,
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter,
                 colors: [BrayTokens.sheetTop, BrayTokens.sheetBottom]),                  // S:165
-            border: Border(top: BorderSide(color: line)),                                   // S:46 1px
+            border: Border(top: BorderSide(color: hidden ? const Color(0x00000000) : line)),   // S:46 1px; fades with the sheet
             borderRadius: const BorderRadius.vertical(top: Radius.circular(BrayTokens.sheetRadius)), // S:46
-            boxShadow: const [BoxShadow(color: Color(0x8C000000), blurRadius: 40, offset: Offset(0, -12))], // S:47
+            // S:47. The shadow is painted outside the box, so at height 0 it
+            // would still show as a smudge above the bar: transparent when hidden.
+            boxShadow: [BoxShadow(color: hidden ? const Color(0x00000000) : const Color(0x8C000000), blurRadius: 40, offset: const Offset(0, -12))],
           ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(BrayTokens.sheetPadH, BrayTokens.sheetPadTop, BrayTokens.sheetPadH, 0), // S:48
-            child: Column(
-              children: [
-                // Handle row: the grab centred (S:50). The map's `+` FAB rides
-                // the sheet's top-right edge from map_screen (Task 6), not here.
-                SizedBox(
-                  height: handleZone - BrayTokens.sheetPadTop,
-                  child: Align(
-                    alignment: Alignment.topCenter,
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: BrayTokens.grabTop),
-                      child: Container(
-                        key: const Key('sheet-grab'),
-                        width: BrayTokens.grabW, height: BrayTokens.grabH,
-                        decoration: BoxDecoration(color: BrayTokens.grab, borderRadius: BorderRadius.circular(999)),
-                      ),
-                    ),
-                  ),
+          // While the height animates (rising from hidden, or dropping away)
+          // the body is laid out at the level's full height and clipped by
+          // the container, so no in-between frame is short enough to
+          // overflow the column. Hidden draws nothing at all.
+          child: hidden
+              ? null
+              : OverflowBox(
+                  alignment: Alignment.topCenter,
+                  minHeight: 0,
+                  maxHeight: height - _borderTop,
+                  child: SizedBox(height: height - _borderTop, child: _body(f, ordered)),
                 ),
-                Expanded(
-                  child: f != null
-                      ? Align(alignment: Alignment.topCenter, child: _card(f, focused: true))
-                      : _CollapseOnPullDown(
-                          enabled: level == SheetLevel.cards,
-                          onPullDown: () => onLevelChanged?.call(SheetLevel.peek),
-                          child: ListView.separated(
-                            padding: EdgeInsets.only(bottom: BrayTokens.sheetPadBottom + bottomInset),
-                            physics: level == SheetLevel.peek ? const NeverScrollableScrollPhysics() : const ClampingScrollPhysics(),
-                            scrollCacheExtent: const ScrollCacheExtent.pixels(0),   // was cacheExtent: 0 (deprecated in 3.41)
-                            itemCount: ordered.length,
-                            separatorBuilder: (_, __) => const SizedBox(height: BrayTokens.cardGap),   // S:118
-                            itemBuilder: (_, int i) => _card(ordered[i], focused: false),
-                          ),
-                        ),
-                ),
-              ],
-            ),
-          ),
         ),
       ),
     );
   }
+
+  /// The handle row and, under it, the one tall card (focus) or the list.
+  Widget _body(Member? f, List<Member> ordered) => Padding(
+        padding: const EdgeInsets.fromLTRB(BrayTokens.sheetPadH, BrayTokens.sheetPadTop, BrayTokens.sheetPadH, 0), // S:48
+        child: Column(
+          children: [
+            // Handle row: the grab centred (S:50). The map's `+` FAB rides
+            // the sheet's top-right edge from map_screen (Task 6), not here.
+            SizedBox(
+              height: handleZone - BrayTokens.sheetPadTop,
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: BrayTokens.grabTop),
+                  child: Container(
+                    key: const Key('sheet-grab'),
+                    width: BrayTokens.grabW, height: BrayTokens.grabH,
+                    decoration: BoxDecoration(color: BrayTokens.grab, borderRadius: BorderRadius.circular(999)),
+                  ),
+                ),
+              ),
+            ),
+            Expanded(
+              child: f != null
+                  ? Align(alignment: Alignment.topCenter, child: _card(f, focused: true))
+                  : _CollapseOnPullDown(
+                      enabled: level == SheetLevel.cards,
+                      onPullDown: () => onLevelChanged?.call(SheetLevel.hidden),
+                      child: ListView.separated(
+                        padding: EdgeInsets.only(bottom: BrayTokens.sheetPadBottom + bottomInset),
+                        // Always scrollable: with few people the list is no
+                        // taller than its viewport, and a plain Clamping list
+                        // then refuses the drag (shouldAcceptUserOffset) - the
+                        // pull-down below would never see it.
+                        physics: const AlwaysScrollableScrollPhysics(parent: ClampingScrollPhysics()),
+                        scrollCacheExtent: const ScrollCacheExtent.pixels(0),   // was cacheExtent: 0 (deprecated in 3.41)
+                        itemCount: ordered.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: BrayTokens.cardGap),   // S:118
+                        itemBuilder: (_, int i) => _card(ordered[i], focused: false),
+                      ),
+                    ),
+            ),
+          ],
+        ),
+      );
 }
 
-/// Cards level: a swipe down over the list body collapses the sheet - design
-/// list "swipe down = back to the list/peek". The list's own drag recognizer
+/// Cards level: a swipe down over the list body hides the sheet - design
+/// list "swipe down = back to the list/peek", with peek gone (Bo, 2026-09-14). The list's own drag recognizer
 /// wins the arena over the sheet's GestureDetector, so only the handle strip
 /// reached _dragEnd; here the list itself reports the pull instead.
 /// OPEN: chosen - the trigger is the OverscrollNotification with overscroll

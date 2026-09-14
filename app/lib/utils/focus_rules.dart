@@ -4,7 +4,8 @@
 //   - tap a person = focus; tap the same person again = back (J:239-241)
 //   - focused: only that person draws (J:175-181), zoom >= 16, or 17 while
 //     driving (J:217), the camera lifted by half the sheet (J:204)
-//   - 5 minutes without a touch = back to everyone (design list "Behaviour")
+//   - 5 minutes without a touch = back to the map alone (design list
+//     "Behaviour"; Bo, 2026-09-14: leaving focus lands on no sheet, not peek)
 import '../models/member.dart';
 import '../theme/bray_tokens.dart';
 import '../widgets/people_sheet.dart';
@@ -54,9 +55,12 @@ class FocusRules {
     return currentZoom > floor ? currentZoom : floor;
   }
 
+  /// Focused → focus. Leaving focus → hidden (Bo, 2026-09-14: "back" is the
+  /// map alone, whether the focus came from a face or from the all-cards
+  /// sheet). Otherwise the level is whatever the Everyone chip set.
   SheetLevel levelFor(SheetLevel current) {
     if (_focusedId != null) return SheetLevel.focus;
-    return current == SheetLevel.focus ? SheetLevel.peek : current;
+    return current == SheetLevel.focus ? SheetLevel.hidden : current;
   }
 
   /// J:204 lift = round(sheetHeight / 2).

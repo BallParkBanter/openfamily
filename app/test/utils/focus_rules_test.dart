@@ -38,11 +38,14 @@ void main() {
     now = now.add(const Duration(seconds: 2)); expect(f.idleExpired(), isTrue);
     f.clear(); expect(f.idleExpired(), isFalse);
   });
-  test('sheet level follows focus; leaving focus lands on peek', () {
+  test('sheet level follows focus; leaving focus lands on hidden - the map alone (Bo, 2026-09-14; peek is gone)', () {
     final f = FocusRules();
-    expect(f.levelFor(SheetLevel.cards), SheetLevel.cards);
-    f.tap('bo'); expect(f.levelFor(SheetLevel.cards), SheetLevel.focus);
-    f.clear(); expect(f.levelFor(SheetLevel.focus), SheetLevel.peek);
+    expect(f.levelFor(SheetLevel.hidden), SheetLevel.hidden);   // default: no sheet
+    expect(f.levelFor(SheetLevel.cards), SheetLevel.cards);     // the Everyone chip's sheet stays up
+    f.tap('bo'); expect(f.levelFor(SheetLevel.hidden), SheetLevel.focus);   // a face from the bare map
+    f.tap('bo'); f.tap('bo'); expect(f.levelFor(SheetLevel.cards), SheetLevel.focus);    // a card from the all-cards sheet
+    f.clear(); expect(f.levelFor(SheetLevel.focus), SheetLevel.hidden);     // back = map alone, never cards or peek
+    expect(SheetLevel.values.map((l) => l.name).toList(), ['hidden', 'cards', 'focus']);
   });
   test('camera lift is half the sheet height (J:204)', () {
     expect(FocusRules.liftFor(206), 103);

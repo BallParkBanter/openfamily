@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:openfamily/models/member.dart';
+import 'package:openfamily/theme/app_theme.dart' show AppColors;
 import 'package:openfamily/theme/bray_tokens.dart';
 import 'package:openfamily/widgets/family_header.dart';
 
@@ -41,5 +42,26 @@ void main() {
     final Finder scrimIgnore = find.descendant(of: find.byType(FamilyHeaderScrim), matching: find.byType(IgnorePointer));
     expect(scrimIgnore, findsOneWidget);
     expect(t.widget<IgnorePointer>(scrimIgnore).ignoring, isTrue);
+  });
+  test('Everyone chip text and label: the summary when there is one, else "Everyone" (Bo, 2026-09-14)', () {
+    expect(everyoneChipText('2 home · 1 out'), '2 home · 1 out');
+    expect(everyoneChipText(null), 'Everyone');
+    expect(everyoneChipLabel('2 home · 1 out'), 'Everyone: 2 home · 1 out');
+    expect(everyoneChipLabel(null), 'Everyone');
+  });
+  testWidgets('Everyone chip: a button the rig finds by "Everyone: …"; tap fires; lime border while the cards are up', (t) async {
+    final SemanticsHandle handle = t.ensureSemantics();
+    int taps = 0;
+    await t.pumpWidget(MaterialApp(home: Scaffold(body: FamilySummaryChip(text: '2 home · 1 out', semanticsLabel: everyoneChipLabel('2 home · 1 out'), onTap: () => taps++))));
+    expect(find.bySemanticsLabel(RegExp(r'^Everyone: 2 home · 1 out$')), findsOneWidget);
+    await t.tap(find.byKey(const Key('everyone-chip')));
+    expect(taps, 1);
+    BoxDecoration deco = t.widget<Container>(find.descendant(of: find.byKey(const Key('everyone-chip')), matching: find.byType(Container))).decoration as BoxDecoration;
+    expect(deco.border!.top.color, BrayTokens.line);
+    await t.pumpWidget(MaterialApp(home: Scaffold(body: FamilySummaryChip(text: 'Everyone', active: true, onTap: () => taps++))));
+    expect(find.bySemanticsLabel(RegExp(r'^Everyone$')), findsOneWidget);   // no count yet: still a button
+    deco = t.widget<Container>(find.descendant(of: find.byKey(const Key('everyone-chip')), matching: find.byType(Container))).decoration as BoxDecoration;
+    expect(deco.border!.top.color, AppColors.accentBright);
+    handle.dispose();
   });
 }

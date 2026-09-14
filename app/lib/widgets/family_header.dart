@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/member.dart';
+import '../theme/app_theme.dart' show AppColors;
 import '../theme/bray_tokens.dart';
 
 /// S:37 linear-gradient(180deg, rgba(10,14,22,.92), transparent) behind the
@@ -47,19 +48,51 @@ bool autoFitDue({required DateTime? lastGesture, required DateTime now, required
   return now.difference(lastGesture) >= const Duration(seconds: 12);
 }
 
-/// S:40-41 .summary chip.
+/// The Everyone chip's visible text: the summary when there is one
+/// ("2 home · 1 out", "🚗 following Bo"), else the word "Everyone" so the
+/// button is always there to tap.
+String everyoneChipText(String? summary) => summary ?? 'Everyone';
+
+/// The Everyone chip's semantics label, "Everyone: 2 home · 1 out" (or just
+/// "Everyone"), so the rig can find the button by its prefix.
+String everyoneChipLabel(String? summary) => summary == null ? 'Everyone' : 'Everyone: $summary';
+
+/// S:40-41 .summary chip - now the Everyone button. Bo, 2026-09-14: "only
+/// want to see all cards if i tap the everyone or all thing in the top right
+/// corner of the app". [onTap] toggles the sheet of all cards; [active] (the
+/// sheet is up) draws the border in lime, the action colour.
 class FamilySummaryChip extends StatelessWidget {
-  const FamilySummaryChip({super.key, required this.text});
+  const FamilySummaryChip({super.key, required this.text, this.onTap, this.active = false, this.semanticsLabel});
   final String text;
+  final VoidCallback? onTap;
+  final bool active;
+  final String? semanticsLabel;
 
   @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.fromLTRB(11, 5, 11, 5),                           // S:41 padding:5px 11px
-        decoration: BoxDecoration(
-          color: BrayTokens.summaryBg,                                                // S:41 rgba(10,14,22,.7)
-          border: Border.all(color: BrayTokens.line),                                 // S:41 1px --line
-          borderRadius: BorderRadius.circular(999),
-        ),
-        child: Text(text, style: const TextStyle(fontSize: BrayTokens.summarySize, fontWeight: FontWeight.w600, color: BrayTokens.muted)), // S:40
-      );
+  Widget build(BuildContext context) {
+    final Widget chip = Container(
+      padding: const EdgeInsets.fromLTRB(9, 5, 11, 5),                              // S:41 padding:5px 11px (9 left: the icon has its own air)
+      decoration: BoxDecoration(
+        color: BrayTokens.summaryBg,                                                  // S:41 rgba(10,14,22,.7)
+        border: Border.all(color: active ? AppColors.accentBright : BrayTokens.line), // S:41 1px --line; lime while the cards are up
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.groups_rounded, size: 15, color: active ? AppColors.accentBright : BrayTokens.muted),
+          const SizedBox(width: 5),
+          Text(text, style: TextStyle(fontSize: BrayTokens.summarySize, fontWeight: FontWeight.w600, color: active ? BrayTokens.text : BrayTokens.muted)), // S:40
+        ],
+      ),
+    );
+    if (onTap == null) return chip;
+    return Semantics(
+      label: semanticsLabel ?? everyoneChipLabel(text == 'Everyone' ? null : text),
+      button: true,
+      toggled: active,
+      excludeSemantics: true,
+      child: GestureDetector(key: const Key('everyone-chip'), behavior: HitTestBehavior.opaque, onTap: onTap, child: chip),
+    );
+  }
 }
