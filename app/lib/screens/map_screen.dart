@@ -169,7 +169,7 @@ class _MapScreenState extends State<MapScreen>
   static int? _homeCountOf(List<Member> members) =>
       members.any((Member m) => m.place != null) ? members.where((Member m) => m.place?.atHome == true).length : null;
   static int? _outCountOf(List<Member> members) => members.any((Member m) => m.place != null)
-      ? members.where((Member m) => m.position != null && m.place?.atHome != true).length
+      ? members.where((Member m) => m.place != null && !m.place!.atHome).length   // measured, and not at home
       : null;
 
   bool _chargingFor(Member m) => m.charging ?? false;   // Member.charging: backend `charging` (bray-charging)

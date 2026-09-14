@@ -260,10 +260,12 @@ class MemberAvatarBubble extends StatelessWidget {
                       )
                     else if (_isStale(member))
                       // Design list: "updated 2m ago on stale icons" - same slot and
-                      // metrics as the speed pill (S:75-80), wording J:57-64.
+                      // metrics as the speed pill (S:75-80; the slot spans the
+                      // marker width so "updated 12m ago" fits on one line),
+                      // wording J:57-64.
                       Positioned(
-                        left: 0,
-                        right: 0,
+                        left: -_pillReach,
+                        right: -_pillReach,
                         bottom: -_speedPillDrop,
                         child: Center(
                           child: _BrayAgePill(
