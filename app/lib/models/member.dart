@@ -111,6 +111,7 @@ class Member {
     this.accuracyMeters,
     this.charging,
     this.place,
+    this.headingDeg,
   });
 
   final String id;
@@ -186,6 +187,12 @@ class Member {
   /// has a position for them). See [MemberPlace].
   final MemberPlace? place;
 
+  /// bray: the direction the phone is heading, in degrees clockwise from north
+  /// (0 = north, 90 = east) - the backend `heading_deg` (OwnTracks `cog`,
+  /// stored in `locations.heading_deg`). Null when the backend did not say.
+  /// Drives the Life360 direction cone on the map marker; see [hasHeadingCone].
+  final double? headingDeg;
+
   /// Whether this member is driving fast enough to show as "speeding".
   bool get isSpeeding =>
       movement == MovementType.car &&
@@ -199,6 +206,12 @@ class Member {
       movement == MovementType.car &&
       speedMph != null &&
       speedMph! >= kSpeedPillMinMph;
+
+  /// Whether the map marker draws the direction cone: moving (the same
+  /// [hasDrivingSpeed] floor as the speed pill, so a parked car has no cone)
+  /// and a known heading. Life360 shows its wedge only while the person is
+  /// on the move.
+  bool get hasHeadingCone => hasDrivingSpeed && headingDeg != null;
 
   /// Initials used while no avatar is available.
   String get initials {
@@ -228,6 +241,7 @@ class Member {
     double? accuracyMeters,
     bool? charging,
     MemberPlace? place,
+    double? headingDeg,
   }) {
     return Member(
       id: id,
@@ -249,6 +263,7 @@ class Member {
       accuracyMeters: accuracyMeters ?? this.accuracyMeters,
       charging: charging ?? this.charging,
       place: place ?? this.place,
+      headingDeg: headingDeg ?? this.headingDeg,
     );
   }
 
@@ -281,6 +296,7 @@ class Member {
       accuracyMeters: accuracyMeters,
       charging: charging,
       place: place,
+      headingDeg: headingDeg,
     );
   }
 }

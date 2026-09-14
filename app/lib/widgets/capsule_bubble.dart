@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import '../models/member.dart';
 import '../theme/bray_tokens.dart';
 import 'capsule_callout.dart';
+import 'heading_cone.dart';
 import 'member_avatar_bubble.dart' show BrayChargingBolt, StatusAvatar;
 import 'place_text.dart' show pillStreet;
 
@@ -80,6 +81,14 @@ class CapsuleBubble extends StatelessWidget {
   /// 16px shadow (S:67) on either side.
   static const double markerWidth = 260;
 
+  /// The pill's centre, measured from the top of the marker box: the callout
+  /// zone plus half the pill. The direction cone's origin for the group.
+  static const double pillCentreFromTop = calloutZone + _pillH / 2;
+
+  /// The group cone's reach from the pill centre: 1.6 x a capsule face (J:111
+  /// 58px) = 92.8, the same factor as the solo marker. Paints past the box.
+  static const double coneLength = BrayTokens.coneLengthFactor * BrayTokens.capsuleAvatar;
+
   /// Where the map point sits inside the marker box: horizontally centred and
   /// dotSize/2 above the bottom edge - the dot's centre.
   ///
@@ -133,6 +142,10 @@ class CapsuleBubble extends StatelessWidget {
     // S:69 each further face starts 58 - 18 = 40px after the previous one.
     const double step = BrayTokens.capsuleAvatar - BrayTokens.capsuleOverlap;
     final double stackW = BrayTokens.capsuleAvatar + step * (preview.length - 1);
+    // Life360 direction cone (piece 5): one for the group, only when everyone
+    // in it is moving the same way (heading_cone.dart capsuleHeading); in the
+    // lead driver's accent, like the speed pill.
+    final double? heading = capsuleHeading(members);
 
     return Tooltip(
       message: label,
@@ -141,159 +154,181 @@ class CapsuleBubble extends StatelessWidget {
         button: true,
         child: GestureDetector(
           onTap: onTap,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              // The callout zone (S:93-99 .fc-call), bottom-aligned so the
-              // callout sits _calloutGap above the capsule whatever its line
-              // count; empty (transparent, not tappable) when there is none.
-              SizedBox(
-                height: calloutZone,
-                child: callout == null
-                    ? null
-                    : Align(
-                        alignment: Alignment.bottomCenter,
-                        child: Padding(
-                          padding: const EdgeInsets.only(bottom: _calloutGap),
-                          child: _Callout(text: callout, accent: BrayTokens.accentFor(calloutSubject(members)!)),
-                        ),
+          child: SizedBox(
+            width: markerWidth,
+            height: markerHeight,
+            child: Stack(
+              clipBehavior: Clip.none,
+              fit: StackFit.expand,
+              children: [
+                if (heading != null && lead != null)
+                  Positioned(
+                    left: markerWidth / 2 - coneLength,
+                    top: pillCentreFromTop - coneLength,
+                    width: 2 * coneLength,
+                    height: 2 * coneLength,
+                    child: HeadingCone(
+                      headingDeg: heading,
+                      accent: BrayTokens.accentFor(lead),
+                      length: coneLength,
+                    ),
+                  ),
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    // The callout zone (S:93-99 .fc-call), bottom-aligned so the
+                    // callout sits _calloutGap above the capsule whatever its line
+                    // count; empty (transparent, not tappable) when there is none.
+                    SizedBox(
+                      height: calloutZone,
+                      child: callout == null
+                          ? null
+                          : Align(
+                              alignment: Alignment.bottomCenter,
+                              child: Padding(
+                                padding: const EdgeInsets.only(bottom: _calloutGap),
+                                child: _Callout(text: callout, accent: BrayTokens.accentFor(calloutSubject(members)!)),
+                              ),
+                            ),
+                    ),
+                    // The pill (S:63-67).
+                    Container(
+                      key: const Key('capsule-pill'),
+                      padding: const EdgeInsets.all(BrayTokens.capsulePad),
+                      decoration: BoxDecoration(
+                        color: BrayTokens.capsuleGrey,
+                        border: Border.all(color: BrayTokens.capsuleBorder, width: _pillBorder),
+                        borderRadius: BorderRadius.circular(999),
+                        boxShadow: const [
+                          // S:67 box-shadow:0 5px 16px rgba(0,0,0,.35)
+                          BoxShadow(color: Color(0x59000000), blurRadius: 16, offset: Offset(0, 5)),
+                        ],
                       ),
-              ),
-              // The pill (S:63-67).
-              Container(
-                key: const Key('capsule-pill'),
-                padding: const EdgeInsets.all(BrayTokens.capsulePad),
-                decoration: BoxDecoration(
-                  color: BrayTokens.capsuleGrey,
-                  border: Border.all(color: BrayTokens.capsuleBorder, width: _pillBorder),
-                  borderRadius: BorderRadius.circular(999),
-                  boxShadow: const [
-                    // S:67 box-shadow:0 5px 16px rgba(0,0,0,.35)
-                    BoxShadow(color: Color(0x59000000), blurRadius: 16, offset: Offset(0, 5)),
-                  ],
-                ),
-                child: SizedBox(
-                  width: stackW,
-                  height: BrayTokens.capsuleAvatar,
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      for (int i = 0; i < preview.length; i++)
-                        // Selected once per face: key, border and inner size
-                        // agree by construction.
-                        Positioned(
-                          left: i * step,
-                          top: 0,
-                          // S:70 .fc-av: 58px circle, 2px capsule-grey border,
-                          // dark fallback fill. Full size - two people in one car
-                          // do not shrink. ringWidth 0 = no status ring inside.
-                          // The face and its bolt share one unclipped Stack so
-                          // the bolt can hang past the circle (S:72 negative
-                          // offsets) without changing the face's own box.
-                          child: SizedBox(
-                            width: BrayTokens.capsuleAvatar,
-                            height: BrayTokens.capsuleAvatar,
-                            child: Stack(
-                              clipBehavior: Clip.none,
-                              children: [
-                                Container(
-                                  key: Key(_selected(preview[i]) ? 'capsule-avatar-selected' : 'capsule-avatar'),
+                      child: SizedBox(
+                        width: stackW,
+                        height: BrayTokens.capsuleAvatar,
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            for (int i = 0; i < preview.length; i++)
+                              // Selected once per face: key, border and inner size
+                              // agree by construction.
+                              Positioned(
+                                left: i * step,
+                                top: 0,
+                                // S:70 .fc-av: 58px circle, 2px capsule-grey border,
+                                // dark fallback fill. Full size - two people in one car
+                                // do not shrink. ringWidth 0 = no status ring inside.
+                                // The face and its bolt share one unclipped Stack so
+                                // the bolt can hang past the circle (S:72 negative
+                                // offsets) without changing the face's own box.
+                                child: SizedBox(
                                   width: BrayTokens.capsuleAvatar,
                                   height: BrayTokens.capsuleAvatar,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: BrayTokens.ink,
-                                    border: _selected(preview[i])
-                                        ? Border.all(color: BrayTokens.accentFor(preview[i]), width: BrayTokens.focusRing) // J:101
-                                        : Border.all(color: BrayTokens.capsuleGrey, width: BrayTokens.capsuleAvatarBorder), // S:70
-                                  ),
-                                  clipBehavior: Clip.antiAlias,
-                                  // ClipOval keeps StatusAvatar's status-tinted
-                                  // shadow off the grey border (seen live as a faint
-                                  // green rim on the first icons-wip frame).
-                                  child: ClipOval(
-                                    child: StatusAvatar(
-                                      member: preview[i],
-                                      size: BrayTokens.capsuleAvatar -
-                                          2 * (_selected(preview[i]) ? BrayTokens.focusRing : BrayTokens.capsuleAvatarBorder),
-                                      ringWidth: 0,
-                                    ),
+                                  child: Stack(
+                                    clipBehavior: Clip.none,
+                                    children: [
+                                      Container(
+                                        key: Key(_selected(preview[i]) ? 'capsule-avatar-selected' : 'capsule-avatar'),
+                                        width: BrayTokens.capsuleAvatar,
+                                        height: BrayTokens.capsuleAvatar,
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: BrayTokens.ink,
+                                          border: _selected(preview[i])
+                                              ? Border.all(color: BrayTokens.accentFor(preview[i]), width: BrayTokens.focusRing) // J:101
+                                              : Border.all(color: BrayTokens.capsuleGrey, width: BrayTokens.capsuleAvatarBorder), // S:70
+                                        ),
+                                        clipBehavior: Clip.antiAlias,
+                                        // ClipOval keeps StatusAvatar's status-tinted
+                                        // shadow off the grey border (seen live as a faint
+                                        // green rim on the first icons-wip frame).
+                                        child: ClipOval(
+                                          child: StatusAvatar(
+                                            member: preview[i],
+                                            size: BrayTokens.capsuleAvatar -
+                                                2 * (_selected(preview[i]) ? BrayTokens.focusRing : BrayTokens.capsuleAvatarBorder),
+                                            ringWidth: 0,
+                                          ),
+                                        ),
+                                      ),
+                                      // S:72-74 .fc-chg on each charging face
+                                      // (bray-charging: Member.charging from the
+                                      // backend's `charging`; only an explicit true).
+                                      if (preview[i].charging == true)
+                                        const Positioned(
+                                          left: -3, // S:72 left:-3px
+                                          bottom: -1, // S:72 bottom:-1px
+                                          child: BrayChargingBolt(),
+                                        ),
+                                    ],
                                   ),
                                 ),
-                                // S:72-74 .fc-chg on each charging face
-                                // (bray-charging: Member.charging from the
-                                // backend's `charging`; only an explicit true).
-                                if (preview[i].charging == true)
-                                  const Positioned(
-                                    left: -3, // S:72 left:-3px
-                                    bottom: -1, // S:72 bottom:-1px
-                                    child: BrayChargingBolt(),
+                              ),
+                            // One speed pill for the group (S:75-80), hanging under
+                            // the faces and centred on the stack.
+                            if (lead != null)
+                              Positioned(
+                                left: 0,
+                                right: 0,
+                                bottom: -_speedPillDrop,
+                                child: Center(
+                                  child: _SpeedPill(
+                                    mph: lead.speedMph!,
+                                    street: pillStreet(lead.place?.street),
                                   ),
-                              ],
-                            ),
-                          ),
+                                ),
+                              ),
+                          ],
                         ),
-                      // One speed pill for the group (S:75-80), hanging under
-                      // the faces and centred on the stack.
-                      if (lead != null)
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          bottom: -_speedPillDrop,
-                          child: Center(
-                            child: _SpeedPill(
-                              mph: lead.speedMph!,
-                              street: pillStreet(lead.place?.street),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-              // Tail from the capsule's edge (S:81-83) and the dot ON the
-              // location (S:84-86); the dot is painted last, over the tail tip.
-              SizedBox(
-                width: BrayTokens.tailW,
-                height: _underH,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  alignment: Alignment.topCenter,
-                  children: [
-                    Positioned(
-                      top: 0,
-                      child: CustomPaint(
-                        size: const Size(BrayTokens.tailW, BrayTokens.tailH),
-                        painter: const _TailPainter(BrayTokens.capsuleGrey),
                       ),
                     ),
-                    // C:167-176 (family-cluster.js): within 60 m of Home the
-                    // house chip IS the location mark, so the dot goes. A
-                    // capsule stands at one spot, so "everyone near home" is
-                    // the honest reading; one person away keeps the dot.
-                    if (!members.every((m) => m.place?.nearHome == true))
-                      Positioned(
-                        bottom: 0,
-                        child: Container(
-                          key: const Key('capsule-dot'),
-                          width: BrayTokens.dotSize,
-                          height: BrayTokens.dotSize,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: BrayTokens.dotFill,
-                            border: Border.all(color: Colors.white, width: BrayTokens.dotRing),
-                            boxShadow: const [
-                              // S:86 box-shadow:0 1px 4px rgba(0,0,0,.4)
-                              BoxShadow(color: Color(0x66000000), blurRadius: 4, offset: Offset(0, 1)),
-                            ],
+                    // Tail from the capsule's edge (S:81-83) and the dot ON the
+                    // location (S:84-86); the dot is painted last, over the tail tip.
+                    SizedBox(
+                      width: BrayTokens.tailW,
+                      height: _underH,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        alignment: Alignment.topCenter,
+                        children: [
+                          Positioned(
+                            top: 0,
+                            child: CustomPaint(
+                              size: const Size(BrayTokens.tailW, BrayTokens.tailH),
+                              painter: const _TailPainter(BrayTokens.capsuleGrey),
+                            ),
                           ),
-                        ),
+                          // C:167-176 (family-cluster.js): within 60 m of Home the
+                          // house chip IS the location mark, so the dot goes. A
+                          // capsule stands at one spot, so "everyone near home" is
+                          // the honest reading; one person away keeps the dot.
+                          if (!members.every((m) => m.place?.nearHome == true))
+                            Positioned(
+                              bottom: 0,
+                              child: Container(
+                                key: const Key('capsule-dot'),
+                                width: BrayTokens.dotSize,
+                                height: BrayTokens.dotSize,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: BrayTokens.dotFill,
+                                  border: Border.all(color: Colors.white, width: BrayTokens.dotRing),
+                                  boxShadow: const [
+                                    // S:86 box-shadow:0 1px 4px rgba(0,0,0,.4)
+                                    BoxShadow(color: Color(0x66000000), blurRadius: 4, offset: Offset(0, 1)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
+                    ),
                   ],
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

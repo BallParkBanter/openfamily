@@ -440,4 +440,46 @@ void main() {
       expect(silent.charging, isTrue);
     });
   });
+
+  group('heading (bray)', () {
+    Member base() => memberFromJson(<String, dynamic>{
+          'id': 'u1',
+          'name': 'Bo',
+          'lat': 33.9,
+          'lon': -84.4,
+          'ts': '2026-09-13T12:00:00Z',
+          'speed_mps': 20,
+          'motion_state': 'driving',
+          'heading_deg': 270,
+        });
+
+    test('member JSON: heading_deg parsed as double?, absent stays null', () {
+      expect(base().headingDeg, 270.0);
+      expect(base().hasHeadingCone, isTrue);
+      final unknown = memberFromJson(<String, dynamic>{'id': 'u2', 'name': 'X'});
+      expect(unknown.headingDeg, isNull);
+      expect(unknown.hasHeadingCone, isFalse);
+    });
+
+    test('location frame: follows the frame, keeps the old value when omitted', () {
+      final m = base();
+      final turned = memberFromLocationUpdate(m, <String, dynamic>{
+        'lat': 33.91, 'lon': -84.41, 'ts': '2026-09-13T12:01:00Z', 'heading_deg': 45.5,
+      });
+      expect(turned.headingDeg, 45.5);
+      final silent = memberFromLocationUpdate(m, <String, dynamic>{
+        'lat': 33.92, 'lon': -84.42, 'ts': '2026-09-13T12:02:00Z',
+      });
+      expect(silent.headingDeg, 270.0);
+    });
+
+    test('cone needs the speed-pill floor: a parked car with a heading has none', () {
+      final parked = memberFromLocationUpdate(base(), <String, dynamic>{
+        'lat': 33.92, 'lon': -84.42, 'ts': '2026-09-13T12:02:00Z', 'speed_mps': 0,
+      });
+      expect(parked.headingDeg, 270.0);
+      expect(parked.hasDrivingSpeed, isFalse);
+      expect(parked.hasHeadingCone, isFalse);
+    });
+  });
 }

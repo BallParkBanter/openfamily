@@ -86,6 +86,18 @@ class BrayTokens {
   static const double calloutShadowBlur = 18;
   static const double calloutShadowDy = 6;
 
+  // Life360 direction cone (piece 5): a faint wedge from the marker in the
+  // direction the phone is heading, only while moving. The viewer has none
+  // (S/J have no cone), so every value is OPEN: chosen. Life360's is a pale
+  // blue wedge; ours takes the person's accent - design list "everything in
+  // the person's colour" (fill and edge alphas below).
+  static const double coneHalfAngle = 30;       // OPEN: chosen - 60 degree wedge, Life360's look
+  static const double coneLengthFactor = 1.6;   // OPEN: chosen - wedge reach as a multiple of the face diameter
+  static const double coneFillAlpha = 0.22;     // OPEN: chosen - accent at 22 %
+  static const double coneEdgeAlpha = 0.45;     // OPEN: chosen - 1px accent edge at 45 %
+  static const double coneEdgeWidth = 1;        // OPEN: chosen
+  static const double coneAgreeDeg = 30;        // OPEN: chosen - a capsule shows one cone only when every member's heading is within this of the others
+
   // J:42 GROUP_M = 120 - "people within this many metres draw as one capsule";
   // J:140-149 clusters() joins a person to a group when metres() < GROUP_M.
   static const double groupMetres = 120;

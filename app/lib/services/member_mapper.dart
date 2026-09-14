@@ -19,6 +19,7 @@ Member memberFromJson(Map<String, dynamic> json) {
   final String? motion = json['motion_state'] as String?;
   final num? accuracy = json['accuracy_meters'] as num?;
   final bool? charging = json['charging'] as bool?;
+  final num? heading = json['heading_deg'] as num?;
   final bool hasAvatar = json['has_avatar'] == true;
   final DateTime? avatarUpdatedAt =
       hasAvatar ? _parseTs(json['avatar_updated_at']) : null;
@@ -64,6 +65,7 @@ Member memberFromJson(Map<String, dynamic> json) {
     accuracyMeters: accuracy?.toDouble(),
     charging: charging,
     place: MemberPlace.fromJson(json['place']),
+    headingDeg: heading?.toDouble(),
   );
 }
 
@@ -103,6 +105,10 @@ Member memberFromLocationUpdate(Member existing, Map<String, dynamic> json) {
   final String? motion = json['motion_state'] as String?;
   final num? accuracy = json['accuracy_meters'] as num?;
   final bool? charging = json['charging'] as bool?;
+  // bray: the direction cone's heading (OwnTracks cog). Like speed, a frame
+  // that omits it keeps the last one - the cone only shows while
+  // hasDrivingSpeed, and a driving frame always carries its cog.
+  final num? heading = json['heading_deg'] as num?;
 
   final LatLng? position = (lat != null && lon != null)
       ? LatLng(lat.toDouble(), lon.toDouble())
@@ -153,6 +159,7 @@ Member memberFromLocationUpdate(Member existing, Map<String, dynamic> json) {
     accuracyMeters: accuracy?.toDouble() ?? existing.accuracyMeters,
     charging: charging ?? existing.charging,
     place: MemberPlace.fromJson(json['place']) ?? existing.place,
+    headingDeg: heading?.toDouble() ?? existing.headingDeg,
   );
 }
 

@@ -7,6 +7,7 @@ import '../models/member.dart';
 import '../services/member_avatar_cache.dart';
 import '../theme/app_theme.dart';
 import '../theme/bray_tokens.dart';
+import 'heading_cone.dart';
 import 'movement_icon.dart';
 import 'place_text.dart' show pillStreet;
 
@@ -112,6 +113,15 @@ class MemberAvatarBubble extends StatelessWidget {
   /// above it plus half the dot = 103.
   static const double pointFromTop = avatarBox - BrayTokens.dotSize / 2;
 
+  /// The ring's centre, measured from the top of the marker box: the tag zone
+  /// plus half the face = 53. The direction cone's origin.
+  static const double ringCentreFromTop = nameTagZone + BrayTokens.soloFace / 2;
+
+  /// The direction cone's reach from the ring centre: 1.6 x the face = 89.6.
+  /// It paints past the marker box (the Stack is Clip.none) - the box, the
+  /// point and the tap area do not change while moving.
+  static const double coneLength = BrayTokens.coneLengthFactor * BrayTokens.soloFace;
+
   /// Where the map point sits inside the marker box: horizontally centred and
   /// dotSize/2 above the bottom edge - the dot's centre (same as
   /// CapsuleBubble.markerAlignment).
@@ -157,153 +167,174 @@ class MemberAvatarBubble extends StatelessWidget {
           child: SizedBox(
             width: size.width,
             height: size.height,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+            // The direction cone (Life360, piece 5) sits UNDER the whole
+            // marker - name tag, ring, tail and dot - so it never tints the
+            // pill; it is centred on the ring and paints past the box.
+            child: Stack(
+              clipBehavior: Clip.none,
+              fit: StackFit.expand,
               children: [
-                // Name pill (S:24-27 metrics scaled 4/3 for the tablet, see
-                // BrayTokens.nameTagFont; design list: "dark, accent outline,
-                // soft shadow"), top-aligned in its zone so the pill clears the
-                // ring by the same ~1px S:24's top:-19px gave the 10.5px pill.
-                SizedBox(
-                  height: nameTagZone,
-                  child: Align(
-                    alignment: Alignment.topCenter,
-                    child: Container(
-                      key: const Key('bray-name-tag'),
-                      // S:26 padding:2px 8px, scaled with the font (nameTagPadV/H)
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: BrayTokens.nameTagPadH, vertical: BrayTokens.nameTagPadV),
-                      decoration: BoxDecoration(
-                        color: const Color(0xDB0A0E16), // S:26 rgba(10,14,22,.86)
-                        borderRadius: BorderRadius.circular(999), // S:26
-                        // S:27 is 1px solid --line; the design list makes the
-                        // outline the person's accent ("ring, pill outline,
-                        // tail ... all the same colour").
-                        border: Border.all(color: accent),
-                        boxShadow: const [
-                          // OPEN: chosen - "soft shadow" (design list); the
-                          // viewer gives .fc-solo drop-shadow(0 6px 16px
-                          // rgba(0,0,0,.55)) at S:90, halved here for a 18px pill.
-                          BoxShadow(color: Color(0x8C000000), blurRadius: 8, offset: Offset(0, 3)),
-                        ],
-                      ),
-                      child: Text(
-                        label ?? member.name,
-                        maxLines: 1, // S:25 white-space:nowrap
-                        softWrap: false,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: BrayTokens.nameTagFont, // OPEN: Bo, 2026-09-13 "too small on tablet screen" (S:25 was 10.5)
-                          fontWeight: FontWeight.w700, // S:25
-                          letterSpacing: 0.02 * BrayTokens.nameTagFont, // S:25 .02em
-                          height: BrayTokens.nameTagLineHeight,
-                          color: BrayTokens.text, // S:27
-                        ),
-                      ),
+                if (member.hasHeadingCone)
+                  Positioned(
+                    left: markerWidth / 2 - coneLength,
+                    top: ringCentreFromTop - coneLength,
+                    width: 2 * coneLength,
+                    height: 2 * coneLength,
+                    child: HeadingCone(
+                      headingDeg: member.headingDeg!,
+                      accent: accent,
+                      length: coneLength,
                     ),
                   ),
-                ),
-                // The face in its accent ring (S:22-23 ring, S:88 "the ring is
-                // their own colour"; 56px per the design list), the bolt
-                // bottom-left (S:72-74 .fc-chg), the speed pill overlaying the
-                // bottom edge (S:75-80).
-                Stack(
-                  clipBehavior: Clip.none,
+                Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(
-                      key: const Key('bray-ring'),
-                      width: BrayTokens.soloFace,
-                      height: BrayTokens.soloFace,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(color: accent, width: BrayTokens.ringSolo), // S:22 3px solid var(--a)
-                        boxShadow: const [
-                          // S:23 box-shadow:0 4px 14px rgba(0,0,0,.5)
-                          BoxShadow(color: Color(0x80000000), blurRadius: 14, offset: Offset(0, 4)),
-                        ],
-                      ),
-                      clipBehavior: Clip.antiAlias,
-                      // ringWidth 0 = no status ring inside the accent ring (and
-                      // no ringColor, so this Container is the only 'bray-ring').
-                      // ClipOval keeps StatusAvatar's status-tinted shadow off
-                      // the accent ring (the capsule needed the same, Task 10);
-                      // the photo fills the ring edge-to-edge (design list).
-                      child: ClipOval(
-                        child: StatusAvatar(
-                          member: member,
-                          size: BrayTokens.soloFace - 2 * BrayTokens.ringSolo,
-                          ringWidth: 0,
+                    // Name pill (S:24-27 metrics scaled 4/3 for the tablet, see
+                    // BrayTokens.nameTagFont; design list: "dark, accent outline,
+                    // soft shadow"), top-aligned in its zone so the pill clears the
+                    // ring by the same ~1px S:24's top:-19px gave the 10.5px pill.
+                    SizedBox(
+                      height: nameTagZone,
+                      child: Align(
+                        alignment: Alignment.topCenter,
+                        child: Container(
+                          key: const Key('bray-name-tag'),
+                          // S:26 padding:2px 8px, scaled with the font (nameTagPadV/H)
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: BrayTokens.nameTagPadH, vertical: BrayTokens.nameTagPadV),
+                          decoration: BoxDecoration(
+                            color: const Color(0xDB0A0E16), // S:26 rgba(10,14,22,.86)
+                            borderRadius: BorderRadius.circular(999), // S:26
+                            // S:27 is 1px solid --line; the design list makes the
+                            // outline the person's accent ("ring, pill outline,
+                            // tail ... all the same colour").
+                            border: Border.all(color: accent),
+                            boxShadow: const [
+                              // OPEN: chosen - "soft shadow" (design list); the
+                              // viewer gives .fc-solo drop-shadow(0 6px 16px
+                              // rgba(0,0,0,.55)) at S:90, halved here for a 18px pill.
+                              BoxShadow(color: Color(0x8C000000), blurRadius: 8, offset: Offset(0, 3)),
+                            ],
+                          ),
+                          child: Text(
+                            label ?? member.name,
+                            maxLines: 1, // S:25 white-space:nowrap
+                            softWrap: false,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: BrayTokens.nameTagFont, // OPEN: Bo, 2026-09-13 "too small on tablet screen" (S:25 was 10.5)
+                              fontWeight: FontWeight.w700, // S:25
+                              letterSpacing: 0.02 * BrayTokens.nameTagFont, // S:25 .02em
+                              height: BrayTokens.nameTagLineHeight,
+                              color: BrayTokens.text, // S:27
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                    if (_isCharging(member))
-                      const Positioned(
-                        left: -3, // S:72 left:-3px
-                        bottom: -1, // S:72 bottom:-1px
-                        child: BrayChargingBolt(),
-                      ),
-                    if (member.hasDrivingSpeed)
-                      Positioned(
-                        // design list line 41: the slot spans the marker
-                        // width (symmetric, so the pill stays centred on the
-                        // ring) - a 56px slot ellipsized "Peachtree Ind.".
-                        left: -_pillReach,
-                        right: -_pillReach,
-                        bottom: -_speedPillDrop,
-                        child: Center(
-                          child: _BraySpeedPill(
-                            key: const Key('bray-speed-pill'),
-                            mph: member.speedMph!,
-                            street: pillStreet(member.place?.street),
+                    // The face in its accent ring (S:22-23 ring, S:88 "the ring is
+                    // their own colour"; 56px per the design list), the bolt
+                    // bottom-left (S:72-74 .fc-chg), the speed pill overlaying the
+                    // bottom edge (S:75-80).
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Container(
+                          key: const Key('bray-ring'),
+                          width: BrayTokens.soloFace,
+                          height: BrayTokens.soloFace,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(color: accent, width: BrayTokens.ringSolo), // S:22 3px solid var(--a)
+                            boxShadow: const [
+                              // S:23 box-shadow:0 4px 14px rgba(0,0,0,.5)
+                              BoxShadow(color: Color(0x80000000), blurRadius: 14, offset: Offset(0, 4)),
+                            ],
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          // ringWidth 0 = no status ring inside the accent ring (and
+                          // no ringColor, so this Container is the only 'bray-ring').
+                          // ClipOval keeps StatusAvatar's status-tinted shadow off
+                          // the accent ring (the capsule needed the same, Task 10);
+                          // the photo fills the ring edge-to-edge (design list).
+                          child: ClipOval(
+                            child: StatusAvatar(
+                              member: member,
+                              size: BrayTokens.soloFace - 2 * BrayTokens.ringSolo,
+                              ringWidth: 0,
+                            ),
                           ),
                         ),
-                      )
-                    else if (_isStale(member))
-                      // Design list: "updated 2m ago on stale icons" - same slot and
-                      // metrics as the speed pill (S:75-80; the slot spans the
-                      // marker width so "updated 12m ago" fits on one line),
-                      // wording J:57-64.
-                      Positioned(
-                        left: -_pillReach,
-                        right: -_pillReach,
-                        bottom: -_speedPillDrop,
-                        child: Center(
-                          child: _BrayAgePill(
-                            key: const Key('bray-age-pill'),
-                            text: 'updated ${BrayTokens.agoText(member.lastSeen, DateTime.now())}',
+                        if (_isCharging(member))
+                          const Positioned(
+                            left: -3, // S:72 left:-3px
+                            bottom: -1, // S:72 bottom:-1px
+                            child: BrayChargingBolt(),
                           ),
+                        if (member.hasDrivingSpeed)
+                          Positioned(
+                            // design list line 41: the slot spans the marker
+                            // width (symmetric, so the pill stays centred on the
+                            // ring) - a 56px slot ellipsized "Peachtree Ind.".
+                            left: -_pillReach,
+                            right: -_pillReach,
+                            bottom: -_speedPillDrop,
+                            child: Center(
+                              child: _BraySpeedPill(
+                                key: const Key('bray-speed-pill'),
+                                mph: member.speedMph!,
+                                street: pillStreet(member.place?.street),
+                              ),
+                            ),
+                          )
+                        else if (_isStale(member))
+                          // Design list: "updated 2m ago on stale icons" - same slot and
+                          // metrics as the speed pill (S:75-80; the slot spans the
+                          // marker width so "updated 12m ago" fits on one line),
+                          // wording J:57-64.
+                          Positioned(
+                            left: -_pillReach,
+                            right: -_pillReach,
+                            bottom: -_speedPillDrop,
+                            child: Center(
+                              child: _BrayAgePill(
+                                key: const Key('bray-age-pill'),
+                                text: 'updated ${BrayTokens.agoText(member.lastSeen, DateTime.now())}',
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: _ringTailGap), // 0: the tail touches the ring
+                    // Solid accent tail (S:81-83 shape, S:91 solo height, design
+                    // list colour) on the ring, the gap, then the dot ON the
+                    // location (S:84-86).
+                    CustomPaint(
+                      key: const Key('bray-tail'),
+                      size: const Size(BrayTokens.tailW, _tailH),
+                      painter: _BrayTailPainter(accent),
+                    ),
+                    const SizedBox(height: tailDotGap),
+                    // C:167-176 (family-cluster.js): at home the house chip IS the
+                    // location mark - drop the redundant dot. The tail and the gap
+                    // stay, so the marker box and the point do not move.
+                    if (member.place?.nearHome != true)
+                      Container(
+                        key: const Key('bray-dot'),
+                        width: BrayTokens.dotSize,
+                        height: BrayTokens.dotSize,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: BrayTokens.dotFill,
+                          border: Border.all(color: Colors.white, width: BrayTokens.dotRing),
+                          boxShadow: const [
+                            // S:86 box-shadow:0 1px 4px rgba(0,0,0,.4)
+                            BoxShadow(color: Color(0x66000000), blurRadius: 4, offset: Offset(0, 1)),
+                          ],
                         ),
                       ),
                   ],
                 ),
-                const SizedBox(height: _ringTailGap), // 0: the tail touches the ring
-                // Solid accent tail (S:81-83 shape, S:91 solo height, design
-                // list colour) on the ring, the gap, then the dot ON the
-                // location (S:84-86).
-                CustomPaint(
-                  key: const Key('bray-tail'),
-                  size: const Size(BrayTokens.tailW, _tailH),
-                  painter: _BrayTailPainter(accent),
-                ),
-                const SizedBox(height: tailDotGap),
-                // C:167-176 (family-cluster.js): at home the house chip IS the
-                // location mark - drop the redundant dot. The tail and the gap
-                // stay, so the marker box and the point do not move.
-                if (member.place?.nearHome != true)
-                  Container(
-                    key: const Key('bray-dot'),
-                    width: BrayTokens.dotSize,
-                    height: BrayTokens.dotSize,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: BrayTokens.dotFill,
-                      border: Border.all(color: Colors.white, width: BrayTokens.dotRing),
-                      boxShadow: const [
-                        // S:86 box-shadow:0 1px 4px rgba(0,0,0,.4)
-                        BoxShadow(color: Color(0x66000000), blurRadius: 4, offset: Offset(0, 1)),
-                      ],
-                    ),
-                  ),
               ],
             ),
           ),
