@@ -131,7 +131,6 @@ class _MapScreenState extends State<MapScreen>
   /// When the user last panned/zoomed; the overview auto-fit waits 12 s after
   /// it (J:200).
   DateTime? _lastGesture;
-  int? _homeCount, _outCount;   // piece 4's place feed; null hides the chip
 
   /// While following, a gesture on the map does not stop the follow - it
   /// pauses it, so the user can look around and the camera picks them back up
@@ -160,7 +159,18 @@ class _MapScreenState extends State<MapScreen>
   SheetLevel _sheetLevel = SheetLevel.peek;
   Timer? _idleTimer;
 
-  MemberPlace? _placeFor(Member m) => null;   // Piece 4 fills this from the geocode feed; null draws no place chips.
+  /// Piece 4's geocode feed rides on the member (Member.place); null still
+  /// draws no place chips.
+  MemberPlace? _placeFor(Member m) => m.place;
+
+  /// Design list "3 home" chip (J:263-265), from Member.place.atHome. Both
+  /// null - chip hidden - until at least one member carries a place, so the
+  /// header never shows a count nobody measured.
+  static int? _homeCountOf(List<Member> members) =>
+      members.any((Member m) => m.place != null) ? members.where((Member m) => m.place?.atHome == true).length : null;
+  static int? _outCountOf(List<Member> members) => members.any((Member m) => m.place != null)
+      ? members.where((Member m) => m.position != null && m.place?.atHome != true).length
+      : null;
 
   bool _chargingFor(Member m) => m.charging ?? false;   // Member.charging: backend `charging` (bray-charging)
 
@@ -1130,7 +1140,7 @@ class _MapScreenState extends State<MapScreen>
                       final String? s = summaryText(
                         following: f,
                         followingLabel: f == null ? null : BrayTokens.labelFor(f, isViewer: f.id == _userId),
-                        homeCount: _homeCount, outCount: _outCount,
+                        homeCount: _homeCountOf(members), outCount: _outCountOf(members),
                       );
                       return s == null ? const SizedBox.shrink() : Padding(padding: const EdgeInsets.only(top: 8), child: FamilySummaryChip(text: s));
                     }),
