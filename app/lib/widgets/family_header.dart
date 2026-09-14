@@ -62,9 +62,12 @@ String everyoneChipLabel(String? summary) => summary == null ? 'Everyone' : 'Eve
 /// corner of the app". [onTap] toggles the sheet of all cards; [active] (the
 /// sheet is up) draws the border in lime, the action colour.
 class FamilySummaryChip extends StatelessWidget {
-  const FamilySummaryChip({super.key, required this.text, this.onTap, this.active = false, this.semanticsLabel});
+  const FamilySummaryChip({super.key, required this.text, this.onTap, this.onLongPress, this.active = false, this.semanticsLabel});
   final String text;
   final VoidCallback? onTap;
+
+  /// bray: a long press opens the hidden marker gallery (map_screen).
+  final VoidCallback? onLongPress;
   final bool active;
   final String? semanticsLabel;
 
@@ -92,7 +95,7 @@ class FamilySummaryChip extends StatelessWidget {
       button: true,
       toggled: active,
       excludeSemantics: true,
-      child: GestureDetector(key: const Key('everyone-chip'), behavior: HitTestBehavior.opaque, onTap: onTap, child: chip),
+      child: GestureDetector(key: const Key('everyone-chip'), behavior: HitTestBehavior.opaque, onTap: onTap, onLongPress: onLongPress, child: chip),
     );
   }
 }

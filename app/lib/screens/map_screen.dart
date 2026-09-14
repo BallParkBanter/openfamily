@@ -43,6 +43,7 @@ import '../widgets/people_sheet.dart';
 import '../widgets/place_text.dart' show placeTypeForPoiKind;
 import '../widgets/poi_chip.dart';
 import 'card_gallery_screen.dart';
+import 'marker_gallery_screen.dart';
 import 'check_in_screen.dart';
 import 'help_alert_screen.dart';
 import 'invite_screen.dart';
@@ -970,6 +971,19 @@ class _MapScreenState extends State<MapScreen>
     ));
   }
 
+  /// bray: the hidden marker gallery (face crops and ring styles), with the
+  /// live members and their real photos. Long-press the Everyone chip.
+  void _openMarkerGallery() {
+    final List<Member> members = _liveMembers();
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => MarkerGalleryScreen(
+        members: members,
+        viewerId: _userId,
+        contactFor: (Member m) => ContactLinkStore.instance.linkFor(m.id),
+      ),
+    ));
+  }
+
   void _openAddPerson() {
     Navigator.of(context)
         .push(MaterialPageRoute<void>(builder: (_) => const InviteScreen()));
@@ -1267,6 +1281,7 @@ class _MapScreenState extends State<MapScreen>
                           semanticsLabel: everyoneChipLabel(s),
                           active: _sheetLevel == SheetLevel.cards,
                           onTap: _onEveryonePressed,
+                          onLongPress: _openMarkerGallery,
                         ),
                       );
                     }),

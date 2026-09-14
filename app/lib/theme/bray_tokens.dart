@@ -246,6 +246,16 @@ class BrayTokens {
     return const Alignment(0, -0.30);
   }
 
+  /// Where the face is in each person's photo, as fractions of its width and
+  /// height, read back from the card crops above (P:53/56/61 "center N%" was
+  /// tuned until the face showed, so N% is where the face is): Bo and
+  /// Charlie 0.38, Heidi 0.63, anyone else 0.35; horizontally the middle.
+  /// The marker gallery's face crop (marker_gallery_screen.dart FaceCrop)
+  /// puts this point where the design wants it in the circle.
+  /// OPEN: Bo, 2026-09-14 "Charlie's photo shows his whole head cut off at
+  /// the forehead ... shift each photo so the face sits in the circle".
+  static Offset facePointFor(Member m) => Offset(0.5, (photoAlignFor(m).y + 1) / 2);
+
   /// J:57-64 ago(): "—" when unknown, "just now" under 2 min, then m / h / d.
   static String agoText(DateTime? seen, DateTime now) {
     if (seen == null) return '—';

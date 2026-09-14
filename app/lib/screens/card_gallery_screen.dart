@@ -31,6 +31,7 @@ import '../widgets/card_chips.dart' show statChipText;
 import '../widgets/dot_grid.dart';
 import '../widgets/people_sheet.dart' show PeopleSheet;
 import '../widgets/place_text.dart' show isDriving, milesText, pillStreet, sinceText;
+import 'marker_gallery_screen.dart';
 
 /// One design in the gallery.
 class CardVariant {
@@ -238,6 +239,16 @@ class _CardGalleryScreenState extends State<CardGalleryScreen> {
                       ],
                     ),
                   ),
+                  // bray: the marker gallery (face crops and ring styles) is
+                  // one tap from here, so both rounds of mockups share a door.
+                  TextButton(
+                    key: const Key('gallery-markers'),
+                    onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                      builder: (_) => MarkerGalleryScreen(members: widget.members, viewerId: widget.viewerId, contactFor: widget.contactFor, now: widget.now),
+                    )),
+                    style: TextButton.styleFrom(foregroundColor: AppColors.accentBright, padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
+                    child: const Text('Markers \u25B8', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                  ),
                 ],
               ),
             ),
@@ -245,7 +256,7 @@ class _CardGalleryScreenState extends State<CardGalleryScreen> {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  const _MapBackdrop(),
+                  const GalleryMapBackdrop(),
                   // Bottom-aligned like the real sheet; scrolls only when the
                   // screen is shorter than three cards (never on the tablet).
                   Align(
@@ -377,9 +388,10 @@ class _Sheet extends StatelessWidget {
 }
 
 /// A stand-in for the basemap so the glass and callout variants have
-/// something to sit on: a few road strokes over the dot field.
-class _MapBackdrop extends StatelessWidget {
-  const _MapBackdrop();
+/// something to sit on: a few road strokes over the dot field. Shared with
+/// the marker gallery (marker_gallery_screen.dart).
+class GalleryMapBackdrop extends StatelessWidget {
+  const GalleryMapBackdrop({super.key});
   @override
   Widget build(BuildContext context) => CustomPaint(
         painter: _RoadsPainter(),
