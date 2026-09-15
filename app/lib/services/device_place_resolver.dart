@@ -22,13 +22,29 @@ class DevicePlace {
 }
 
 class DevicePlaceResolver {
-  DevicePlaceResolver({Future<List<Placemark>> Function(double lat, double lon)? lookup}) : _lookup = lookup ?? placemarkFromCoordinates;
+  DevicePlaceResolver({Future<List<Placemark>> Function(double lat, double lon)? lookup, DateTime Function()? clock})
+      : _lookup = lookup ?? placemarkFromCoordinates,
+        _clock = clock ?? DateTime.now;
 
   final Future<List<Placemark>> Function(double lat, double lon) _lookup;
+  final DateTime Function() _clock;
   final Map<String, DevicePlace> _cache = <String, DevicePlace>{};
   final Map<String, Future<DevicePlace?>> _inFlight = <String, Future<DevicePlace?>>{};
 
-  /// 4 decimals ~ 11 m at this latitude: the same spot resolves once.
+  /// A cell whose lookup failed (threw) or came back empty: no re-dial until
+  /// [retryAfter] has passed. Without this, a device with no geocoder backend
+  /// (de-Googled - a real phone in this household) would fire one failing
+  /// MethodChannel call per member per WS frame forever, since a failure
+  /// leaves the cell uncached and `_onMembersChanged` re-resolves it on the
+  /// very next frame.
+  final Map<String, DateTime> _failedAt = <String, DateTime>{};
+
+  /// OPEN: chosen - a missing geocoder costs one call per cell per 5 min,
+  /// not one per frame.
+  static const Duration retryAfter = Duration(minutes: 5);
+
+  /// OPEN: chosen - 4 decimals, ~11 m at this latitude: the same spot
+  /// resolves once.
   static String keyFor(LatLng p) => '${p.latitude.toStringAsFixed(4)},${p.longitude.toStringAsFixed(4)}';
 
   DevicePlace? cached(LatLng p) => _cache[keyFor(p)];
@@ -37,30 +53,41 @@ class DevicePlaceResolver {
     final String key = keyFor(p);
     final DevicePlace? hit = _cache[key];
     if (hit != null) return Future<DevicePlace?>.value(hit);
+    final DateTime? failedAt = _failedAt[key];
+    if (failedAt != null && _clock().difference(failedAt) < retryAfter) return Future<DevicePlace?>.value();
     final Future<DevicePlace?>? pending = _inFlight[key];
     if (pending != null) return pending;
     // Deliberately NOT `_inFlight.putIfAbsent(key, () => _fetch(key,
-    // p).whenComplete(...))`: that nesting (a `whenComplete` built inside a
-    // `putIfAbsent` ifAbsent callback) reproducibly hung forever under
-    // `flutter test` in this SDK (3.44.0) - the awaited future never
-    // resolved even though the lookup itself completed. Splitting the
-    // "compute" and "register" steps side-steps whatever this is and is not
-    // a design change: the map is still the sole owner of what "in flight"
-    // means, one lookup per key.
+    // p).whenComplete(...))`: `_inFlight` is `Map<String,
+    // Future<DevicePlace?>>`, so `_inFlight.remove(key)` returns
+    // `Future<DevicePlace?>?` - a Future, not a plain value. An arrow-body
+    // `whenComplete(() => _inFlight.remove(key))` therefore returns that
+    // Future to `whenComplete`, which waits on any Future its action
+    // returns - and under the `putIfAbsent` shape, that returned Future
+    // *was* the very whenComplete-derived Future being awaited, so it
+    // waited on itself and never completed. Splitting the "compute" and
+    // "register" steps avoids ever expressing the self-reference, and the
+    // block body below (`{ ...; }`, no return value) keeps it that way even
+    // if this gets reattached to `putIfAbsent` later.
     final Future<DevicePlace?> future = _fetch(key, p);
     _inFlight[key] = future;
-    future.whenComplete(() => _inFlight.remove(key));
+    future.whenComplete(() { _inFlight.remove(key); });
     return future;
   }
 
   Future<DevicePlace?> _fetch(String key, LatLng p) async {
     try {
       final List<Placemark> marks = await _lookup(p.latitude, p.longitude);
-      if (marks.isEmpty) return null;
+      if (marks.isEmpty) {
+        _failedAt[key] = _clock();
+        return null;
+      }
       final DevicePlace out = fromPlacemark(marks.first);
       _cache[key] = out;
+      _failedAt.remove(key);
       return out;
     } catch (_) {
+      _failedAt[key] = _clock();
       return null;   // no geocoder on this device / offline: the server's words will come
     }
   }

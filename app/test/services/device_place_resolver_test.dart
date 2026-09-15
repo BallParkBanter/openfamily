@@ -41,7 +41,7 @@ void main() {
     expect(r.cached(const LatLng(33.99, -83.90)), isNull);
     expect(DevicePlaceResolver.keyFor(const LatLng(33.98004, -83.90004)), '33.9800,-83.9000');
   });
-  test('in-flight dedup and failures: two concurrent calls share one lookup; a throwing lookup yields null and is not cached', () async {
+  test('in-flight dedup and failures: two concurrent calls share one lookup; a throwing lookup yields null and is not cached as a place - backed off instead', () async {
     int calls = 0;
     final DevicePlaceResolver r = DevicePlaceResolver(lookup: (lat, lon) async { calls++; await Future<void>.delayed(const Duration(milliseconds: 10)); return [pm(thoroughfare: 'X')]; });
     await Future.wait([r.resolve(const LatLng(1, 1)), r.resolve(const LatLng(1, 1))]);
@@ -49,6 +49,57 @@ void main() {
     final DevicePlaceResolver bad = DevicePlaceResolver(lookup: (lat, lon) async => throw Exception('no geocoder'));
     expect(await bad.resolve(const LatLng(2, 2)), isNull);
     expect(bad.cached(const LatLng(2, 2)), isNull);
+  });
+  group('failure backoff (de-Googled / no geocoder backend)', () {
+    test('a failed cell makes no lookup call again while inside retryAfter', () async {
+      DateTime now = DateTime(2026, 9, 15, 12, 0);
+      int calls = 0;
+      final DevicePlaceResolver r = DevicePlaceResolver(
+        clock: () => now,
+        lookup: (lat, lon) async { calls++; throw Exception('no geocoder'); },
+      );
+      expect(await r.resolve(const LatLng(1, 1)), isNull);
+      expect(calls, 1);
+      now = now.add(const Duration(minutes: 4));
+      expect(await r.resolve(const LatLng(1, 1)), isNull);
+      expect(calls, 1);                                   // still backed off: no second call
+      expect(r.cached(const LatLng(1, 1)), isNull);
+    });
+    test('a lookup that returns no placemarks at all backs off the same way', () async {
+      DateTime now = DateTime(2026, 9, 15, 12, 0);
+      int calls = 0;
+      final DevicePlaceResolver r = DevicePlaceResolver(clock: () => now, lookup: (lat, lon) async { calls++; return []; });
+      expect(await r.resolve(const LatLng(1, 1)), isNull);
+      now = now.add(const Duration(minutes: 1));
+      expect(await r.resolve(const LatLng(1, 1)), isNull);
+      expect(calls, 1);
+    });
+    test('after retryAfter has passed, the cell is dialed again', () async {
+      DateTime now = DateTime(2026, 9, 15, 12, 0);
+      int calls = 0;
+      final DevicePlaceResolver r = DevicePlaceResolver(
+        clock: () => now,
+        lookup: (lat, lon) async { calls++; throw Exception('no geocoder'); },
+      );
+      expect(await r.resolve(const LatLng(1, 1)), isNull);
+      expect(calls, 1);
+      now = now.add(DevicePlaceResolver.retryAfter + const Duration(seconds: 1));
+      expect(await r.resolve(const LatLng(1, 1)), isNull);
+      expect(calls, 2);                                   // backoff elapsed: dialed again
+    });
+    test('a success clears a prior backoff for that cell', () async {
+      DateTime now = DateTime(2026, 9, 15, 12, 0);
+      bool fail = true;
+      final DevicePlaceResolver r = DevicePlaceResolver(
+        clock: () => now,
+        lookup: (lat, lon) async { if (fail) throw Exception('no geocoder'); return [pm(thoroughfare: 'Dacula Road')]; },
+      );
+      expect(await r.resolve(const LatLng(1, 1)), isNull);
+      fail = false;
+      now = now.add(DevicePlaceResolver.retryAfter + const Duration(seconds: 1));
+      expect((await r.resolve(const LatLng(1, 1)))!.street, 'Dacula Road');
+      expect(r.cached(const LatLng(1, 1))!.street, 'Dacula Road');
+    });
   });
   group('mergePlace', () {
     const LatLng fix = LatLng(33.99, -83.91), old = LatLng(33.98, -83.90), home = LatLng(33.975, -83.905);
@@ -66,6 +117,13 @@ void main() {
       expect(out.city, 'Dacula');
       expect(out.since, server.since);
       expect(out.placeName, isNull);
+    });
+    test('the fix moved on and the device has a street but no POI: the stale server POI is dropped, not kept (mergePlace bypasses copyWith for exactly this)', () {
+      final MemberPlace out = mergePlace(server, old, fix, const DevicePlace(street: 'Dacula Road'));
+      expect(out.street, 'Dacula Road');
+      expect(out.poiName, isNull);
+      expect(out.poiKind, isNull);
+      expect(out.since, server.since);
     });
     test('the fix moved on but the device has nothing yet: the server words stay (never blank the card)', () {
       expect(mergePlace(server, old, fix, null).street, 'Old Street');
