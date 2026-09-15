@@ -15,6 +15,7 @@ import '../services/app_config.dart';
 import '../services/background_location_service.dart';
 import '../services/battery_optimization_service.dart';
 import '../services/contact_link_store.dart';
+import '../services/device_place_resolver.dart';
 import '../services/device_service.dart';
 import '../services/family_service.dart';
 import '../services/location_reporter.dart';
@@ -165,6 +166,14 @@ class _MapScreenState extends State<MapScreen>
   final Map<String, _Glide> _glides = <String, _Glide>{};
   Ticker? _glideTicker;
 
+  /// Piece 5 live words: the device geocode per member position and where
+  /// the server's place was last measured (the position at the frame that
+  /// carried it), so _placeFor can tell a current server place from one
+  /// that is a fix behind.
+  final DevicePlaceResolver _devicePlaces = DevicePlaceResolver();
+  final Map<String, LatLng> _serverPlaceAt = <String, LatLng>{};
+  final Map<String, MemberPlace?> _lastServerPlace = <String, MemberPlace?>{};
+
   /// Round 4: hidden or focus; the Everyone chip is a summary. FocusRules
   /// owns who is focused and the idle clock; the sheet level is derived from
   /// it (FocusRules.levelFor). The default is no card at all - the map, the
@@ -186,8 +195,20 @@ class _MapScreenState extends State<MapScreen>
   final GroupTracker _groups = GroupTracker();
 
   /// Piece 4's geocode feed rides on the member (Member.place); null still
-  /// draws no place chips.
-  MemberPlace? _placeFor(Member m) => m.place;
+  /// draws no place chips. Merged with the on-device geocode (task 11) so
+  /// the card's place words move the moment a fix lands, not only when the
+  /// server's geocoder catches up.
+  MemberPlace? _placeFor(Member m) {
+    if (m.position == null) return m.place;
+    return mergePlace(m.place, _serverPlaceAt[m.id], m.position, _devicePlaces.cached(m.position!), home: _homePosition());
+  }
+
+  LatLng? _homePosition() {
+    for (final Place p in _familyService.places) {
+      if (p.type == 'home') return p.position;
+    }
+    return null;
+  }
 
   /// Design list "3 home" chip (J:263-265), from Member.place.atHome. Both
   /// null - chip hidden - until at least one member carries a place, so the
@@ -234,6 +255,15 @@ class _MapScreenState extends State<MapScreen>
     _drives.updateAll(members, now: now);
     _groups.observe(members, inDriveFor: (Member m) => _drives.inDrive(m.id), now: now);
     for (final Member m in members) {
+      if (!identical(m.place, _lastServerPlace[m.id])) {
+        _lastServerPlace[m.id] = m.place;
+        if (m.position != null) _serverPlaceAt[m.id] = m.position!;
+      }
+      if (m.position != null && _devicePlaces.cached(m.position!) == null) {
+        _devicePlaces.resolve(m.position!).then((DevicePlace? p) {
+          if (p != null && mounted) setState(() {});
+        });
+      }
       final LatLng? to = m.position;
       if (to == null) continue;
       final LatLng? from = _drawnPosition(m.id, now);

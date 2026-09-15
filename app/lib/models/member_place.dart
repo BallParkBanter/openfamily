@@ -55,6 +55,19 @@ class MemberPlace {
 
   double? get homeMiles => homeDistanceM == null ? null : homeDistanceM! / 1609.344;
 
+  MemberPlace copyWith({String? street, String? city, String? county, String? placeName, bool? atHome, double? homeDistanceM, DateTime? since, String? poiName, String? poiKind}) =>
+      MemberPlace(
+        street: street ?? this.street,
+        city: city ?? this.city,
+        county: county ?? this.county,
+        placeName: placeName ?? this.placeName,
+        atHome: atHome ?? this.atHome,
+        homeDistanceM: homeDistanceM ?? this.homeDistanceM,
+        since: since ?? this.since,
+        poiName: poiName ?? this.poiName,
+        poiKind: poiKind ?? this.poiKind,
+      );
+
   /// Null for anything that is not a JSON object.
   static MemberPlace? fromJson(dynamic json) {
     if (json is! Map<String, dynamic>) return null;
