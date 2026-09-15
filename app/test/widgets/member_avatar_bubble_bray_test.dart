@@ -10,10 +10,10 @@ import 'package:openfamily/widgets/member_avatar_bubble.dart';
 import 'package:openfamily/screens/map_screen.dart' show showRange;
 
 // batteryPercent/address are required by Member's constructor (member.dart:85-90).
-Member m(String name, {MemberStatus st = MemberStatus.normal, int? mph, double? acc, bool? charging}) => Member(
+Member m(String name, {MemberStatus st = MemberStatus.normal, int? mph, double? acc, bool? charging, int batt = 0}) => Member(
     id: name, name: name, status: st, position: const LatLng(33.9, -84.4),
     movement: mph == null ? MovementType.none : MovementType.car, speedMph: mph, accuracyMeters: acc,
-    batteryPercent: 0, address: '', charging: charging);
+    batteryPercent: batt, address: '', charging: charging);
 Widget host(Widget w) => MaterialApp(home: Scaffold(body: Center(child: w)));
 
 void main() {
@@ -85,18 +85,20 @@ void main() {
     expect(t.widget<StatusAvatar>(find.byType(StatusAvatar)).desaturate, isTrue);
     expect(find.byType(ColorFiltered), findsOneWidget);
   });
-  testWidgets('bolt (S:72-74) bottom-left of the ring only while charging; null means no bolt', (t) async {
-    await t.pumpWidget(host(MemberAvatarBubble(member: m('Bo Bray', charging: true), onTap: () {})));
-    expect(find.byKey(const Key('bray-bolt')), findsOneWidget);
-    final bolt = t.getRect(find.byKey(const Key('bray-bolt')));
-    final ring = t.getRect(find.byKey(const Key('bray-ring')));
-    expect(bolt.size, const Size(BrayTokens.boltWhite, BrayTokens.boltWhite));
-    expect(bolt.left, closeTo(ring.left - 3, 0.5)); // S:72 left:-3px
-    expect(bolt.bottom, closeTo(ring.bottom + 1, 0.5)); // S:72 bottom:-1px
-    await t.pumpWidget(host(MemberAvatarBubble(member: m('Bo Bray', charging: false), onTap: () {})));
-    expect(find.byKey(const Key('bray-bolt')), findsNothing);
-    await t.pumpWidget(host(MemberAvatarBubble(member: m('Bo Bray'), onTap: () {})));
-    expect(find.byKey(const Key('bray-bolt')), findsNothing);
+  testWidgets('battery badge bottom-left of the ring (left -5, bottom -4) while charging or low; none when fine; null charging = not charging', (t) async {
+    await t.pumpWidget(host(MemberAvatarBubble(member: m('Bo Bray', charging: true, batt: 96), onTap: () {})));
+    expect(find.byKey(const Key('battery-badge')), findsOneWidget);
+    final Rect badge = t.getRect(find.byKey(const Key('battery-badge')));
+    final Rect ring = t.getRect(find.byKey(const Key('bray-ring')));
+    expect(badge.left, closeTo(ring.left + BrayTokens.battBadgeLeft, 0.5));      // .chg left:-5px
+    expect(badge.bottom, closeTo(ring.bottom - BrayTokens.battBadgeBottom, 0.5)); // .chg bottom:-4px
+    expect(find.byKey(const Key('glyph-bolt')), findsOneWidget);
+    expect(find.byKey(const Key('bray-bolt')), findsNothing);                     // the old white bolt pill is gone
+    await t.pumpWidget(host(MemberAvatarBubble(member: m('Bo Bray', charging: false, batt: 96), onTap: () {})));
+    expect(find.byKey(const Key('battery-badge')), findsNothing);
+    await t.pumpWidget(host(MemberAvatarBubble(member: m('Bo Bray', batt: 12), onTap: () {})));
+    expect(find.byKey(const Key('battery-badge')), findsOneWidget);
+    expect(find.byKey(const Key('glyph-bolt')), findsNothing);
   });
   testWidgets('one badge top-right at left 44 / top -10 of the ring; no pill under the ring any more', (t) async {
     final DateTime now = DateTime(2026, 9, 15, 12);

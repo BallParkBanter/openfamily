@@ -7,6 +7,7 @@ import '../models/member.dart';
 import '../services/member_avatar_cache.dart';
 import '../theme/app_theme.dart';
 import '../theme/bray_tokens.dart';
+import 'battery_badge.dart';
 import 'home_chip.dart' show HomeChip;
 import 'marker_pointer.dart';
 import 'movement_icon.dart';
@@ -132,8 +133,6 @@ class MemberAvatarBubble extends StatelessWidget {
   static const double tailDotGap = 4;
   static const double coneLength = BrayTokens.coneLengthFactor * BrayTokens.soloFace;
 
-  static bool _isCharging(Member member) => member.charging == true;
-
   @override
   Widget build(BuildContext context) {
     final DateTime now = this.now ?? DateTime.now();
@@ -142,6 +141,7 @@ class MemberAvatarBubble extends StatelessWidget {
     final bool stale = isStale(member, now);
     final Color colour = ringColourFor(member, now);
     final SlotBadgeSpec? badge = slotBadgeFor(member, now: now, inDrive: inDrive);
+    final BatteryBadgeSpec? batt = batteryBadgeFor(percent: member.batteryPercent, charging: member.charging == true);
 
     return Tooltip(
       message: tooltip,
@@ -196,12 +196,11 @@ class MemberAvatarBubble extends StatelessWidget {
                     ),
                   ),
                 ),
-                // Task 4 replaces this bolt with the battery badge.
-                if (_isCharging(member))
-                  const Positioned(
-                    left: ringLeft - 3,                                                                  // S:72 left:-3px
-                    top: topZone + BrayTokens.soloFace + 1 - BrayTokens.boltWhite,                        // S:72 bottom:-1px
-                    child: BrayChargingBolt(),
+                if (batt != null)
+                  Positioned(
+                    left: ringLeft + BrayTokens.battBadgeLeft,                                              // .chg left:-5px
+                    top: topZone + BrayTokens.soloFace - BrayTokens.battBadgeBottom - BrayTokens.battBadgeH,  // .chg bottom:-4px
+                    child: BatteryBadge(spec: batt),
                   ),
                 if (badge != null)
                   Positioned(
