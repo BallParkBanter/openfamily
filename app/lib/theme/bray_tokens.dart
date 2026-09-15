@@ -187,7 +187,7 @@ class BrayTokens {
   // metrics and palette are the v8* / card* tokens right below; the viewer's
   // own card numbers (S:112-158) follow them, kept for the gallery's ten
   // originals and as the record of where the first card came from.
-  static const double cardH = 128;                   // gallery #12 "8 standard" (card_gallery_screen.dart _BackdropSize.standard); was S:119 112
+  static const double cardHRetired = 128;            // gallery #12 "8 standard" (card_gallery_screen.dart _BackdropSize.standard); was S:119 112 (renamed 2026-09-15: cardH is the focus-29 card now)
   static const double cardHViewer = 112;             // S:119 .card height:112px - the gallery's originals (#1-#10) and #8 at its first size
   static const double cardHFocus = 170;              // S:122 .card.sel height:170px - unchanged: the tall card is 128 + the detail row
   static const double cardNameSize = 28;             // #12: the name, lime, w800
@@ -337,5 +337,181 @@ class BrayTokens {
     if (m < 60) return '${m}m ago';
     final int h = (m / 60).round();
     return h < 24 ? '${h}h ago' : '${(h / 24).round()}d ago';
+  }
+
+  // ------------------------------------------------------------ mock2 redesign (2026-09-15)
+  // Bo's approved mockup round, family-app docs/superpowers/mockups/2026-09-14-cards/
+  // (DECISIONS.md "Round 4", "Marker badges", "Direction cone", "Marker states",
+  // "Condition rulings"). The marker HTML (markers-*.html) renders at the
+  // tablet's 800x1280 logical size, so 1 CSS px = 1 logical px; the card HTML
+  // (focus-29.html) renders the card at zoom:1.3, so card values are CSS px x
+  // cardScale. Every value cites its selector.
+
+  // -- the ring and what hangs off it (markers-13.html)
+  static const Color ringShadow = Color(0x80000000);         // mock2 markers-13.html .shadow box-shadow:0 4px 14px rgba(0,0,0,.5) - on a SEPARATE disc so it never falls on the pointer
+  static const double ringShadowBlur = 14;                    // mock2 markers-13.html .shadow
+  static const double ringShadowDy = 4;                       // mock2 markers-13.html .shadow
+  static const double pointerW = 20;                          // mock2 markers-13.html .tail border-left 10px + border-right 10px
+  static const double pointerH = 18;                          // mock2 markers-13.html .tail border-top:18px
+  static const double pointerTop = 50;                        // mock2 markers-13.html .tail top:50px (from the ring's top; z-index 1 = BEHIND the face's 2)
+  static const double dotTop = 74;                            // mock2 markers-13.html .dot top:74px (from the ring's top)
+
+  // -- name badge underlay (markers-13.html .nm; markers-24.html .nm.stale)
+  static const double nameBadgeRight = 38;                    // mock2 markers-13.html .nm right:38px (its right edge is 38 in from the ring's right edge: x = 56 - 38 = 18)
+  static const double nameBadgeBottom = 44;                   // mock2 markers-13.html .nm bottom:44px (its bottom edge is 44 up from the ring's bottom: y = 56 - 44 = 12 - the corner tucks UNDER the ring)
+  static const Color nameBadgeBg = Color(0xDB0A0E16);         // mock2 markers-13.html .nm background:rgba(10,14,22,.86)
+  static const double nameBadgeBorder = 1.5;                  // mock2 markers-13.html .nm border:1.5px solid var(--pc)
+  static const double nameBadgeFont = 14;                     // mock2 markers-13.html .nm font-size:14px
+  static const FontWeight nameBadgeWeight = FontWeight.w800;  // mock2 markers-13.html .nm font-weight:800
+  static const double nameBadgePadV = 3;                      // mock2 markers-13.html .nm padding:3px 10px
+  static const double nameBadgePadH = 10;                     // mock2 markers-13.html .nm padding:3px 10px
+  static const double nameBadgeLineHeight = 1.15;             // OPEN: measured - browser "normal" line height for 14px system-ui bold (same as nameTagLineHeight)
+  /// The badge's box height: 14 x 1.15 + 2 x 3 + 2 x 1.5 = 25.1. Its top is
+  /// nameBadgeH - (soloFace - nameBadgeBottom) = 13.1 above the ring's top.
+  static const double nameBadgeH = nameBadgeFont * nameBadgeLineHeight + 2 * nameBadgePadV + 2 * nameBadgeBorder;
+
+  // -- the top-right badge slot (markers-13.html .age; markers-22.html .age.spd2; markers-24.html .age .grey)
+  static const double badgeLeft = 44;                         // mock2 markers-13.html .age left:44px (from the ring's left edge)
+  static const double badgeTop = -10;                         // mock2 markers-13.html .age top:-10px (above the ring's top)
+  static const Color badgeBg = Colors.white;                  // mock2 markers-13.html .age background:#fff
+  static const Color badgeInk = Color(0xFF141B36);            // mock2 markers-13.html .age color:#141b36
+  static const EdgeInsets badgePad = EdgeInsets.fromLTRB(7, 4, 9, 4);   // mock2 markers-13.html .age padding:4px 9px 4px 7px
+  static const double badgeRadius = 12;                       // mock2 markers-13.html .age border-radius:12px
+  static const Color badgeBorder = Color(0x33141B36);         // mock2 markers-13.html .age border:1px solid rgba(20,27,54,.2)
+  static const Color badgeShadow = Color(0x59000000);         // mock2 markers-13.html .age box-shadow:0 1px 4px rgba(0,0,0,.35)
+  static const double badgeShadowBlur = 4;                    // mock2 markers-13.html .age
+  static const double badgeShadowDy = 1;                      // mock2 markers-13.html .age
+  static const double badgeGap = 5;                           // mock2 markers-13.html .age gap:5px (glyph to text)
+  static const double badgeLabelFont = 10;                    // mock2 markers-13.html .age .t font-size:10px
+  static const Color badgeLabelColor = Color(0xFF5B6472);     // mock2 markers-13.html .age .t color:#5b6472
+  static const double badgeValueFont = 12;                    // mock2 markers-13.html .age .d font-size:12px; font-weight:800
+  static const double badgeSpeedFont = 13;                    // mock2 markers-22.html .age.spd2 .d style="font-size:13px" ("70 mph")
+  static const double badgeLineHeight = 1.1;                  // mock2 markers-13.html .age .t/.d line-height:1.1
+  static const double badgePinW = 14;                         // mock2 markers-13.html .age svg width=14 height=18 (viewBox 24x32)
+  static const double badgePinH = 18;
+  static const double badgeCarSize = 18;                      // mock2 markers-22.html .car style="width:18px;height:18px" (viewBox 24x24)
+  static const Color carWheel = Color(0xFF141B36);            // mock2 markers-22.html .car circle fill="#141b36" (option D: black wheels)
+  static const Color groupCar = Color(0xFFE5484D);            // mock2 markers-22.html .gspd style="--pc:#E5484D" (red body on a group)
+  static const Color staleGrey = Color(0xFF9AA3AD);           // mock2 markers-24.html .nm.stale / .face.stale / .tail.stale #9aa3ad; the stale pin fill="#9aa3ad"
+  static const Color staleValueGrey = Color(0xFF6B7280);      // mock2 markers-24.html .age .grey color:#6b7280 ("4 hr ago")
+  static const double staleSaturation = 0.35;                 // mock2 markers-24.html .face.stale filter:saturate(.35)
+
+  // -- battery badge (markers-13.html .chg; markers-16.html: none when fine, red without a bolt when low)
+  static const double battBadgeLeft = -5;                     // mock2 markers-13.html .chg left:-5px
+  static const double battBadgeBottom = -4;                   // mock2 markers-13.html .chg bottom:-4px
+  static const double battBadgeW = 13;                        // mock2 markers-13.html .chg width:13px
+  static const double battBadgeH = 22;                        // mock2 markers-13.html .chg height:22px
+  static const double battBadgeRadius = 4;                    // mock2 markers-13.html .chg border-radius:4px
+  static const Color battBadgeBorder = Color(0x38141B36);     // mock2 markers-13.html .chg border:1px solid rgba(20,27,54,.22)
+  static const double battBadgePadBottom = 2;                 // mock2 markers-13.html .chg padding:0 0 2px 0
+  static const double battCellW = 9;                          // mock2 markers-13.html .chg .cell width:9px
+  static const double battCellH = 16;                         // mock2 markers-13.html .chg .cell height:16px
+  static const double battCellBorder = 1.5;                   // mock2 markers-13.html .chg .cell border:1.5px solid #141b36
+  static const double battCellRadius = 2.5;                   // mock2 markers-13.html .chg .cell border-radius:2.5px
+  static const double battNubW = 5;                           // mock2 markers-13.html .chg .nub width:5px
+  static const double battNubH = 3;                           // mock2 markers-13.html .chg .nub height:3px
+  static const double battNubTop = 1;                         // mock2 markers-13.html .chg .nub top:1px
+  static const double battBoltW = 7;                          // mock2 markers-13.html .cell svg width=7 height=10 (viewBox 10x12)
+  static const double battBoltH = 10;
+  static const Color battGreen = Color(0xFF3CE28C);           // mock2 markers-13.html --c:#3CE28C (charging, 96 %)
+  static const Color battYellow = Color(0xFFF5C542);          // mock2 markers-13.html --c:#F5C542 (charging, 48 %)
+  static const Color battRed = Color(0xFFFF5A5A);             // mock2 markers-13.html --c:#FF5A5A (12 %); markers-16.html .lowb
+  static const int battGoodAt = 50;                           // DECISIONS "Marker badges": green >= 50 %, yellow 20-49 %, red < 20 % (battLowAt = 20 above)
+
+  // -- direction beam (markers-15.html .beam)
+  static const double beamDisc = 230;                         // mock2 markers-15.html .beam width/height:230px, centred on the ring
+  static const double beamWedgeDeg = 30;                      // mock2 markers-15.html .beam conic-gradient(from -15deg ... 30deg) - a 30 degree wedge centred on the heading
+  static const double beamAlpha = 0.85;                       // mock2 markers-15.html .beam color-mix(in srgb, var(--pc) 85%, transparent)
+  static const List<double> beamMaskStops = <double>[0.14, 0.30, 0.46, 0.56];   // mock2 markers-15.html .beam mask radial-gradient stops 14% / 30% / 46% / 56%
+  static const List<double> beamMaskAlphas = <double>[1.0, 0.75, 0.25, 0.0];   // mock2 markers-15.html .beam mask alphas 1 / .75 / .25 / 0 (nothing left by 56 % of the disc)
+  static const double beamBlur = 2.5;                         // mock2 markers-15.html .beam filter:blur(2.5px)
+
+  // -- group capsule (markers-22.html .cap .more .ctail .gspd; markers-24.html .gcall)
+  static const int capsuleMaxFaces = 3;                       // DECISIONS "Groups": up to 3 faces, then a dark "+N" circle (markers-22.html: 3 <img> + .more "+3")
+  static const Color groupMoreBg = Color(0xFF141B36);         // mock2 markers-22.html .cap .more background:#141b36
+  static const double groupMoreFont = 20;                     // mock2 markers-22.html .cap .more font:800 20px
+  /// The badge's centre sits this far below the capsule's top edge: .gspd
+  /// top:559 with the capsule's top at 623 - 66 = 557 (its bottom is at 623,
+  /// height 58 + 2 x 3 + 2 x 1). "a slight overlay" (DECISIONS "Groups").
+  static const double groupBadgeCentreBelowTop = 2;           // mock2 markers-22.html .gspd top:559px vs .cap top 557px
+  static const EdgeInsets groupBadgePad = EdgeInsets.fromLTRB(8, 4, 10, 4);          // mock2 markers-24.html .gcall padding:4px 10px 4px 8px
+  static const EdgeInsets groupSpeedPad = EdgeInsets.symmetric(horizontal: 10, vertical: 4);   // mock2 markers-22.html .gspd padding:4px 10px
+  static const double groupSpeedGap = 6;                      // mock2 markers-22.html .gspd gap:6px
+  static const Color groupPin = Color(0xFF141B36);            // mock2 markers-24.html .gcall svg path fill="#141b36" (a dark pin on a group)
+
+  // -- rules (DECISIONS "Marker states" and "Condition rulings")
+  static const int driveStartMph = 8;                         // DECISIONS: "a drive starts once speed > ~8 mph" (strictly greater)
+  static const int driveStillMph = 3;                         // OPEN: chosen - "standing still" inside a drive is under 3 mph; a parked phone's GPS jitter reads 1-2 mph
+  static const Duration driveEndAfterStill = Duration(minutes: 2);   // DECISIONS ruling 4: "a drive ends after 2 min stationary (not 5)"
+  static const Duration groupMatchFor = Duration(minutes: 1);        // DECISIONS ruling 3: "group only after ~1 min of matching speed AND heading"
+  static const int groupSpeedTolMph = 5;                      // OPEN: chosen - two phones in one car read within 5 mph of each other
+  static const double groupHeadingTolDeg = 20;                // OPEN: chosen - and within 20 degrees (a lane change is under that)
+  static const Duration arrivedWithin = Duration(hours: 1);   // DECISIONS ruling 2: "'Bo arrived 41 min ago' for the first hour after someone joins"
+
+  // -- the card (focus-29.html, zoom:1.3; states.html for the grey dot and the low colour)
+  static const double cardScale = 1.3;                        // mock2 focus-29.html .k zoom:1.3
+  static const double cardW = 352 * cardScale;                // mock2 focus-29.html .k width:352px = 457.6
+  static const double cardH = 196 * cardScale;                // mock2 focus-29.html .k height:196px = 254.8
+  static const double cardRadius2 = 22 * cardScale;           // mock2 focus-29.html .k border-radius:22px = 28.6 (cardRadius above is the retired viewer card's)
+  static const double cardLeft = 12;                          // mock2 focus-29.html .float left:12px = the bottom bar's inset (map_bottom_bar.dart:53 horizontal:12) - the SOS button's left edge
+  static const double cardBottomGap = 120.0 - 88.0;           // mock2 focus-29.html .float bottom:120px minus MapBottomBar.height 88 (the safe inset is added by the widget)
+  static const Color cardShadow = Color(0x73000000);          // mock2 focus-29.html .k box-shadow:0 10px 30px rgba(0,0,0,.45)
+  static const double cardShadowBlur = 30 * cardScale;
+  static const double cardShadowDy = 10 * cardScale;
+  static const Color cardShade = Color(0x8C080B10);           // mock2 focus-29.html .k .shade background:rgba(8,11,16,.55) - ONE even tint (Round 4)
+  static const EdgeInsets cardPad = EdgeInsets.fromLTRB(16 * cardScale, 16 * cardScale, 16 * cardScale, 14 * cardScale);   // mock2 focus-29.html .in padding:16px 16px 14px
+  static const double cardNameFont = 30 * cardScale;          // mock2 focus-29.html .nm font-size:30px = 39
+  static const FontWeight cardNameWeight = FontWeight.w800;   // mock2 focus-29.html .nm font-weight:800
+  static const Color cardLime = AppColors.accentBright;       // mock2 focus-29.html #A3E635 (DECISIONS "Colour")
+  static const double cardDotSize = 11 * cardScale;           // mock2 focus-29.html .dot width/height:11px
+  static const double cardDotGap = 8 * cardScale;             // mock2 focus-29.html .nm gap:8px
+  static const Color cardDotLive = Color(0xFF3CE28C);         // mock2 focus-29.html .dot background:#3CE28C
+  static const double cardDotRing = 3 * cardScale;            // mock2 focus-29.html .dot box-shadow:0 0 0 3px rgba(60,226,140,.25)
+  static const double cardDotRingAlpha = 0.25;
+  static const Color cardDotStale = Color(0xFF6B7280);        // mock2 states.html .dot.grey background:#6b7280
+  static const double cardIcoSize = 32 * cardScale;           // mock2 focus-29.html .ico width/height:32px
+  static const double cardIcoGap = 8 * cardScale;             // mock2 focus-29.html .acts gap:8px
+  static const double cardIcoGlyph = 16 * cardScale;          // mock2 focus-29.html .ico svg width=16 (stroke #A3E635 2.2 - Material outline icons stand in for the paths)
+  static const Color cardIcoBg = Color(0x8C080B10);           // mock2 focus-29.html .ico background:rgba(8,11,16,.55)
+  static const Color cardIcoBorder = Color(0x80A3E635);       // mock2 focus-29.html .ico border:1px solid rgba(163,230,53,.5)
+  static const double cardPlaceFont = 17 * cardScale;         // mock2 focus-29.html .pl font-size:17px
+  static const FontWeight cardPlaceWeight = FontWeight.w600;  // mock2 focus-29.html .pl font-weight:600
+  static const double cardPlaceTop = 2 * cardScale;           // mock2 focus-29.html .pl margin-top:2px
+  static const double cardFactsTop = 8 * cardScale;           // mock2 focus-29.html .facts margin-top:8px
+  static const double cardFactGap = 8 * cardScale;            // mock2 focus-29.html .facts gap:8px
+  static const double cardFactFont = 14 * cardScale;          // mock2 focus-29.html .fact font-size:14px
+  static const Color cardFactColor = Color(0xFFDFE8DF);       // mock2 focus-29.html .fact color:#dfe8df
+  static const EdgeInsets cardFactPad = EdgeInsets.symmetric(vertical: 4 * cardScale, horizontal: 10 * cardScale);   // mock2 focus-29.html .fact padding:4px 10px
+  static const Color cardFactBg = Color(0x1AFFFFFF);          // mock2 focus-29.html .fact background:rgba(255,255,255,.10)
+  static const Color cardFactBorder = Color(0x24FFFFFF);      // mock2 focus-29.html .fact border:1px solid rgba(255,255,255,.14)
+  static const double cardSaveFont = 15 * cardScale;          // mock2 focus-29.html .save font-size:15px; font-weight:800
+  static const double cardSavePadH = 18 * cardScale;          // mock2 focus-29.html .save padding:0 18px
+  static const double cardSaveH = 40 * cardScale;             // mock2 focus-29.html .save height:40px (the last rule; the first said 42) = 52
+  static const double cardSaveRadius = 12 * cardScale;        // mock2 focus-29.html .save border-radius:12px
+  static const double cardSaveBorder = 2 * cardScale;         // mock2 focus-29.html .save border:2px solid #A3E635
+  static const Color cardSaveGradTop = Color(0xFF2A3441);     // mock2 focus-29.html .save background:linear-gradient(180deg,#2a3441 0%,#151c26 100%)
+  static const Color cardSaveGradBottom = Color(0xFF151C26);
+  static const Color cardSaveShadow = Color(0x8C000000);      // mock2 focus-29.html .save box-shadow 0 8px 18px rgba(0,0,0,.55)
+  static const double cardSaveShadowBlur = 18 * cardScale;
+  static const double cardSaveShadowDy = 8 * cardScale;
+  static const Color cardSaveGlow = Color(0x40A3E635);        // mock2 focus-29.html .save box-shadow 0 0 14px rgba(163,230,53,.25)
+  static const double cardSaveGlowBlur = 14 * cardScale;
+  static const double cardBattLabelFont = 11 * cardScale;     // mock2 focus-29.html .eb2 font-size:11px
+  static const double cardBattLabelSpacing = 0.14;            // mock2 focus-29.html .eb2 letter-spacing:.14em (x font size)
+  static const Color cardBattLabelColor = Color(0xFFB9C9BA);  // mock2 focus-29.html .eb2 color:#b9c9ba
+  static const double cardBattFont = 22 * cardScale;          // mock2 focus-29.html .bt font-size:22px; font-weight:800; color #A3E635
+  static const double cardBattUnitFont = 12 * cardScale;      // mock2 focus-29.html .bt small font-size:12px
+  static const double cardBattEmojiFont = 16 * cardScale;     // mock2 focus-29.html .bt span style="font-size:16px"
+  static const double cardBattEmojiLift = 4 * cardScale;      // mock2 focus-29.html .bt span style="top:-4px"
+  static const Color cardBattLow = Color(0xFFFF6B6B);         // mock2 states.html .bt.low color:#ff6b6b ("🪫 12%")
+  /// Photo crop: object-position x 62% for everyone (focus-29.html / states.html
+  /// img.bg); y per person from states.html inline styles: Charlie 30%,
+  /// Heidi 45%, Bo 40%, anyone else 30%. CSS p% -> Alignment 2p - 1.
+  static const double cardPhotoX = 0.24;                      // mock2 focus-29.html .k img.bg object-position:62% 30% (= 2 x 0.62 - 1, written as the literal so it compares exactly)
+  static Alignment cardPhotoAlignFor(Member m) {
+    final String n = m.name.trim().toLowerCase();
+    if (n.startsWith('heidi')) return const Alignment(cardPhotoX, 2 * 0.45 - 1);                                  // mock2 states.html "object-position:62% 45%"
+    if (n.startsWith('bo') || n == 'you' || n.startsWith('test dad')) return const Alignment(cardPhotoX, 2 * 0.40 - 1);   // mock2 states.html "object-position:62% 40%"
+    return const Alignment(cardPhotoX, 2 * 0.30 - 1);                                                            // mock2 focus-29.html 62% 30% (Charlie)
   }
 }

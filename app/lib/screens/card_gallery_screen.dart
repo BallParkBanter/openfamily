@@ -1172,13 +1172,13 @@ class _BackdropSize {
   static const _BackdropSize original = _BackdropSize(card: BrayTokens.cardHViewer, name: 26, facts: 14, battery: 26, chips: 14, padH: 12, padTop: 10, padBottom: 10);
   static const _BackdropSize compact = _BackdropSize(card: 96, name: 22, facts: 14, battery: 24, chips: 14, padH: 10, padTop: 8, padBottom: 8);
   // The winner (Bo, 2026-09-14) - the live PersonCard reads the same tokens.
-  static const _BackdropSize standard = _BackdropSize(card: BrayTokens.cardH, name: BrayTokens.cardNameSize, facts: BrayTokens.cardFactSize, battery: BrayTokens.cardBattSize, chips: BrayTokens.cardChipSize, padH: BrayTokens.cardPadH, padTop: BrayTokens.cardPadTop, padBottom: BrayTokens.cardPadBottom);
+  static const _BackdropSize standard = _BackdropSize(card: BrayTokens.cardHRetired, name: BrayTokens.cardNameSize, facts: BrayTokens.cardFactSize, battery: BrayTokens.cardBattSize, chips: BrayTokens.cardChipSize, padH: BrayTokens.cardPadH, padTop: BrayTokens.cardPadTop, padBottom: BrayTokens.cardPadBottom);
   static const _BackdropSize large = _BackdropSize(card: 168, name: 34, facts: 18, battery: 40, chips: 16, padH: 16, padTop: 14, padBottom: 14);
   // 16 · XL photo hero: the photo is the card.
   static const _BackdropSize hero = _BackdropSize(card: 240, name: 40, facts: 20, battery: 48, chips: 18, padH: 18, padTop: 16, padBottom: 16);
   // 18 / 19 · the standard card with its text at 125 % / 150 % (the OS
   // "larger text" sizes); 125 % still fits 128 px, 150 % needs 160.
-  static const _BackdropSize scale125 = _BackdropSize(card: BrayTokens.cardH, name: 35, facts: 20, battery: 40, chips: 19, padH: BrayTokens.cardPadH, padTop: BrayTokens.cardPadTop, padBottom: BrayTokens.cardPadBottom);
+  static const _BackdropSize scale125 = _BackdropSize(card: BrayTokens.cardHRetired, name: 35, facts: 20, battery: 40, chips: 19, padH: BrayTokens.cardPadH, padTop: BrayTokens.cardPadTop, padBottom: BrayTokens.cardPadBottom);
   static const _BackdropSize scale150 = _BackdropSize(card: 160, name: 42, facts: 24, battery: 48, chips: 22, padH: BrayTokens.cardPadH, padTop: BrayTokens.cardPadTop, padBottom: BrayTokens.cardPadBottom);
 }
 
