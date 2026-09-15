@@ -33,14 +33,11 @@ void main() {
     expect(kSpeedPillMinMph, 1);
   });
 
-  testWidgets('solo marker: no speed pill at 0 mph, pill from 1 mph', (t) async {
+  testWidgets('solo marker without a drive tracker: no badge at 0 mph (nothing to say), "1 mph" from 1 mph', (t) async {
     await t.pumpWidget(host(MemberAvatarBubble(member: m('Bo Bray', mph: 0), now: now, onTap: () {})));
-    expect(find.textContaining('mph'), findsNothing);
-    expect(find.byKey(const Key('bray-speed-pill')), findsNothing);
-    // the marker box shrinks with the pill, so the dot stays on the point
-    expect(MemberAvatarBubble.markerSizeFor(m('Bo Bray', mph: 0), now: now), MemberAvatarBubble.markerSizeFor(m('Bo Bray'), now: now));
+    expect(find.byKey(const Key('slot-badge')), findsNothing);
     await t.pumpWidget(host(MemberAvatarBubble(member: m('Bo Bray', mph: 1), now: now, onTap: () {})));
-    expect(find.byKey(const Key('bray-speed-pill')), findsOneWidget);
+    expect(find.text('1 mph'), findsOneWidget);
   });
 
   testWidgets('solo marker a11y: no "mph" in the label at 0 mph', (t) async {

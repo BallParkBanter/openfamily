@@ -11,7 +11,7 @@ import 'home_chip.dart' show HomeChip;
 import 'marker_pointer.dart';
 import 'movement_icon.dart';
 import 'name_badge.dart';
-import 'place_text.dart' show pillStreet;
+import 'slot_badge.dart';
 
 /// A circular avatar bubble pinned to a member's location on the map.
 ///
@@ -34,10 +34,14 @@ class MemberAvatarBubble extends StatelessWidget {
     this.onLongPress,
     this.radius = 22,
     this.now,
+    this.inDrive,
   });
 
   final Member member;
   final VoidCallback? onTap;
+
+  /// The DriveTracker's verdict for this member (Task 5); null = no tracker.
+  final bool? inDrive;
 
   /// The clock the speed pill / cone / age pill are judged against
   /// (Member.isStaleAt); null reads DateTime.now() at build. Tests pass a
@@ -77,11 +81,6 @@ class MemberAvatarBubble extends StatelessWidget {
   /// .dot top:74px + 10) = 100. (Upstream name kept - its "marker grows"
   /// test reads it.)
   static const double avatarBox = topZone + BrayTokens.dotTop + BrayTokens.dotSize;
-
-  /// How far the speed/age pill drops below the ring's bottom edge (S:75
-  /// .fc-pill bottom:-3px). Still referenced until Task 3 replaces both
-  /// pills with the top-right slot badge.
-  static const double _speedPillDrop = 3;
 
   /// Upstream's speed-caption growth, honestly zero: the speed lives in the
   /// top-right badge (Task 3), which overhangs the ring and adds nothing
@@ -138,11 +137,11 @@ class MemberAvatarBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final DateTime now = this.now ?? DateTime.now();
-    final int? mph = member.displaySpeedAt(now);
     final String tooltip = _tooltip(now);
     final Size size = markerSizeFor(member, now: now);
     final bool stale = isStale(member, now);
     final Color colour = ringColourFor(member, now);
+    final SlotBadgeSpec? badge = slotBadgeFor(member, now: now, inDrive: inDrive);
 
     return Tooltip(
       message: tooltip,
@@ -199,17 +198,16 @@ class MemberAvatarBubble extends StatelessWidget {
                 ),
                 // Task 4 replaces this bolt with the battery badge.
                 if (_isCharging(member))
-                  const Positioned(left: ringLeft - 3, top: topZone + BrayTokens.soloFace + 1 - BrayTokens.boltWhite, child: BrayChargingBolt()),
-                // Task 3 replaces these two pills with the top-right slot badge.
-                if (mph != null)
+                  const Positioned(
+                    left: ringLeft - 3,                                                                  // S:72 left:-3px
+                    top: topZone + BrayTokens.soloFace + 1 - BrayTokens.boltWhite,                        // S:72 bottom:-1px
+                    child: BrayChargingBolt(),
+                  ),
+                if (badge != null)
                   Positioned(
-                    left: 0, right: 0, top: topZone + BrayTokens.soloFace - _speedPillDrop,
-                    child: Center(child: _BraySpeedPill(key: const Key('bray-speed-pill'), mph: mph, street: pillStreet(member.place?.street))),
-                  )
-                else if (stale)
-                  Positioned(
-                    left: 0, right: 0, top: topZone + BrayTokens.soloFace - _speedPillDrop,
-                    child: Center(child: _BrayAgePill(key: const Key('bray-age-pill'), text: 'updated ${BrayTokens.agoText(member.lastSeen, now)}')),
+                    left: ringLeft + BrayTokens.badgeLeft,                                              // .age left:44px
+                    top: topZone + BrayTokens.badgeTop,                                                  // .age top:-10px
+                    child: SlotBadge(spec: badge),
                   ),
                 // C:167-176 (family-cluster.js): at home the house chip IS the mark - no dot.
                 if (member.place?.nearHome != true)
@@ -240,16 +238,11 @@ class MemberAvatarBubble extends StatelessWidget {
   String _tooltip(DateTime now) {
     final StringBuffer sb = StringBuffer(member.name);
     sb.write(' — ${member.status.description}');
-    final int? mph = member.displaySpeedAt(now);
-    if (member.movement != MovementType.none && !member.isStaleAt(now)) {
-      sb.write(' · ${member.isSpeeding ? 'Speeding' : member.movement.label}');
-      if (mph != null) {
-        sb.write(' $mph mph');
-        // The pill's second line, so a screen reader (and the rig) hears the
-        // same street the map shows.
-        final String? street = pillStreet(member.place?.street);
-        if (street != null) sb.write(' · $street');
-      }
+    final SlotBadgeSpec? badge = slotBadgeFor(member, now: now, inDrive: inDrive);
+    if (badge?.kind == SlotBadgeKind.speed) {
+      sb.write(' · ${member.isSpeeding ? 'Speeding' : MovementType.car.label} ${badge!.value}');
+    } else if (badge != null) {
+      sb.write(' · ${badge.a11y}');
     }
     if (member.place?.atHome == true) sb.write(' at Home');
     return sb.toString();
@@ -736,111 +729,4 @@ class _SpeedCaption extends StatelessWidget {
       ),
     );
   }
-}
-
-/// S:75-80 .fc-pill chrome: white, 1px 5px padding, hairline border, soft
-/// shadow. The one pill box under the face - the speed pill ("61 mph", with
-/// the street under it) and the age pill ("updated 3h ago") put their own
-/// text inside it.
-/// The capsule's _SpeedPill (capsule_bubble.dart) is the two-widget form;
-/// private classes are not shared across files, so this is its sibling.
-class _BrayPill extends StatelessWidget {
-  const _BrayPill({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.fromLTRB(5, 1, 5, 1), // S:76 padding:1px 5px
-        decoration: BoxDecoration(
-          color: Colors.white, // S:76
-          borderRadius: BorderRadius.circular(99), // S:77
-          border: Border.all(color: const Color(0x26141B36)), // S:77 rgba(20,27,54,.15)
-          boxShadow: const [
-            // S:79 box-shadow:0 1px 4px rgba(0,0,0,.3)
-            BoxShadow(color: Color(0x4D000000), blurRadius: 4, offset: Offset(0, 1)),
-          ],
-        ),
-        child: child,
-      );
-}
-
-/// S:75-80 .fc-pill: "61" in 700 ink (S:78 9px, raised to
-/// BrayTokens.speedPillFont for the tablet) with a 7px "mph" beside it (the
-/// CSS is `${speed}<i>mph</i>`), in the shared [_BrayPill] chrome. One
-/// Text.rich so the pill reads "61 mph" as a single text, like upstream's
-/// _SpeedCaption does - upstream's tests find the caption by its whole string
-/// and stay untouched.
-///
-/// With a [street] (design list line 41: "Street under the speed") a second
-/// line sits under the speed in the "mph" unit style (S:80 7px, .7 opacity),
-/// so the pill reuses its own tokens; null draws the one-line pill.
-class _BraySpeedPill extends StatelessWidget {
-  const _BraySpeedPill({super.key, required this.mph, this.street});
-
-  final int mph;
-
-  /// Already abbreviated by [pillStreet] ("Peachtree Ind.").
-  final String? street;
-
-  @override
-  Widget build(BuildContext context) => _BrayPill(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text.rich(
-              TextSpan(
-                children: [
-                  TextSpan(
-                    text: '$mph',
-                    style: const TextStyle(
-                      fontSize: BrayTokens.speedPillFont, // OPEN: Bo, 2026-09-13 "too small on tablet screen" (S:78 was 9)
-                      height: 1.2, // S:78 font:700 9px/1.2
-                      fontWeight: FontWeight.w700,
-                      color: BrayTokens.speedPillText,
-                    ),
-                  ),
-                  const TextSpan(
-                    // S:76 gap:1px is the space; S:80 .fc-pill i: 7px, opacity .7
-                    // (0xB3 of the ink)
-                    text: ' mph',
-                    style: TextStyle(fontSize: 7, height: 1.2, color: Color(0xB3141B36)),
-                  ),
-                ],
-              ),
-            ),
-            if (street != null)
-              Text(
-                street!,
-                key: const Key('bray-pill-street'),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                // S:80 .fc-pill i: 7px, opacity .7 (0xB3 of the ink) - the
-                // unit style, reused for the street line.
-                style: const TextStyle(fontSize: 7, height: 1.2, color: Color(0xB3141B36)),
-              ),
-          ],
-        ),
-      );
-}
-
-/// Design list "updated 2m ago on stale icons": the J:57-64 ago() wording in
-/// the shared [_BrayPill] chrome, set like the speed number (S:78).
-class _BrayAgePill extends StatelessWidget {
-  const _BrayAgePill({super.key, required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) => _BrayPill(
-        child: Text(
-          text,
-          style: const TextStyle(
-            fontSize: BrayTokens.agePillFont, // OPEN: Bo, 2026-09-14 (was speedPillFont)
-            height: 1.2, // S:78 font:700 9px/1.2
-            fontWeight: FontWeight.w700,
-            color: BrayTokens.speedPillText,
-          ),
-        ),
-      );
 }

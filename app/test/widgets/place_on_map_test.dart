@@ -1,6 +1,5 @@
 // app/test/widgets/place_on_map_test.dart
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:openfamily/models/member.dart';
@@ -21,21 +20,15 @@ const away = MemberPlace(street: 'Peachtree Industrial Boulevard', homeDistanceM
 const home = MemberPlace(atHome: true, placeName: 'Home', homeDistanceM: 8);
 
 void main() {
-  testWidgets('solo pill: street under the speed, abbreviated; semantics carry it', (t) async {
+  testWidgets('solo badge: the street line under the speed is retired (bray-redesign Task 3 - the top-right slot badge carries only the speed)', (t) async {
     final handle = t.ensureSemantics();
     await t.pumpWidget(host(MemberAvatarBubble(member: m('Bo Bray', mph: 61, place: away), onTap: () {})));
-    expect(find.text('Peachtree Ind.'), findsOneWidget);
-    final pill = t.getRect(find.byKey(const Key('bray-speed-pill')));
-    final street = t.getRect(find.text('Peachtree Ind.'));
-    expect(street.top, greaterThanOrEqualTo(t.getRect(find.textContaining('61')).bottom - 1));   // under the speed
-    expect(pill.contains(street.center), isTrue);
-    // The street must be readable, not ellipsized: the pill spans the marker
-    // width (design list line 41). find.text matches data, not painted glyphs,
-    // so this is the only assertion that sees an ellipsis (test font: 1 em/glyph,
-    // "Peachtree Ind." = 98 px; fits in 148 px, not in a 44 px slot).
-    expect(t.renderObject<RenderParagraph>(find.byKey(const Key('bray-pill-street'))).didExceedMaxLines, isFalse);
+    expect(find.text('Peachtree Ind.'), findsNothing);
+    expect(find.byKey(const Key('bray-pill-street')), findsNothing);
+    expect(find.text('61 mph'), findsOneWidget);
     final node = t.getSemantics(sem(MemberAvatarBubble));
-    expect(node.label, contains('61 mph · Peachtree Ind.'));
+    expect(node.label, contains('Driving 61 mph'));
+    expect(node.label, isNot(contains('Peachtree')));
     handle.dispose();
   });
   testWidgets('no street, no second line; not driving, no pill at all', (t) async {

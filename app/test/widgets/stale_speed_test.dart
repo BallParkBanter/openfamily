@@ -61,27 +61,13 @@ void main() {
     });
   });
 
-  testWidgets('solo marker: a stale driver has no speed pill and no cone - the age pill instead', (t) async {
-    final Member stale = m('Heidi Bray', ago: const Duration(hours: 3));
-    await t.pumpWidget(host(MemberAvatarBubble(member: stale, now: now, onTap: () {})));
-    expect(find.byKey(const Key('bray-speed-pill')), findsNothing);
-    expect(find.byKey(const Key('bray-heading-cone')), findsNothing);
+  testWidgets('solo marker: a stale driver shows "updated" / "3 hr ago", never a speed badge', (t) async {
+    final Member who = m('Heidi Bray', ago: const Duration(hours: 3));      // the file's own helper: car, 65 mph, headingDeg
+    await t.pumpWidget(host(MemberAvatarBubble(member: who, now: now, inDrive: true, onTap: () {})));
     expect(find.textContaining('mph'), findsNothing);
-    expect(find.byKey(const Key('bray-age-pill')), findsOneWidget);
-    expect(find.text('updated 3h ago'), findsOneWidget);
-    expect(MemberAvatarBubble.markerSizeFor(stale, now: now), MemberAvatarBubble.markerSizeFor(m('Heidi Bray', mph: null), now: now));
-    // The same member ten minutes after her fix: pill, no cone (bray-redesign
-    // Task 2 dropped the solo marker's cone entirely - markers-13.html has no
-    // heading cone; Task 6 brings the heading beam back as its replacement).
-    final Member fresh = m('Heidi Bray', ago: const Duration(minutes: 10));
-    await t.pumpWidget(host(MemberAvatarBubble(member: fresh, now: now, onTap: () {})));
-    expect(find.byKey(const Key('bray-speed-pill')), findsOneWidget);
-    expect(find.textContaining('65'), findsOneWidget);
-    expect(find.byKey(const Key('bray-heading-cone')), findsNothing);
-    expect(find.byKey(const Key('bray-age-pill')), findsNothing);
-    // The Bray pill overlays the face (speedGap / speedCaptionH are 0), so the
-    // box is the same either way - the dot stays on the point.
-    expect(MemberAvatarBubble.markerSizeFor(fresh, now: now), MemberAvatarBubble.markerSizeFor(stale, now: now));
+    expect(find.byKey(const Key('glyph-car')), findsNothing);
+    expect(find.text('updated'), findsOneWidget);
+    expect(find.text('3 hr ago'), findsOneWidget);
   });
 
   testWidgets('solo marker a11y: a stale driver is not "Driving 65 mph"', (t) async {

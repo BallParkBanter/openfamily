@@ -41,20 +41,14 @@ void main() {
     expect(t.getSemantics(find.descendant(of: find.byType(MemberAvatarBubble), matching: find.byType(Semantics)).first).label, startsWith('Heidi Bray'));
     h.dispose();
   });
-  testWidgets('"updated 3h ago" pill on a stale icon; nothing on a live one', (t) async {
-    final DateTime seen = DateTime.now().subtract(const Duration(hours: 3));
-    final DateTime fresh = DateTime.now().subtract(const Duration(minutes: 2));
-    await t.pumpWidget(host(MemberAvatarBubble(member: m('Heidi Bray', st: MemberStatus.stopped, seen: seen), onTap: () {})));
-    expect(find.byKey(const Key('bray-age-pill')), findsOneWidget);
-    expect(find.text('updated 3h ago'), findsOneWidget);
-    // A fix three hours old is stale whatever the status says (Member.isStaleAt -
-    // the greying timer may not have ticked yet; stale_speed_test).
-    await t.pumpWidget(host(MemberAvatarBubble(member: m('Heidi Bray', seen: seen), onTap: () {})));
-    expect(find.byKey(const Key('bray-age-pill')), findsOneWidget);
-    await t.pumpWidget(host(MemberAvatarBubble(member: m('Heidi Bray', seen: fresh), onTap: () {})));
-    expect(find.byKey(const Key('bray-age-pill')), findsNothing);
-    // warning = low battery on a LIVE member (member_mapper.dart:214), not stale.
-    await t.pumpWidget(host(MemberAvatarBubble(member: m('Heidi Bray', st: MemberStatus.warning, seen: fresh), onTap: () {})));
-    expect(find.byKey(const Key('bray-age-pill')), findsNothing);
+  testWidgets('stale icon: the top-right badge reads "updated" / "3 hr ago"; a live icon with no since has no badge', (t) async {
+    final DateTime now = DateTime(2026, 9, 14, 12);
+    final Member stale = m('Heidi Bray').copyWith(lastSeen: now.subtract(const Duration(hours: 3)));
+    await t.pumpWidget(host(MemberAvatarBubble(member: stale, now: now, onTap: () {})));
+    expect(find.text('updated'), findsOneWidget);
+    expect(find.text('3 hr ago'), findsOneWidget);
+    final Member live = m('Heidi Bray').copyWith(lastSeen: now.subtract(const Duration(minutes: 1)));
+    await t.pumpWidget(host(MemberAvatarBubble(member: live, now: now, onTap: () {})));
+    expect(find.byKey(const Key('slot-badge')), findsNothing);
   });
 }
