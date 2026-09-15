@@ -70,12 +70,14 @@ void main() {
     expect(find.byKey(const Key('bray-age-pill')), findsOneWidget);
     expect(find.text('updated 3h ago'), findsOneWidget);
     expect(MemberAvatarBubble.markerSizeFor(stale, now: now), MemberAvatarBubble.markerSizeFor(m('Heidi Bray', mph: null), now: now));
-    // The same member ten minutes after her fix: pill and cone.
+    // The same member ten minutes after her fix: pill, no cone (bray-redesign
+    // Task 2 dropped the solo marker's cone entirely - markers-13.html has no
+    // heading cone; Task 6 brings the heading beam back as its replacement).
     final Member fresh = m('Heidi Bray', ago: const Duration(minutes: 10));
     await t.pumpWidget(host(MemberAvatarBubble(member: fresh, now: now, onTap: () {})));
     expect(find.byKey(const Key('bray-speed-pill')), findsOneWidget);
     expect(find.textContaining('65'), findsOneWidget);
-    expect(find.byKey(const Key('bray-heading-cone')), findsOneWidget);
+    expect(find.byKey(const Key('bray-heading-cone')), findsNothing);
     expect(find.byKey(const Key('bray-age-pill')), findsNothing);
     // The Bray pill overlays the face (speedGap / speedCaptionH are 0), so the
     // box is the same either way - the dot stays on the point.
