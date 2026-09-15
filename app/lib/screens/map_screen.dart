@@ -875,28 +875,31 @@ class _MapScreenState extends State<MapScreen>
     showContactLinkSheet(context, member: member, label: _labelFor(member));
   }
 
-  /// bray piece 5: the focused card's "📍 Save place" chip - upstream's
-  /// PlacePickerScreen, prefilled through its `initial` argument with the POI
-  /// name, the member's position and street, then created exactly the way
+  /// Piece 5 states 3 and 5 (DECISIONS 'States'): Save place works near a
+  /// POI and stopped on a road; the picker opens on the member's spot with
+  /// the best name we have. Upstream's PlacePickerScreen, prefilled through
+  /// its `initial` argument with the POI name (else the street), the
+  /// member's position and street, then created exactly the way
   /// places_screen._addPlace does it. The backend labels the member with the
   /// new place on their next fix (updateMemberPlace runs on ingest).
   Future<void> _savePlace(Member member) async {
     _touch();
     final MemberPlace? place = member.place;
     final LatLng? at = member.position;
-    if (place?.poiName == null || at == null) return;
-    final String type = placeTypeForPoiKind(place!.poiKind);
+    if (at == null) return;
+    final String name = place?.poiName ?? place?.street ?? '';
+    final String type = placeTypeForPoiKind(place?.poiKind);   // null kind -> 'custom'
     final Place? picked = await Navigator.of(context).push<Place>(
       MaterialPageRoute<Place>(
         builder: (_) => PlacePickerScreen(
-          placeName: place.poiName!,
+          placeName: name,
           icon: Place.iconForType(type),
           type: type,
           initial: Place(
             id: 'poi-${DateTime.now().millisecondsSinceEpoch}',
-            name: place.poiName!,
+            name: name,
             icon: Place.iconForType(type),
-            address: place.street ?? '',
+            address: place?.street ?? '',
             position: at,
             radiusMeters: 152.4, // the picker's own default (~500 ft)
             type: type,
