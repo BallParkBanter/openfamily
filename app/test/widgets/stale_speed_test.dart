@@ -89,7 +89,9 @@ void main() {
     expect(capsuleHeading([m('Heidi Bray', ago: const Duration(hours: 3)), m('Charlie', ago: const Duration(hours: 3))], now: now), isNull);
     h.dispose();
     await t.pumpWidget(host(CapsuleBubble(members: [m('Heidi Bray', ago: const Duration(hours: 3)), m('Charlie', mph: 40)], now: now)));
-    expect(find.text('40'), findsOneWidget);   // the fresh mover's speed, not the stale 65
+    // Task 8: the capsule's one badge is the same SlotBadge format as the
+    // solo marker ("40 mph"), not the retired bare-number pill.
+    expect(find.text('40 mph'), findsOneWidget);   // the fresh mover's speed, not the stale 65
     expect(find.text('65'), findsNothing);
   });
 

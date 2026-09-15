@@ -55,7 +55,9 @@ void main() {
     expect(t.getSemantics(find.byType(CapsuleBubble)).label, isNot(contains('mph')));
     h.dispose();
     await t.pumpWidget(host(CapsuleBubble(members: [m('Bo Bray', mph: 0), m('Charlie', mph: 12)], now: now)));
-    expect(find.text('12'), findsOneWidget);   // the one mover still gets the pill
+    // Task 8: the capsule's one badge is the same SlotBadge format as the
+    // solo marker ("12 mph"), not the retired bare-number pill.
+    expect(find.text('12 mph'), findsOneWidget);   // the one mover still gets the pill
   });
 
   testWidgets('card state line (focus card): parked at home reads Home, not "Driving near Home"', (t) async {

@@ -32,6 +32,7 @@ import '../theme/bray_tokens.dart';
 import '../utils/drive_state.dart';
 import '../utils/focus_rules.dart';
 import '../utils/member_clustering.dart';
+import '../utils/member_grouping.dart';
 import '../widgets/capsule_bubble.dart';
 import '../widgets/circle_switcher.dart';
 import '../widgets/contact_link_sheet.dart';
@@ -179,6 +180,11 @@ class _MapScreenState extends State<MapScreen>
   Timer? _driveTick;
   static const Duration _driveTickEvery = Duration(seconds: 15);   // OPEN: chosen - 8 ticks per 2-minute end, one rebuild each
 
+  /// Task 8: the ~1 min matching-speed-and-heading clock per pair
+  /// (utils/member_grouping.dart), fed alongside [_drives] so a group forms
+  /// and drops a stale member the same two beats a drive does.
+  final GroupTracker _groups = GroupTracker();
+
   /// Piece 4's geocode feed rides on the member (Member.place); null still
   /// draws no place chips.
   MemberPlace? _placeFor(Member m) => m.place;
@@ -203,6 +209,7 @@ class _MapScreenState extends State<MapScreen>
     _driveTick = Timer.periodic(_driveTickEvery, (_) {
       if (!mounted) return;
       _drives.updateAll(_members);
+      _groups.observe(_members, inDriveFor: (Member m) => _drives.inDrive(m.id));
       setState(() {});
     });
     _connectivitySub =
@@ -225,6 +232,7 @@ class _MapScreenState extends State<MapScreen>
     if (!mounted) return;
     final DateTime now = DateTime.now();
     _drives.updateAll(members, now: now);
+    _groups.observe(members, inDriveFor: (Member m) => _drives.inDrive(m.id), now: now);
     for (final Member m in members) {
       final LatLng? to = m.position;
       if (to == null) continue;
@@ -1175,6 +1183,7 @@ class _MapScreenState extends State<MapScreen>
                   selectedId: _followId,                    // J:101: the ringed face inside a capsule
                   labelFor: _labelFor,                      // every pill: You / contact name / first name (was the focused one only)
                   inDriveFor: (Member m) => _drives.inDrive(m.id),
+                  canGroup: (Member a, Member b) => _groups.together(a, b, inDriveFor: (Member m) => _drives.inDrive(m.id)),
                   viewerId: _userId,
                   contactFor: (Member m) => ContactLinkStore.instance.linkFor(m.id),
                   onMemberTap: _focusMember,
@@ -1601,6 +1610,7 @@ class _MemberMarkerLayer extends StatelessWidget {
     required this.onClusterTap,
     required this.labelFor,
     required this.inDriveFor,
+    required this.canGroup,
     this.selectedId,
     this.viewerId,
     this.contactFor,
@@ -1614,6 +1624,10 @@ class _MemberMarkerLayer extends StatelessWidget {
   /// (DriveTracker.inDrive), so the badge shows the live speed instead of
   /// "here for" / "updated Xh ago".
   final bool Function(Member) inDriveFor;
+
+  /// Task 8: GroupTracker.together - the ~1 min matching-speed-and-heading
+  /// veto on top of clusterMembers' two distance rules.
+  final bool Function(Member, Member) canGroup;
 
   /// For the capsule's "<name> arrived" callout - the same viewer / contact
   /// link the sheet gets (PeopleSheet.viewerId / contactFor).
@@ -1648,6 +1662,7 @@ class _MemberMarkerLayer extends StatelessWidget {
       },
       toLatLng: camera.offsetToCrs,
       expandedClusterIds: expandedClusters,
+      canGroup: canGroup,
     );
 
     return MarkerLayer(
@@ -1669,6 +1684,7 @@ class _MemberMarkerLayer extends StatelessWidget {
                 viewerId: viewerId,
                 contactFor: contactFor,
                 now: now,
+                inDriveFor: inDriveFor,
                 onTap: () => onClusterTap(p.clusterId!, p.position),
               ),
             )

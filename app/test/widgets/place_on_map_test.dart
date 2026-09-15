@@ -47,11 +47,13 @@ void main() {
     expect(find.byKey(const Key('bray-dot')), findsOneWidget);
     handle.dispose();
   });
-  testWidgets('capsule: one street under the one speed; dot hidden only when everyone is at home', (t) async {
+  testWidgets('capsule: no street under the speed (Task 8 ruling 7 - at most the speed bubble + "+N"); dot hidden only when everyone is at home', (t) async {
     final handle = t.ensureSemantics();
     await t.pumpWidget(host(CapsuleBubble(members: [m('Bo Bray', mph: 61, place: away), m('Charlie', mph: 58, place: away)], onTap: () {})));
-    expect(find.text('Peachtree Ind.'), findsOneWidget);
-    expect(t.getSemantics(sem(CapsuleBubble)).label, contains('61 mph · Peachtree Ind.'));
+    expect(find.text('Peachtree Ind.'), findsNothing);
+    expect(find.text('61 mph'), findsOneWidget);
+    expect(t.getSemantics(sem(CapsuleBubble)).label, contains('61 mph'));
+    expect(t.getSemantics(sem(CapsuleBubble)).label, isNot(contains('Peachtree')));
     expect(find.byKey(const Key('capsule-dot')), findsOneWidget);
     await t.pumpWidget(host(CapsuleBubble(members: [m('Bo Bray', place: home), m('Charlie', place: home)], onTap: () {})));
     expect(find.byKey(const Key('capsule-dot')), findsNothing);

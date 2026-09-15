@@ -12,15 +12,16 @@ import 'package:openfamily/services/contact_link_store.dart';
 import 'package:openfamily/theme/bray_tokens.dart';
 import 'package:openfamily/widgets/capsule_bubble.dart';
 import 'package:openfamily/widgets/capsule_callout.dart';
+import 'package:openfamily/widgets/glyphs.dart';
 
 final DateTime now = DateTime.utc(2026, 9, 14, 12, 0);
 
-/// A member at "Kroger" since [ago] before [now]; null = the backend never
-/// said when they got there (no `since`).
-Member m(String name, {Duration? ago}) => Member(
+/// A member at "Kroger" since [ago] before [now], or at [since] directly;
+/// null for both = the backend never said when they got there (no `since`).
+Member m(String name, {Duration? ago, DateTime? since}) => Member(
     id: name, name: name, status: MemberStatus.normal, position: const LatLng(33.9, -84.2),
     batteryPercent: 0, address: '',
-    place: MemberPlace(placeName: 'Kroger', homeDistanceM: 9000, since: ago == null ? null : now.subtract(ago)));
+    place: MemberPlace(placeName: 'Kroger', homeDistanceM: 9000, since: since ?? (ago == null ? null : now.subtract(ago))));
 
 Widget host(Widget w) => MaterialApp(home: Scaffold(body: Center(child: w)));
 Finder sem(Type bubble) => find.descendant(of: find.byType(bubble), matching: find.byType(Semantics)).first;
@@ -74,78 +75,43 @@ void main() {
   });
 
   group('CapsuleBubble callout', () {
-    testWidgets('together-group: the callout text sits above the pill; semantics carry it', (t) async {
+    testWidgets('parked together: the badge on top reads "here for" / "13 hr, 41 min" with the dark pin; semantics carry it', (t) async {
       final handle = t.ensureSemantics();
-      await t.pumpWidget(host(CapsuleBubble(
-          members: [m('Bo Bray', ago: const Duration(hours: 13, minutes: 41)), m('Charlie', ago: const Duration(hours: 13, minutes: 30))],
-          now: now)));
-      final callout = find.byKey(const Key('capsule-callout'));
-      expect(callout, findsOneWidget);
-      expect(find.text('📍 here for 13 hr, 41 min'), findsOneWidget);
-      final c = t.getRect(callout), pill = t.getRect(find.byKey(const Key('capsule-pill')));
-      expect(c.bottom, lessThanOrEqualTo(pill.top)); // above the grey capsule
-      expect(c.center.dx, closeTo(pill.center.dx, 1)); // centred on it
-      expect(c.width, lessThanOrEqualTo(BrayTokens.calloutMaxW)); // S:96 max-width, never spans the map
-      // S:97-98 dark translucent pill, small bold white text.
-      final box = t.widget<Container>(callout).decoration as BoxDecoration;
-      expect(box.color, BrayTokens.calloutBg);
-      expect(box.border!.top.color, BrayTokens.accentFor(m('Charlie'))); // S:97 border var(--a): the newest arrival's accent (Charlie, 13:30 < Bo's 13:41)
-      final style = t.widget<Text>(find.text('📍 here for 13 hr, 41 min')).style!;
-      expect(style.fontSize, BrayTokens.calloutFont);
-      expect(style.fontWeight, BrayTokens.calloutWeight);
-      expect(style.color, Colors.white);
-      expect(t.getSemantics(sem(CapsuleBubble)).label, contains(' · 📍 here for 13 hr, 41 min'));
+      await t.pumpWidget(host(CapsuleBubble(members: [
+        m('Bo Bray', since: now.subtract(const Duration(hours: 13, minutes: 41))),
+        m('Charlie', since: now.subtract(const Duration(hours: 13, minutes: 35))),
+      ], now: now)));
+      expect(find.text('here for'), findsOneWidget);
+      expect(find.text('13 hr, 41 min'), findsOneWidget);
+      expect((t.widget<CustomPaint>(find.byKey(const Key('glyph-pin'))).painter as PinGlyphPainter).color, BrayTokens.groupPin);
+      final SemanticsNode node = t.getSemantics(sem(CapsuleBubble));
+      expect(node.label, contains('here for 13 hr, 41 min'));
       handle.dispose();
     });
-    testWidgets('late joiner: "X arrived"', (t) async {
-      await t.pumpWidget(host(CapsuleBubble(
-          members: [m('Charlie', ago: const Duration(hours: 3)), m('Bo Bray', ago: const Duration(minutes: 41))], now: now)));
-      expect(find.text('Bo arrived 41 min ago'), findsOneWidget);
-      expect(find.textContaining('here for'), findsNothing);
-      // Wraps to two lines, not ellipsized (S:93). The test font is 1 em per
-      // glyph: "Bo arrived" / "41 min ago" are 140px each in the 149px inner
-      // width, so this string is two lines here as it is on the tablet.
-      expect(t.renderObject<RenderParagraph>(find.text('Bo arrived 41 min ago')).didExceedMaxLines, isFalse);
+    testWidgets('late joiner: "<label> arrived" / "41 min ago", named like the cards ("You" for the viewer, the linked contact)', (t) async {
+      await t.pumpWidget(host(CapsuleBubble(members: [
+        m('Bo Bray', since: now.subtract(const Duration(hours: 5))),
+        m('Heidi Bray', since: now.subtract(const Duration(minutes: 41))),
+      ], now: now, viewerId: 'Heidi Bray')));
+      expect(find.text('You arrived'), findsOneWidget);
+      expect(find.text('41 min ago'), findsOneWidget);
     });
-    testWidgets('the capsule threads viewerId / contactFor like the sheet: "Mom arrived", "You arrived"', (t) async {
-      const LinkedContact mom = LinkedContact(contactId: '1', displayName: 'Mom', phones: [LinkedPhone(label: 'mobile', number: '1')]);
-      final List<Member> late = [m('Charlie', ago: const Duration(hours: 3)), m('Heidi Bray', ago: const Duration(minutes: 41))];
-      await t.pumpWidget(host(CapsuleBubble(members: late, now: now, contactFor: (Member x) => x.id == 'Heidi Bray' ? mom : null)));
-      expect(find.text('Mom arrived 41 min ago'), findsOneWidget);
-      await t.pumpWidget(host(CapsuleBubble(members: late, now: now, viewerId: 'Heidi Bray', contactFor: (Member x) => mom)));
-      expect(find.text('You arrived 41 min ago'), findsOneWidget);
-      await t.pumpWidget(host(CapsuleBubble(members: late, now: now)));
-      expect(find.text('Heidi arrived 41 min ago'), findsOneWidget);
-      expect(find.textContaining('Heidi Bray'), findsNothing);
-    });
-    testWidgets('no since -> no callout; one member -> no callout', (t) async {
-      final handle = t.ensureSemantics();
+    testWidgets('no since -> no badge; a single member is never a capsule', (t) async {
       await t.pumpWidget(host(CapsuleBubble(members: [m('Bo Bray'), m('Charlie')], now: now)));
-      expect(find.byKey(const Key('capsule-callout')), findsNothing);
-      expect(t.getSemantics(sem(CapsuleBubble)).label, isNot(contains('here for')));
-      await t.pumpWidget(host(CapsuleBubble(members: [m('Bo Bray', ago: const Duration(minutes: 41))], now: now)));
-      expect(find.byKey(const Key('capsule-callout')), findsNothing);
-      handle.dispose();
+      expect(find.byKey(const Key('slot-badge')), findsNothing);
     });
-    testWidgets('the marker box grows upward: the dot stays at the bottom centre, with and without a callout', (t) async {
-      for (final members in [
-        [m('Bo Bray', ago: const Duration(hours: 13, minutes: 41)), m('Charlie', ago: const Duration(hours: 13, minutes: 30))],
+    testWidgets('the marker box: the badge zone on top, the dot at the bottom centre, with and without a badge', (t) async {
+      for (final List<Member> members in <List<Member>>[
         [m('Bo Bray'), m('Charlie')],
+        [m('Bo Bray', since: now.subtract(const Duration(hours: 1))), m('Charlie', since: now.subtract(const Duration(hours: 1)))],
       ]) {
-        await t.pumpWidget(host(SizedBox(width: CapsuleBubble.markerWidth, height: CapsuleBubble.markerHeight,
-            child: CapsuleBubble(members: members, now: now))));
-        final box = t.getRect(find.byType(CapsuleBubble)), dot = t.getRect(find.byKey(const Key('capsule-dot')));
-        expect(dot.center.dx, closeTo(box.center.dx, 1));
-        expect(dot.center.dy, closeTo(box.bottom - BrayTokens.dotSize / 2, 1));
-        // The pill's bottom edge is still capsuleLift above the point (S:64).
-        final pill = t.getRect(find.byKey(const Key('capsule-pill')));
-        expect(box.bottom - BrayTokens.dotSize / 2 - pill.bottom, closeTo(BrayTokens.capsuleLift, 1));
+        await t.pumpWidget(host(SizedBox(width: CapsuleBubble.markerWidth, height: CapsuleBubble.markerHeight, child: CapsuleBubble(members: members, now: now))));
+        final Rect box = t.getRect(find.byType(CapsuleBubble));
+        final Rect dot = t.getRect(find.byKey(const Key('capsule-dot')));
+        expect(dot.center.dy, closeTo(box.bottom - BrayTokens.dotSize / 2, 0.5));
+        expect(dot.center.dx, closeTo(box.center.dx, 0.5));
+        expect(t.getRect(find.byKey(const Key('capsule-pill'))).top, closeTo(box.top + CapsuleBubble.badgeZone, 0.5));
       }
-      // S:95: the callout's bottom edge is 100px above the point.
-      await t.pumpWidget(host(SizedBox(width: CapsuleBubble.markerWidth, height: CapsuleBubble.markerHeight,
-          child: CapsuleBubble(members: [m('Bo Bray', ago: const Duration(minutes: 9)), m('Charlie', ago: const Duration(minutes: 3))], now: now))));
-      final box = t.getRect(find.byType(CapsuleBubble)), c = t.getRect(find.byKey(const Key('capsule-callout')));
-      expect(box.bottom - BrayTokens.dotSize / 2 - c.bottom, closeTo(BrayTokens.calloutBottom, 1));
     });
   });
 }

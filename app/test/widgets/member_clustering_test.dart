@@ -57,4 +57,9 @@ void main() {
     expect(placements.single.isCluster, isTrue);
     expect(placements.single.clusterCount, 2);
   });
+  test('canGroup vetoes a join (both rules): two people 10 m apart do not cluster when it says no', () {
+    final clusters = clusterMembers([at('Bo Bray', home), at('Charlie', north(10))],
+        toScreenOffset: camera(1.5), canGroup: (a, b) => false);
+    expect(clusters.length, 2);
+  });
 }

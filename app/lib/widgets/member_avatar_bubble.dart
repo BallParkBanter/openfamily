@@ -255,8 +255,10 @@ class MemberAvatarBubble extends StatelessWidget {
 }
 
 /// The Family Viewer's charging bolt (S:72-74 .fc-chg): a white 19px pill
-/// with the colour-emoji bolt, pinned bottom-left of a face. Shared by the
-/// solo marker and each charging face in the capsule (capsule_bubble.dart).
+/// with the colour-emoji bolt, pinned bottom-left of a face. Retired
+/// 2026-09-15 from the live markers (no battery badges/bolts on the solo
+/// marker or inside a group capsule, ruling 1) - kept only because
+/// lib/screens/marker_gallery_screen.dart (Bo's picker history) still reads it.
 class BrayChargingBolt extends StatelessWidget {
   const BrayChargingBolt({super.key});
 
