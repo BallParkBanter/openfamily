@@ -1,7 +1,7 @@
 // app/test/widgets/contact_link_test.dart
 // bray: Call · Text from the linked device contact - the store round-trip,
-// the tel:/sms: URIs, the focused card's chips (N numbers -> N labelled
-// chips + Text + 🔗; unlinked -> "🔗 Link contact"), and the link sheet.
+// the tel:/sms: URIs, the card's Call / Text / Link buttons (the linked
+// contact's text number; unlinked -> the link flow), and the link sheet.
 import 'package:flutter/material.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -156,34 +156,27 @@ void main() {
   });
 
   group('card', () {
-    testWidgets('linked: one Call chip per number with the address-book label, then Text, then 🔗; each fires the cleaned URI', (t) async {
+    // Round 4 (focus-29): the card has three line-icon buttons - Call, Text,
+    // Link. Call dials the linked contact's text number (first mobile, else
+    // the first number) and Text texts it; there is no per-number chip row
+    // any more (the old focus card's "📱 Call mobile · 🏠 Call home ..." went
+    // with it - member_profile_screen still lists every number).
+    testWidgets('linked: Call dials the text number (first mobile), Text texts it, Link opens the sheet; each fires the cleaned URI', (t) async {
       final List<String> fired = <String>[];
       int links = 0;
       await t.pumpWidget(host(PersonCard(
-        member: m('Heidi Bray'), label: 'Mom', charging: false, focused: true, now: now,
+        member: m('Heidi Bray'), label: 'Mom', charging: false, now: now,
         contact: heidi,
         onLinkContact: () => links++,
         launch: (String action, String uri) async => fired.add('$action $uri'),
       )));
-      expect(find.byKey(const Key('card-chips')), findsOneWidget);
-      expect(find.text('📱 Call mobile'), findsOneWidget);
-      expect(find.text('🏠 Call home'), findsOneWidget);
-      expect(find.text('💼 Call work'), findsOneWidget);
-      expect(find.text('💬 Text'), findsOneWidget);
-      expect(find.text('🔗'), findsOneWidget);
-      expect(find.byKey(const Key('card-call')), findsNothing);      // the upstream single-number chip is not shown
-      expect(find.byKey(const Key('card-call-3')), findsNothing);    // exactly three numbers -> three chips
-
-      // The chip row scrolls sideways (the test's wide Ahem font pushes the
-      // last chips off an 800px card), so bring each into view first.
-      for (final String k in <String>['card-call-0', 'card-call-1', 'card-call-2', 'card-text', 'card-link']) {
-        await t.ensureVisible(find.byKey(Key(k)));
+      expect(find.text('📱 Call mobile'), findsNothing);   // no chip row on this card
+      expect(find.byKey(const Key('card-call-0')), findsNothing);
+      for (final String k in <String>['card-call', 'card-text', 'card-link']) {
         await t.tap(find.byKey(Key(k)));
       }
       expect(fired, [
         'android.intent.action.DIAL tel:+14045551212',
-        'android.intent.action.DIAL tel:7705550100',
-        'android.intent.action.DIAL tel:+16785550199',
         'android.intent.action.SENDTO sms:+14045551212',
       ]);
       expect(links, 1);
@@ -192,76 +185,62 @@ void main() {
     testWidgets('linked contact wins over a profile phone', (t) async {
       final List<String> fired = <String>[];
       await t.pumpWidget(host(PersonCard(
-        member: m('Heidi Bray'), label: 'Mom', charging: false, focused: true, now: now,
+        member: m('Heidi Bray'), label: 'Mom', charging: false, now: now,
         phone: '+19999999999',
         contact: const LinkedContact(contactId: '1', displayName: 'Heidi', phones: [LinkedPhone(label: 'mobile', number: '404 555 1212')]),
         launch: (String action, String uri) async => fired.add(uri),
       )));
-      expect(find.text('📱 Call mobile'), findsOneWidget);
-      expect(find.text('Call'), findsNothing);
-      await t.tap(find.byKey(const Key('card-call-0')));
+      await t.tap(find.byKey(const Key('card-call')));
       expect(fired, ['tel:4045551212']);
       expect(fired.any((String u) => u.contains('9999999999')), isFalse);
     });
 
-    testWidgets('unlinked: a single "🔗 Link" chip that opens the link flow; no number invented', (t) async {
+    testWidgets('unlinked: Call / Text / Link all open the link flow (that is how you get a number); no number invented', (t) async {
+      final List<String> fired = <String>[];
       int links = 0;
-      await t.pumpWidget(host(PersonCard(member: m('Charlie'), label: 'Charlie', charging: false, focused: true, now: now, onLinkContact: () => links++)));
-      expect(find.text('🔗 Link'), findsOneWidget);
-      expect(find.byKey(const Key('card-call')), findsNothing);
-      expect(find.byKey(const Key('card-call-0')), findsNothing);
-      expect(find.byKey(const Key('card-text')), findsNothing);
+      await t.pumpWidget(host(PersonCard(member: m('Charlie'), label: 'Charlie', charging: false, now: now, onLinkContact: () => links++,
+          launch: (String a, String u) async => fired.add(u))));
+      await t.tap(find.byKey(const Key('card-call')));
+      await t.tap(find.byKey(const Key('card-text')));
       await t.tap(find.byKey(const Key('card-link')));
-      expect(links, 1);
+      expect(links, 3);
+      expect(fired, isEmpty);
     });
 
-    testWidgets('unlinked with the upstream profile phone: Call · Text on it (cleaned) plus the link chip', (t) async {
+    testWidgets('unlinked with the upstream profile phone: Call · Text on it (cleaned)', (t) async {
       final List<String> fired = <String>[];
       await t.pumpWidget(host(PersonCard(
-        member: m('Bo Bray'), label: 'You', charging: false, focused: true, now: now,
+        member: m('Bo Bray'), label: 'You', charging: false, now: now,
         phone: '+1 404-555-1212', onLinkContact: () {}, launch: (String a, String u) async => fired.add(u),
       )));
-      expect(find.byKey(const Key('card-call')), findsOneWidget);
-      expect(find.text('🔗 Link'), findsOneWidget);
+      await t.tap(find.byKey(const Key('card-call')));
       await t.tap(find.byKey(const Key('card-text')));
-      expect(fired, ['sms:+14045551212']);
+      expect(fired, ['tel:+14045551212', 'sms:+14045551212']);
     });
 
-    testWidgets('the Everyone row never shows the chip row - its 📞 / 💬 icons dial / text the link\'s text number; no host to link from -> no chip at all', (t) async {
+    testWidgets('no host to link from and no number: the buttons draw but do nothing', (t) async {
       final List<String> fired = <String>[];
-      await t.pumpWidget(host(PersonCard(member: m('Charlie'), label: 'Charlie', charging: false, now: now, contact: heidi, onLinkContact: () {},
-          launch: (String a, String u) async => fired.add('$a $u'))));
-      expect(find.byKey(const Key('card-chips')), findsNothing);
-      expect(find.byKey(const Key('card-call-0')), findsNothing);
-      await t.tap(find.byKey(const Key('row-call')));
-      await t.tap(find.byKey(const Key('row-text')));
-      expect(fired, ['android.intent.action.DIAL tel:+14045551212', 'android.intent.action.SENDTO sms:+14045551212']);   // heidi's mobile
-      await t.pumpWidget(host(PersonCard(member: m('Charlie'), label: 'Charlie', charging: false, focused: true, now: now)));
-      expect(find.byKey(const Key('card-chips')), findsNothing);
-      expect(find.byKey(const Key('card-link')), findsNothing);
-    });
-    testWidgets('the Everyone row without a number: 📞 / 💬 / 🔗 all open the link sheet, drawn dimmed', (t) async {
-      int links = 0;
-      await t.pumpWidget(host(PersonCard(member: m('Charlie'), label: 'Charlie', charging: false, now: now, onLinkContact: () => links++)));
-      await t.tap(find.byKey(const Key('row-call')));
-      await t.tap(find.byKey(const Key('row-text')));
-      await t.tap(find.byKey(const Key('row-link')));
-      expect(links, 3);
-      expect(t.widget<Opacity>(find.descendant(of: find.byKey(const Key('row-call')), matching: find.byType(Opacity))).opacity, lessThan(1));
-      expect(t.widget<Opacity>(find.descendant(of: find.byKey(const Key('row-link')), matching: find.byType(Opacity))).opacity, 1);
+      await t.pumpWidget(host(PersonCard(member: m('Charlie'), label: 'Charlie', charging: false, now: now,
+          launch: (String a, String u) async => fired.add(u))));
+      expect(find.byKey(const Key('card-call')), findsOneWidget);
+      expect(find.byKey(const Key('card-link')), findsOneWidget);
+      await t.tap(find.byKey(const Key('card-call')));
+      await t.tap(find.byKey(const Key('card-link')));
+      expect(fired, isEmpty);
+      expect(t.takeException(), isNull);
     });
 
-    testWidgets('five numbers do not overflow a 360-wide card', (t) async {
+    testWidgets('five numbers: Call dials the first mobile; the card never overflows', (t) async {
       const LinkedContact many = LinkedContact(contactId: '1', displayName: 'Many', phones: [
-        LinkedPhone(label: 'mobile', number: '1'), LinkedPhone(label: 'home', number: '2'), LinkedPhone(label: 'work', number: '3'),
+        LinkedPhone(label: 'home', number: '2'), LinkedPhone(label: 'mobile', number: '1'), LinkedPhone(label: 'work', number: '3'),
         LinkedPhone(label: 'work mobile', number: '4'), LinkedPhone(label: 'main', number: '5'),
       ]);
-      await t.pumpWidget(MaterialApp(home: Scaffold(body: SizedBox(width: 360,
-          child: PersonCard(member: m('Many'), label: 'Many', charging: false, focused: true, now: now, contact: many, onLinkContact: () {})))));
+      final List<String> fired = <String>[];
+      await t.pumpWidget(host(PersonCard(member: m('Many'), label: 'Many', charging: false, now: now, contact: many, onLinkContact: () {},
+          launch: (String a, String u) async => fired.add(u))));
       expect(t.takeException(), isNull);
-      for (int i = 0; i < 5; i++) {
-        expect(find.byKey(Key('card-call-$i')), findsOneWidget);
-      }
+      await t.tap(find.byKey(const Key('card-call')));
+      expect(fired, ['tel:1']);
     });
   });
 

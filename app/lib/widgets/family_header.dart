@@ -57,10 +57,10 @@ String everyoneChipText(String? summary) => summary ?? 'Everyone';
 /// "Everyone"), so the rig can find the button by its prefix.
 String everyoneChipLabel(String? summary) => summary == null ? 'Everyone' : 'Everyone: $summary';
 
-/// S:40-41 .summary chip - now the Everyone button. Bo, 2026-09-14: "only
-/// want to see all cards if i tap the everyone or all thing in the top right
-/// corner of the app". [onTap] toggles the sheet of all cards; [active] (the
-/// sheet is up) draws the border in lime, the action colour.
+/// S:40-41 .summary chip - the "N home · M out" summary. Round 4
+/// (2026-09-15): the Everyone view is gone, so the live map passes no
+/// [onTap] - the chip is a summary with a long press (the marker gallery);
+/// tests may still hand it an [onTap]. [active] draws the border in lime.
 class FamilySummaryChip extends StatelessWidget {
   const FamilySummaryChip({super.key, required this.text, this.onTap, this.onLongPress, this.active = false, this.semanticsLabel});
   final String text;
@@ -89,7 +89,7 @@ class FamilySummaryChip extends StatelessWidget {
         ],
       ),
     );
-    if (onTap == null) return chip;
+    if (onTap == null && onLongPress == null) return chip;
     return Semantics(
       label: semanticsLabel ?? everyoneChipLabel(text == 'Everyone' ? null : text),
       button: true,

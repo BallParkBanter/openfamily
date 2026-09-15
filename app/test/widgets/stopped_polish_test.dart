@@ -60,24 +60,24 @@ void main() {
     expect(find.text('12 mph'), findsOneWidget);   // the one mover still gets the pill
   });
 
-  testWidgets('card state line (focus card): parked at home reads Home, not "Driving near Home"', (t) async {
+  testWidgets('card place line: parked at home reads Home, not "Driving · Home"', (t) async {
     final MemberPlace home = MemberPlace(atHome: true, placeName: 'Home', since: DateTime(2026, 9, 14, 7, 30));
-    await t.pumpWidget(host(PersonCard(member: m('Bo Bray', mph: 0, place: home), label: 'Dad', charging: false, focused: true, now: now, place: home)));
+    await t.pumpWidget(host(PersonCard(member: m('Bo Bray', mph: 0, place: home), label: 'Dad', charging: false, now: now, place: home)));
     expect(find.text('🏠 Home'), findsOneWidget);
     expect(find.textContaining('Driving'), findsNothing);
     // rolling through the driveway at 5 mph is still not "driving" (under 8)
-    await t.pumpWidget(host(PersonCard(member: m('Bo Bray', mph: 5, place: home), label: 'Dad', charging: false, focused: true, now: now, place: home)));
+    await t.pumpWidget(host(PersonCard(member: m('Bo Bray', mph: 5, place: home), label: 'Dad', charging: false, now: now, place: home)));
     expect(find.text('🏠 Home'), findsOneWidget);
     expect(find.textContaining('Driving'), findsNothing);
   });
 
-  testWidgets('card state line (focus card): "Driving near X" only from 8 mph', (t) async {
-    const MemberPlace hwy = MemberPlace(placeName: 'Loganville Hwy', homeDistanceM: 3.2 * 1609.344);
-    await t.pumpWidget(host(PersonCard(member: m('Bo Bray', mph: 7, place: hwy), label: 'Dad', charging: false, focused: true, now: now, place: hwy)));
+  testWidgets('card place line: "🚗 Driving · <abbrev>" only from 8 mph (no drive tracker: the card\'s own rule)', (t) async {
+    const MemberPlace hwy = MemberPlace(street: 'Loganville Highway', homeDistanceM: 3.2 * 1609.344);
+    await t.pumpWidget(host(PersonCard(member: m('Bo Bray', mph: 7, place: hwy), label: 'Dad', charging: false, now: now, place: hwy)));
+    expect(t.widget<Text>(find.byKey(const Key('card-place'))).data, isNot(startsWith('🚗')));
     expect(find.textContaining('Driving'), findsNothing);
-    expect(find.text('📍 Loganville Hwy · 3.2 mi'), findsOneWidget);
-    await t.pumpWidget(host(PersonCard(member: m('Bo Bray', mph: 8, place: hwy), label: 'Dad', charging: false, focused: true, now: now, place: hwy)));
-    expect(find.text('🚗 Driving near Loganville Hwy'), findsOneWidget);
-    expect(t.widget<Text>(find.byKey(const Key('card-facts'))).data, startsWith('8 mph · '));   // the speed rides the facts line
+    await t.pumpWidget(host(PersonCard(member: m('Bo Bray', mph: 9, place: hwy), label: 'Dad', charging: false, now: now, place: hwy)));
+    expect(t.widget<Text>(find.byKey(const Key('card-place'))).data, '🚗 Driving · Loganville Hwy');
+    expect(find.text('🚗 9 mph'), findsOneWidget);   // the speed is a chip now
   });
 }

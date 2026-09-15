@@ -117,28 +117,27 @@ void main() {
     expect(mk.width, HomeChip.size);
   });
 
-  testWidgets('card: "Near" state line, and "📍 Save place" next to Link only when a POI exists', (t) async {
+  testWidgets('card: "Near" place line with the kind icon, and "📍 Save place" as the action (states 3 and 5; a saved place gets No-show)', (t) async {
     int saved = 0;
-    await t.pumpWidget(host(PersonCard(member: m('Charlie'), label: 'Charlie', charging: false, focused: true, now: now,
+    await t.pumpWidget(host(PersonCard(member: m('Charlie'), label: 'Charlie', charging: false, now: now,
         place: poi('school', name: 'Hebron Christian Academy'), onLinkContact: () {}, onSavePlace: () => saved++)));
-    expect(find.text('🏫 Near Hebron Christian Academy · 10 mi'), findsOneWidget);
+    expect(t.widget<Text>(find.byKey(const Key('card-place'))).data, '🏫 Near Hebron Christian Academy');
+    expect(find.text('📏 10 mi away'), findsOneWidget);
     expect(find.byKey(const Key('card-link')), findsOneWidget);
-    expect(find.byKey(const Key('card-save-place')), findsOneWidget);
     expect(find.text('📍 Save place'), findsOneWidget);
-    // The 22.5px chips in the test's wide Ahem font push the last one off an
-    // 800px card; the chip row scrolls sideways, so bring it into view.
-    await t.ensureVisible(find.byKey(const Key('card-save-place')));
-    await t.tap(find.byKey(const Key('card-save-place')));
+    await t.tap(find.byKey(const Key('card-action')));
     expect(saved, 1);
-    // No POI: no Save place chip (nothing to save), Link contact stays.
-    await t.pumpWidget(host(PersonCard(member: m('Charlie'), label: 'Charlie', charging: false, focused: true, now: now,
+    // No POI, just a road: still "Save place" (state 5), the full street.
+    await t.pumpWidget(host(PersonCard(member: m('Charlie'), label: 'Charlie', charging: false, now: now,
         place: const MemberPlace(street: 'Dacula Road', homeDistanceM: 16257), onLinkContact: () {}, onSavePlace: () => saved++)));
-    expect(find.byKey(const Key('card-save-place')), findsNothing);
-    expect(find.byKey(const Key('card-link')), findsOneWidget);
-    // No host wiring: no chip even with a POI.
-    await t.pumpWidget(host(PersonCard(member: m('Charlie'), label: 'Charlie', charging: false, focused: true, now: now,
-        place: poi('school'))));
-    expect(find.byKey(const Key('card-save-place')), findsNothing);
+    expect(t.widget<Text>(find.byKey(const Key('card-place'))).data, '📍 Near Dacula Road');
+    expect(find.text('📍 Save place'), findsOneWidget);
+    // Inside a saved place: nothing to save - "No-show" instead (state 2).
+    await t.pumpWidget(host(PersonCard(member: m('Charlie'), label: 'Charlie', charging: false, now: now,
+        place: poi('school', placeName: 'School'), savedKind: 'school')));
+    expect(t.widget<Text>(find.byKey(const Key('card-place'))).data, '🏫 School');
+    expect(find.text('📍 Save place'), findsNothing);
+    expect(find.text('⏰ No-show'), findsOneWidget);
   });
 
   test('a POI kind maps to the place type upstream knows, else custom', () {

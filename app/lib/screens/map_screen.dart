@@ -164,11 +164,10 @@ class _MapScreenState extends State<MapScreen>
   final Map<String, _Glide> _glides = <String, _Glide>{};
   Ticker? _glideTicker;
 
-  /// Piece 3: the levels of detail. FocusRules owns who is focused and the
-  /// idle clock; the sheet level is derived from it (FocusRules.levelFor).
-  /// Bo, 2026-09-14: the default is no sheet at all - the map, the top chips
-  /// and the bottom bar. The Everyone chip (top right) raises all the cards;
-  /// a face or a card shows one. (Replaces the plan's "peek" level.)
+  /// Round 4: hidden or focus; the Everyone chip is a summary. FocusRules
+  /// owns who is focused and the idle clock; the sheet level is derived from
+  /// it (FocusRules.levelFor). The default is no card at all - the map, the
+  /// top chips and the bottom bar; a face shows the one card.
   final FocusRules _focus = FocusRules();
   SheetLevel _sheetLevel = SheetLevel.hidden;
   Timer? _idleTimer;
@@ -429,31 +428,16 @@ class _MapScreenState extends State<MapScreen>
 
   void _onSheetLevel(SheetLevel level) {
     _touch();
-    // Focus is "others hidden + one card" (J:175-181). Any other level while
-    // focused - hidden (swipe down) or cards (Everyone chip) - is a request
-    // for everyone, so it leaves focus first; a raised sheet of everyone is
-    // not focus and must not leave the map drawing one person.
-    if (_focus.focusedId != null && level != SheetLevel.focus) {
+    if (level == SheetLevel.hidden && _focus.focusedId != null) {
       _leaveFocus();
-      if (level == SheetLevel.hidden) return;
+      return;
     }
     setState(() => _sheetLevel = level);
   }
 
-  /// The Everyone chip (top right). Bo, 2026-09-14: "only want to see all
-  /// cards if i tap the everyone or all thing in the top right corner of the
-  /// app" - tap: the sheet rises with every card; tap again: gone.
-  void _onEveryonePressed() => _onSheetLevel(everyoneChipTarget(_sheetLevel));
-
-  /// A tap on the map: leave focus, or drop the all-cards sheet (Bo,
-  /// 2026-09-14: "tap again or tap the map → hidden"). Design list: tap the
-  /// map = back.
+  /// A tap on the map leaves focus (design list: tap the map = back).
   void _onMapTap() {
-    if (_focus.focusedId != null) {
-      _leaveFocus();
-    } else if (_sheetLevel != SheetLevel.hidden) {
-      _onSheetLevel(SheetLevel.hidden);
-    }
+    if (_focus.focusedId != null) _leaveFocus();
   }
 
   /// The bottom bar's People button keeps opening their PeopleScreen (Bo,
@@ -471,11 +455,17 @@ class _MapScreenState extends State<MapScreen>
     return cam.unproject(Point<double>(p.x, p.y + lift), zoom);
   }
 
-  double _currentSheetHeight() {
-    final MediaQueryData media = MediaQuery.of(context);
-    final double reserved = MapBottomBar.height + media.padding.bottom;
-    final double maxH = sheetMaxHeight(screenHeight: media.size.height, topInset: media.padding.top, controlBarReserved: reserved);
-    return PeopleSheet.heightFor(_sheetLevel, _members.length, maxH, 0);
+  double _currentSheetHeight() => PeopleSheet.heightFor(_sheetLevel, 0);
+
+  /// The family place type behind a member's saved place name (Place.type),
+  /// for the card's place-line icon; null when not a saved place.
+  String? _savedKindFor(Member m) {
+    final String? name = m.place?.placeName;
+    if (name == null) return null;
+    for (final Place p in _familyService.places) {
+      if (p.name == name) return p.type;
+    }
+    return null;
   }
 
   /// Overview auto-fit (design list; J:228-236) that pans instead of snapping
@@ -1288,10 +1278,9 @@ class _MapScreenState extends State<MapScreen>
                 bottom: false,
                 child: Column(
                   children: [
-                    // The Everyone chip: the "N home · M out" summary as a
-                    // button that raises the sheet of all cards (Bo,
-                    // 2026-09-14). Always shown - "Everyone" when there is
-                    // no count yet - so the cards are always one tap away.
+                    // The "N home · M out" summary - a summary only (Round 4:
+                    // no Everyone view); long press = the marker gallery.
+                    // Always shown - "Everyone" when there is no count yet.
                     Builder(builder: (BuildContext context) {
                       final Member? f = _followedMember;
                       final String? s = summaryText(
@@ -1304,8 +1293,6 @@ class _MapScreenState extends State<MapScreen>
                         child: FamilySummaryChip(
                           text: everyoneChipText(s),
                           semanticsLabel: everyoneChipLabel(s),
-                          active: _sheetLevel == SheetLevel.cards,
-                          onTap: _onEveryonePressed,
                           onLongPress: _openMarkerGallery,
                         ),
                       );
@@ -1338,24 +1325,26 @@ class _MapScreenState extends State<MapScreen>
                 builder: (BuildContext context, _) => PeopleSheet(
                   members: members,
                   level: _sheetLevel,
-                  maxHeight: sheetMaxHeight(screenHeight: media.size.height, topInset: media.padding.top, controlBarReserved: controlBarReserved),
                   viewerId: _userId,
                   focusedId: _focus.focusedId,
                   chargingFor: _chargingFor,
                   placeFor: _placeFor,
                   contactFor: (Member m) => ContactLinkStore.instance.linkFor(m.id),
+                  savedKindFor: _savedKindFor,
+                  inDriveFor: (Member m) => _drives.inDrive(m.id),
                   onLinkContact: _linkContact,
                   onSavePlace: _savePlace,
+                  onCheckIn: (_) => _openCheckIn(),
                   onLevelChanged: _onSheetLevel,
                   onCardTap: _onCardTap,
                   onCardHold: _openMemberDetails,
                 ),
               ),
             ),
-            // The `+` FAB: 12 above the bar. The card column (Bo's mockup)
-            // is left-aligned and 528 wide, so on the tablet it never reaches
-            // the FAB and the FAB stays put (everyone-2.png); on a phone the
-            // column spans the width and the FAB rides its top edge instead.
+            // The `+` FAB: 12 above the bar. The card (focus-29) is
+            // left-aligned and 457.6 wide, so on the tablet it never reaches
+            // the FAB and the FAB stays put; on a phone the card spans the
+            // width and the FAB rides its top edge instead.
             AnimatedPositioned(
               duration: BrayTokens.sheetTransition,
               curve: Curves.ease,
@@ -1715,12 +1704,6 @@ class _MemberMarkerLayer extends StatelessWidget {
 /// widget test can import it.
 bool showRange(Member m) => m.position != null && m.status == MemberStatus.gpsIssue;
 
-/// The Everyone chip toggles the sheet of all cards (Bo, 2026-09-14): hidden
-/// → cards; cards → hidden; focus → cards (everyone, so focus is left first
-/// by _onSheetLevel). The bottom bar's People button no longer touches the
-/// sheet - it opens their PeopleScreen every time.
-SheetLevel everyoneChipTarget(SheetLevel current) => current == SheetLevel.cards ? SheetLevel.hidden : SheetLevel.cards;
-
 /// Where the `+` FAB sits above the bottom bar: 20 into the column's top
 /// edge when the cards are up and would run under it, 12 clear of the bar
 /// when there are no cards or the column is [clear] of the FAB's corner.
@@ -1728,8 +1711,8 @@ double fabLiftFor(double sheetHeight, {bool clear = false}) => sheetHeight > 0 &
 
 /// Whether the card column (PeopleSheet.columnLeftFor / columnWidthFor) ends
 /// left of the small `+` FAB (40 wide, 12 from the right) with 8 of air, so
-/// the FAB can stay by the bar (everyone-2.png). 800 wide tablet: 12 + 528 +
-/// 8 = 548 <= 748. 412 wide phone: 16 + 380 + 8 = 404 > 360.
+/// the FAB can stay by the bar (focus-29.png). 800 wide tablet: 12 + 457.6 +
+/// 8 = 477.6 <= 748. 412 wide phone: 16 + 380 + 8 = 404 > 360.
 bool fabClearOfColumn(double screenWidth) =>
     PeopleSheet.columnLeftFor(screenWidth) + PeopleSheet.columnWidthFor(screenWidth) + 8 <= screenWidth - 12 - 40;
 
