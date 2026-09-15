@@ -60,12 +60,13 @@ void main() {
     expect(find.text('12 mph'), findsOneWidget);   // the one mover still gets the pill
   });
 
-  testWidgets('card place line: parked at home reads Home, not "Driving · Home"', (t) async {
+  testWidgets('card place line: parked at home reads Home, not "Driving · Home" - even inside the drive tracker\'s 2-minute tail', (t) async {
     final MemberPlace home = MemberPlace(atHome: true, placeName: 'Home', since: DateTime(2026, 9, 14, 7, 30));
-    await t.pumpWidget(host(PersonCard(member: m('Bo Bray', mph: 0, place: home), label: 'Dad', charging: false, now: now, place: home)));
+    await t.pumpWidget(host(PersonCard(member: m('Bo Bray', mph: 0, place: home), label: 'Dad', charging: false, now: now, place: home, inDrive: true)));
     expect(find.text('🏠 Home'), findsOneWidget);
     expect(find.textContaining('Driving'), findsNothing);
-    // rolling through the driveway at 5 mph is still not "driving" (under 8)
+    expect(find.textContaining('mph'), findsNothing);
+    // rolling through the driveway at 5 mph without a tracker is still not "driving" (under 8)
     await t.pumpWidget(host(PersonCard(member: m('Bo Bray', mph: 5, place: home), label: 'Dad', charging: false, now: now, place: home)));
     expect(find.text('🏠 Home'), findsOneWidget);
     expect(find.textContaining('Driving'), findsNothing);

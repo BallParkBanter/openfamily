@@ -78,8 +78,23 @@ void main() {
     expect(chip.padding, BrayTokens.cardFactPad);
     expect(t.widget<Text>(find.text('📏 10 mi away')).style!.fontSize, closeTo(BrayTokens.cardFactFont, 0.01));
     expect(t.widget<Text>(find.text('📏 10 mi away')).style!.color, BrayTokens.cardFactColor);
-    expect(t.getRect(find.byKey(const Key('card-fact-1'))).left - t.getRect(find.byKey(const Key('card-fact-0'))).right, closeTo(BrayTokens.cardFactGap, 0.5));
+    // The chip row scales down as one piece when it would not fit (the
+    // test font is far wider than Roboto); the gap is 10.4 in the chips'
+    // own frame, so measure it against the row's scale (drawn / laid-out width).
+    final double scale = t.getRect(find.byKey(const Key('card-fact-0'))).width / t.getSize(find.byKey(const Key('card-fact-0'))).width;
+    expect((t.getRect(find.byKey(const Key('card-fact-1'))).left - t.getRect(find.byKey(const Key('card-fact-0'))).right) / scale, closeTo(BrayTokens.cardFactGap, 0.5));
     expect(t.getRect(find.byKey(const Key('card-fact-0'))).top - t.getRect(find.byKey(const Key('card-place'))).bottom, closeTo(BrayTokens.cardFactsTop, 1));
+  });
+  testWidgets('row 2: each chip hugs its own text - the long stale chip is never capped at half the row while its sibling has room', (t) async {
+    await t.pumpWidget(host(card(m('Charlie', mph: 65, ago: const Duration(hours: 4)), place: school)));
+    expect(find.text('🕒 Updated 4h ago'), findsOneWidget);
+    expect(find.text('📏 last seen 10 mi away'), findsOneWidget);
+    for (final String k in ['card-fact-0', 'card-fact-1']) {
+      final Text chip = t.widget<Text>(find.descendant(of: find.byKey(Key(k)), matching: find.byType(Text)));
+      expect(chip.overflow, isNot(TextOverflow.ellipsis));
+    }
+    expect(t.getSize(find.byKey(const Key('card-fact-0'))).width, isNot(closeTo(t.getSize(find.byKey(const Key('card-fact-1'))).width, 0.5)));
+    expect(t.getRect(find.byKey(const Key('card-fact-1'))).right, lessThanOrEqualTo(t.getRect(find.byKey(const Key('card'))).right - BrayTokens.cardPad.right + 0.01));   // never past the card
   });
   testWidgets('row 3: raised Save place (52 tall, 2.6 lime edge, gradient, shadow + glow); battery as a plain stat the same height, aligned to it', (t) async {
     await t.pumpWidget(host(card(m('Charlie'), place: school, onSave: () {})));
@@ -95,7 +110,11 @@ void main() {
     final Rect cardR = t.getRect(find.byKey(const Key('card')));
     expect(btn.left, closeTo(cardR.left + BrayTokens.cardPad.left, 0.5));
     expect(btn.bottom, closeTo(cardR.bottom - BrayTokens.cardPad.bottom, 0.5));
+    // The button hugs its text (.save: padding 0 18px + the 2px border) - it never fills the row.
+    final Rect textRect = t.getRect(find.descendant(of: find.byKey(const Key('card-action')), matching: find.byType(Text)));
+    expect(btn.width, closeTo(textRect.width + 2 * BrayTokens.cardSavePadH + 2 * BrayTokens.cardSaveBorder, 1));
     final Rect batt = t.getRect(find.byKey(const Key('card-batt-block')));
+    expect(batt.left - btn.right, greaterThan(0));
     expect(batt.height, closeTo(btn.height, 0.01));
     expect(batt.top, closeTo(btn.top, 0.5));
     expect(batt.right, closeTo(cardR.right - BrayTokens.cardPad.right, 0.5));

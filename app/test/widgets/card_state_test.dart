@@ -61,6 +61,25 @@ void main() {
     expect(s.facts, ['🕒 Updated 4h ago', '📏 last seen 10 mi away']);
     expect(s.facts.join(), isNot(contains('mph')));
   });
+  test('precedence: at Home and standing still beats the drive tracker\'s tail; moving inside the geofence is still Driving', () {
+    // DECISIONS state 1 + ruling 6: the server's geofence is a fact; "Driving"
+    // at 0 mph inside it is fake data; a member still moving inside it stays Driving.
+    final MemberPlace home = MemberPlace(atHome: true, placeName: 'Home', since: local(15, 42), homeDistanceM: 5, street: 'Twin Lakes Drive');
+    final CardState parked = st(m(mph: 0), place: home, inDrive: true);
+    expect(parked.placeLine, '🏠 Home');
+    expect(parked.facts.first, startsWith('🕒 Home since'));
+    expect(parked.facts.join(), isNot(contains('mph')));
+    expect(parked.action, CardAction.noShow);
+    final CardState rolling = st(m(mph: 25), place: home, inDrive: true);
+    expect(rolling.placeLine, startsWith('🚗 Driving'));
+    expect(rolling.facts.first, '🚗 25 mph');
+    expect(rolling.action, CardAction.noShow);   // the action is place-based
+  });
+  test('stale at Home: "🕒 Updated 4h ago" alone - no distance at home (state 1 rule)', () {
+    final CardState s = st(m(mph: 65, ago: const Duration(hours: 4)), place: MemberPlace(atHome: true, placeName: 'Home', since: local(7, 9), homeDistanceM: 5), inDrive: true);
+    expect(s.placeLine, '🏠 Home');
+    expect(s.facts, ['🕒 Updated 4h ago']);
+  });
   test('7 charging: "⚡ 100"; 8 low: "🪫 12" red; normal: "🔋 96"; unknown: "—"', () {
     expect(st(m(batt: 100), charging: true).battery, '⚡ 100');
     final CardState low = st(m(batt: 12));

@@ -198,16 +198,19 @@ class _PersonCardState extends State<PersonCard> {
           if (s.facts.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: BrayTokens.cardFactsTop),                          // .facts margin-top:8px
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (int i = 0; i < s.facts.length; i++) ...[
-                    if (i > 0) const SizedBox(width: BrayTokens.cardFactGap),                       // .facts gap:8px
-                    // Flexible: a chip keeps its natural width (both fit the
-                    // 457.6 card on the device) but can never push the row
-                    // past the card - a too-long fact ellipsizes instead.
-                    Flexible(
-                      child: Container(
+              // Every chip hugs its own text, like the mock. Should the two
+              // ever be wider than the card (a long "last seen" chip in a
+              // wide font), the whole row scales down as one piece instead
+              // of overflowing or capping either chip.
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (int i = 0; i < s.facts.length; i++) ...[
+                      if (i > 0) const SizedBox(width: BrayTokens.cardFactGap),                     // .facts gap:8px
+                      Container(
                         key: Key('card-fact-$i'),
                         padding: BrayTokens.cardFactPad,                                            // .fact padding:4px 10px
                         decoration: BoxDecoration(
@@ -215,12 +218,12 @@ class _PersonCardState extends State<PersonCard> {
                           borderRadius: BorderRadius.circular(999),                                 // .fact border-radius:999px
                           border: Border.all(color: BrayTokens.cardFactBorder),                     // .fact border:1px solid rgba(255,255,255,.14)
                         ),
-                        child: Text(s.facts[i], maxLines: 1, softWrap: false, overflow: TextOverflow.ellipsis,
+                        child: Text(s.facts[i], maxLines: 1, softWrap: false,
                             style: const TextStyle(fontSize: BrayTokens.cardFactFont, color: BrayTokens.cardFactColor, height: 1.2)),   // .fact 14px #dfe8df
                       ),
-                    ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
         ],
@@ -239,9 +242,11 @@ class _PersonCardState extends State<PersonCard> {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        // Flexible: the button keeps its natural width and only gives way
-        // (its text clipping) if the battery stat would otherwise push the
-        // row past the card.
+        // Flexible so the button can give way (its text clipping) if the
+        // battery stat would otherwise push the row past the card. The
+        // Container has no `alignment:` on purpose - that would be an Align,
+        // which fills whatever width the Flexible offers; without it the
+        // button hugs its text (.save: text + 18px padding + 2px border).
         Flexible(
           child: Semantics(
           label: s.action.text,
@@ -252,7 +257,6 @@ class _PersonCardState extends State<PersonCard> {
               key: const Key('card-action'),
               height: BrayTokens.cardSaveH,                                                          // .save height:40px
               padding: const EdgeInsets.symmetric(horizontal: BrayTokens.cardSavePadH),              // .save padding:0 18px
-              alignment: Alignment.center,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(BrayTokens.cardSaveRadius),                      // .save border-radius:12px
                 border: Border.all(color: BrayTokens.cardLime, width: BrayTokens.cardSaveBorder),    // .save border:2px solid #A3E635
@@ -264,8 +268,11 @@ class _PersonCardState extends State<PersonCard> {
                 ],
               ),
               // (.save's inset 0 1px 0 rgba(255,255,255,.18) highlight is not drawable with BoxShadow; OPEN: dropped - a 1px inner highlight)
-              child: Text(s.action.text, maxLines: 1, softWrap: false,
-                  style: const TextStyle(fontSize: BrayTokens.cardSaveFont, fontWeight: FontWeight.w800, color: BrayTokens.cardLime, height: 1)),   // .save 15px 800 #A3E635
+              child: Center(
+                widthFactor: 1,                                                                     // as wide as the text, centred in the 52 height
+                child: Text(s.action.text, maxLines: 1, softWrap: false,
+                    style: const TextStyle(fontSize: BrayTokens.cardSaveFont, fontWeight: FontWeight.w800, color: BrayTokens.cardLime, height: 1)),   // .save 15px 800 #A3E635
+              ),
             ),
           ),
           ),

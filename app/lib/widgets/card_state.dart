@@ -11,9 +11,9 @@ import '../theme/bray_tokens.dart';
 import 'place_text.dart' show isDriving, milesText, nearPoiText, pillStreet, poiIcon, sinceText;
 
 enum CardAction {
-  savePlace,   // states 3, 4, 5: "📍 Save place"
-  noShow,      // states 1, 2: "⏰ No-show" (drawn per the mock; the alert itself is not built yet - Joplin "No-show alert ... not built yet")
-  checkIn;     // state 9: "📍 Check in"
+  savePlace,   // states 3, 4, 5 - anyone outside a saved place, driving or not: "📍 Save place"
+  noShow,      // states 1, 2 - at Home or inside a saved place, driving or not (the action is place-based): "⏰ No-show" (drawn per the mock; the alert itself is not built yet - Joplin "No-show alert ... not built yet")
+  checkIn;     // state 9 - the viewer's own card, whatever the place: "📍 Check in"
 
   String get text {
     switch (this) {
@@ -66,7 +66,11 @@ CardState cardStateFor(
   String? savedKind,
 }) {
   final bool stale = m.isStaleAt(now);
-  final bool driving = !stale && (inDrive ?? isDriving(m));                           // no tracker: the card's old rule, H:92 >= 8 mph
+  // DECISIONS state 1 + ruling 6: the server's geofence is a fact; "Driving"
+  // at 0 mph inside it is fake data (the drive tracker's 2-minute tail after
+  // pulling in); a member still moving inside the geofence stays Driving.
+  final bool parkedAtHome = place?.atHome == true && (m.speedMph ?? 0) < BrayTokens.driveStillMph;
+  final bool driving = !stale && !parkedAtHome && (inDrive ?? isDriving(m));          // no tracker: the card's old rule, H:92 >= 8 mph
   final String? miles = place?.homeDistanceM == null ? null : milesText(place!.homeDistanceM!);
   final String? since = place?.since == null ? null : sinceText(place!.since!, now: now);
 
@@ -88,7 +92,7 @@ CardState cardStateFor(
 
   final List<String> facts;
   if (stale) {
-    facts = <String>['🕒 Updated ${BrayTokens.agoText(m.lastSeen, now)}', if (miles != null) '📏 last seen $miles away'];   // state 6
+    facts = <String>['🕒 Updated ${BrayTokens.agoText(m.lastSeen, now)}', if (miles != null && place?.atHome != true) '📏 last seen $miles away'];   // state 6 (state 1: no distance at home)
   } else if (driving) {
     facts = <String>['🚗 ${m.speedMph ?? 0} mph', if (miles != null) '📏 $miles away'];                                     // state 4 (0 mph inside a drive is real)
   } else if (place?.atHome == true) {
