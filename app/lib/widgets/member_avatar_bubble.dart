@@ -8,6 +8,7 @@ import '../services/member_avatar_cache.dart';
 import '../theme/app_theme.dart';
 import '../theme/bray_tokens.dart';
 import 'battery_badge.dart';
+import 'heading_beam.dart';
 import 'home_chip.dart' show HomeChip;
 import 'marker_pointer.dart';
 import 'movement_icon.dart';
@@ -162,7 +163,12 @@ class MemberAvatarBubble extends StatelessWidget {
               clipBehavior: Clip.none,
               fit: StackFit.expand,
               children: [
-                // Task 6: the heading beam goes here, first.
+                if (member.showsBeamAt(now))
+                  Positioned(
+                    left: markerWidth / 2 - BrayTokens.beamDisc / 2,                                   // .beam left:50%; translate(-50%,-50%)
+                    top: ringCentreFromTop - BrayTokens.beamDisc / 2,                                  // centred on the ring
+                    child: HeadingBeam(headingDeg: member.headingDeg!, accent: BrayTokens.accentFor(member)),
+                  ),
                 const Positioned(left: ringLeft, top: topZone, child: RingShadowDisc()),
                 Positioned(
                   right: markerWidth - (ringLeft + BrayTokens.soloFace - BrayTokens.nameBadgeRight),   // .nm right:38px

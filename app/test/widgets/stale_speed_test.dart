@@ -84,7 +84,7 @@ void main() {
     await t.pumpWidget(host(CapsuleBubble(members: [m('Heidi Bray', ago: const Duration(hours: 3)), m('Charlie', mph: 40, ago: const Duration(hours: 2))], now: now)));
     expect(find.textContaining('mph'), findsNothing);
     expect(find.text('65'), findsNothing);
-    expect(find.byKey(const Key('bray-heading-cone')), findsNothing);
+    expect(find.byKey(const Key('bray-heading-beam')), findsNothing);
     expect(t.getSemantics(sem(CapsuleBubble)).label, isNot(contains('mph')));
     expect(capsuleHeading([m('Heidi Bray', ago: const Duration(hours: 3)), m('Charlie', ago: const Duration(hours: 3))], now: now), isNull);
     h.dispose();

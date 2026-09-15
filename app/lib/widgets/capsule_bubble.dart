@@ -3,6 +3,7 @@
 // pill of overlapping faces floating ABOVE the location, a tail, and a dot ON the
 // location - the group never covers the spot. One speed for the group. Above
 // the pill, the Life360 callout (S:93-99 .fc-call; rule in capsule_callout.dart).
+// No heading beam on a group - DECISIONS ruling 5.
 //
 // Every visual constant is a BrayTokens value or a bare number with its source:
 //   S = family-viewer2/static/style.css   J = family-viewer2/static/app.js
@@ -13,7 +14,6 @@ import '../models/member.dart';
 import '../services/contact_link_store.dart';
 import '../theme/bray_tokens.dart';
 import 'capsule_callout.dart';
-import 'heading_cone.dart';
 import 'member_avatar_bubble.dart' show BrayChargingBolt, StatusAvatar;
 import 'place_text.dart' show pillStreet;
 
@@ -91,14 +91,6 @@ class CapsuleBubble extends StatelessWidget {
   /// 16px shadow (S:67) on either side.
   static const double markerWidth = 260;
 
-  /// The pill's centre, measured from the top of the marker box: the callout
-  /// zone plus half the pill. The direction cone's origin for the group.
-  static const double pillCentreFromTop = calloutZone + _pillH / 2;
-
-  /// The group cone's reach from the pill centre: 1.6 x a capsule face (J:111
-  /// 58px) = 92.8, the same factor as the solo marker. Paints past the box.
-  static const double coneLength = BrayTokens.coneLengthFactor * BrayTokens.capsuleAvatar;
-
   /// Where the map point sits inside the marker box: horizontally centred and
   /// dotSize/2 above the bottom edge - the dot's centre.
   ///
@@ -155,10 +147,6 @@ class CapsuleBubble extends StatelessWidget {
     // S:69 each further face starts 58 - 18 = 40px after the previous one.
     const double step = BrayTokens.capsuleAvatar - BrayTokens.capsuleOverlap;
     final double stackW = BrayTokens.capsuleAvatar + step * (preview.length - 1);
-    // Life360 direction cone (piece 5): one for the group, only when everyone
-    // in it is moving the same way (heading_cone.dart capsuleHeading); in the
-    // lead driver's accent, like the speed pill.
-    final double? heading = capsuleHeading(members, now: at);
 
     return Tooltip(
       message: label,
@@ -174,18 +162,6 @@ class CapsuleBubble extends StatelessWidget {
               clipBehavior: Clip.none,
               fit: StackFit.expand,
               children: [
-                if (heading != null && lead != null)
-                  Positioned(
-                    left: markerWidth / 2 - coneLength,
-                    top: pillCentreFromTop - coneLength,
-                    width: 2 * coneLength,
-                    height: 2 * coneLength,
-                    child: HeadingCone(
-                      headingDeg: heading,
-                      accent: BrayTokens.accentFor(lead),
-                      length: coneLength,
-                    ),
-                  ),
                 Column(
                   mainAxisSize: MainAxisSize.min,
                   mainAxisAlignment: MainAxisAlignment.end,

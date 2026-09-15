@@ -1,4 +1,8 @@
 // app/lib/widgets/heading_cone.dart
+// Retired from the live marker 2026-09-15 - heading_beam.dart replaced it
+// (DECISIONS "Direction cone"); kept because
+// lib/screens/marker_gallery_screen.dart still draws it.
+//
 // Life360's direction cone (piece 5): a faint wedge from the marker in the
 // direction the phone is heading, shown only while the person is moving.
 // The Family Viewer has no cone, so every value here is a BrayTokens
