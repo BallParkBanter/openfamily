@@ -31,6 +31,8 @@ type wsMember struct {
 	SpeedMPS        *float64    `json:"speed_mps"`
 	MotionState     *string     `json:"motion_state"`
 	AccuracyMeters  *float64    `json:"accuracy_meters"`
+	// HeadingDeg: bray piece 5: the beam's heading; null = unknown, like charging
+	HeadingDeg *float64 `json:"heading_deg"`
 	// LastSeenAt is the most recent device heartbeat/ingest time across all of
 	// the member's devices. It can be newer than TS (the last stored
 	// position's timestamp) when the member is stationary and only heartbeats
@@ -53,6 +55,7 @@ type wsLocation struct {
 	SpeedMPS       *float64  `json:"speed_mps"`
 	MotionState    *string   `json:"motion_state"`
 	AccuracyMeters *float64  `json:"accuracy_meters"`
+	HeadingDeg     *float64  `json:"heading_deg"`
 	// Place: where the member is in words (Bray piece 4); omitted when unknown.
 	Place *models.MemberPlace `json:"place,omitempty"`
 }
@@ -234,7 +237,7 @@ func (s *Server) familyMembersSnapshot(ctx context.Context, familyID, callerID s
 	rows, err := s.Pool.Query(ctx, `
 		SELECT u.id, u.email, u.name, u.role,
 		       u.avatar_data IS NOT NULL, u.avatar_version, u.avatar_updated_at,
-		       mp.lat, mp.lon, mp.ts, mp.battery_pct, mp.charging, mp.speed_mps, mp.motion_state, mp.accuracy_meters,
+		       mp.lat, mp.lon, mp.ts, mp.battery_pct, mp.charging, mp.speed_mps, mp.motion_state, mp.accuracy_meters, mp.heading_deg,
 		       d.last_seen`+memberPlaceColumns+`
 		FROM users u
 		LEFT JOIN member_positions mp ON mp.user_id = u.id
@@ -263,11 +266,12 @@ func (s *Server) familyMembersSnapshot(ctx context.Context, familyID, callerID s
 			charging        *bool
 			motion          *string
 			accuracy        *float64
+			heading         *float64
 			lastSeenAt      *time.Time
 		)
 		var pr memberPlaceRow
 		targets := append([]any{&id, &email, &name, &role, &hasAvatar, &avatarVersion, &avatarUpdatedAt,
-			&lat, &lon, &ts, &battery, &charging, &speed, &motion, &accuracy, &lastSeenAt}, pr.scanTargets()...)
+			&lat, &lon, &ts, &battery, &charging, &speed, &motion, &accuracy, &heading, &lastSeenAt}, pr.scanTargets()...)
 		if err := rows.Scan(targets...); err != nil {
 			return nil, err
 		}
@@ -286,6 +290,7 @@ func (s *Server) familyMembersSnapshot(ctx context.Context, familyID, callerID s
 			SpeedMPS:        speed,
 			MotionState:     motion,
 			AccuracyMeters:  accuracy,
+			HeadingDeg:      heading,
 			LastSeenAt:      lastSeenAt,
 			Place:           pr.toPlace(lat, lon),
 		}

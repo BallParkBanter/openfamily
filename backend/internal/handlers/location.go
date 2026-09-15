@@ -209,17 +209,9 @@ func (s *Server) IngestLocation(w http.ResponseWriter, r *http.Request) {
 	// locations hypertable, which is subject to 90-day retention). The WHERE
 	// clause skips the update if the stored position is already newer, so an
 	// out-of-order point can never regress a member's last-known position.
-	if _, err := tx.Exec(r.Context(), `
-		INSERT INTO member_positions (user_id, lat, lon, ts, battery_pct, speed_mps, motion_state, accuracy_meters, device_id, updated_at, charging)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now(), $10)
-		ON CONFLICT (user_id) DO UPDATE SET
-			lat = EXCLUDED.lat, lon = EXCLUDED.lon, ts = EXCLUDED.ts,
-			battery_pct = EXCLUDED.battery_pct, speed_mps = EXCLUDED.speed_mps,
-			motion_state = EXCLUDED.motion_state, accuracy_meters = EXCLUDED.accuracy_meters,
-			device_id = EXCLUDED.device_id, updated_at = now(), charging = EXCLUDED.charging
-		WHERE member_positions.ts < EXCLUDED.ts`,
+	if _, err := tx.Exec(r.Context(), memberPositionUpsertSQL,
 		ownerID, req.Lat, req.Lon, ts, req.BatteryPct, req.SpeedMPS,
-		nullIfEmpty(req.MotionState), req.AccuracyMeters, req.DeviceID, req.Charging,
+		nullIfEmpty(req.MotionState), req.AccuracyMeters, req.DeviceID, req.Charging, req.HeadingDeg,
 	); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to store member position")
 		return
@@ -282,6 +274,7 @@ func (s *Server) IngestLocation(w http.ResponseWriter, r *http.Request) {
 			SpeedMPS:       req.SpeedMPS,
 			MotionState:    motionState,
 			AccuracyMeters: req.AccuracyMeters,
+			HeadingDeg:     req.HeadingDeg,
 			Place:          place,
 		})
 	}()
@@ -301,6 +294,22 @@ func (s *Server) IngestLocation(w http.ResponseWriter, r *http.Request) {
 		Source:         req.Source,
 	})
 }
+
+// memberPositionUpsertSQL is the one last-known-position upsert both ingest
+// paths use (single point here, batch in location_batch.go). The WHERE clause
+// skips the update if the stored position is already newer, so an
+// out-of-order point can never regress a member's last-known position.
+// bray piece 5: carries heading_deg ($11) for the direction beam.
+const memberPositionUpsertSQL = `
+		INSERT INTO member_positions (user_id, lat, lon, ts, battery_pct, speed_mps, motion_state, accuracy_meters, device_id, updated_at, charging, heading_deg)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now(), $10, $11)
+		ON CONFLICT (user_id) DO UPDATE SET
+			lat = EXCLUDED.lat, lon = EXCLUDED.lon, ts = EXCLUDED.ts,
+			battery_pct = EXCLUDED.battery_pct, speed_mps = EXCLUDED.speed_mps,
+			motion_state = EXCLUDED.motion_state, accuracy_meters = EXCLUDED.accuracy_meters,
+			device_id = EXCLUDED.device_id, updated_at = now(), charging = EXCLUDED.charging,
+			heading_deg = EXCLUDED.heading_deg
+		WHERE member_positions.ts < EXCLUDED.ts`
 
 func nullIfEmpty(s string) any {
 	if s == "" {
