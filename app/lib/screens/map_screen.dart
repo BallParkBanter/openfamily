@@ -38,6 +38,7 @@ import '../widgets/circle_switcher.dart';
 import '../widgets/contact_link_sheet.dart';
 import '../widgets/family_header.dart';
 import '../widgets/focus_trail_layer.dart';
+import '../widgets/following_pill.dart';
 import '../widgets/home_chip.dart';
 import '../widgets/map_bottom_bar.dart';
 import '../widgets/member_avatar_bubble.dart';
@@ -1257,8 +1258,9 @@ class _MapScreenState extends State<MapScreen>
                   child: Padding(
                     padding: const EdgeInsets.only(top: 8),
                     child: Center(
-                      child: _FollowingPill(
+                      child: FollowingPill(
                         label: _labelFor(_followedMember!),
+                        accent: BrayTokens.accentFor(_followedMember!),
                         paused: _followPaused,
                         onProfile: () => _openMemberDetails(_followedMember!),
                         // Piece 3: one focus/follow state - letting go of the
@@ -1482,65 +1484,6 @@ class _LayerToggle extends StatelessWidget {
               color: BrandTheme.of(context).accentInk,
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-/// The pill shown while the camera is following someone. Names who, opens
-/// their profile, and lets the user stop without having to drag the map.
-/// bray: [label] is the same BrayTokens.labelFor the cards and the summary
-/// chip use ("Following Heidi" / "Following Mom" / "Following You"), never
-/// the raw login name.
-class _FollowingPill extends StatelessWidget {
-  const _FollowingPill({
-    required this.label,
-    required this.onProfile,
-    required this.onStop,
-    this.paused = false,
-  });
-
-  final String label;
-
-  /// True while a gesture has the follow on hold; the camera resumes by itself.
-  final bool paused;
-  final VoidCallback onProfile;
-  final VoidCallback onStop;
-
-  @override
-  Widget build(BuildContext context) {
-    final BrandTheme theme = BrandTheme.of(context);
-    return Material(
-      color: theme.sheet,
-      shape: const StadiumBorder(),
-      elevation: 3,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 4, 4, 4),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(paused ? Icons.pause : Icons.navigation,
-                size: 16, color: theme.accentInk),
-            const SizedBox(width: 8),
-            Text(
-              followingText(label: label, paused: paused),
-              style: Theme.of(context).textTheme.labelLarge,
-            ),
-            const SizedBox(width: 4),
-            IconButton(
-              tooltip: 'Profile',
-              visualDensity: VisualDensity.compact,
-              onPressed: onProfile,
-              icon: const Icon(Icons.person_outline, size: 20),
-            ),
-            IconButton(
-              tooltip: 'Stop following',
-              visualDensity: VisualDensity.compact,
-              onPressed: onStop,
-              icon: const Icon(Icons.close, size: 20),
-            ),
-          ],
         ),
       ),
     );
