@@ -2,11 +2,21 @@
 // Who rides together - Bo's rulings (DECISIONS "Condition rulings" 2026-09-15):
 //  3. two cars stopped at the same light must not merge: a driving pair
 //     groups only after ~1 min of matching speed AND heading (or both
-//     standing still within 120 m - the distance rule in member_clustering);
+//     standing still within 120 m - the distance rule in member_clustering).
+//     DECISIONS ruling 3 - the 1-min proof is for strangers at a light; a
+//     pair already still-together within 120 m has proven it: this file
+//     remembers who was still-together last frame and seeds a FORMED clock
+//     the instant they both start driving, no re-proof;
 //  2. a parked group says "here for X" when everyone has been there
 //     together, "Bo arrived 41 min ago" for the first hour after a join;
 //  7. a group shows at most the speed bubble + "+N";
 //  - a member whose phone stopped reporting drops out and shows alone.
+// OPEN: chosen - a formed pair rides through the mixed drive/still moment
+// while within 120 m (one phone's drive ends or starts a beat before the
+// other's, since DriveTracker judges each phone's own fix cadence
+// separately): the pair's clock survives a mixed state instead of the
+// controller-review finding's flicker (capsule -> split -> capsule -> split
+// -> capsule for a single car with two phones).
 // Pure Dart with an injected clock; the map owns one GroupTracker and feeds
 // it every members frame and the 15 s tick, then hands `together` to
 // clusterMembers as its canGroup predicate.
@@ -23,8 +33,15 @@ class GroupTracker {
 
   final DateTime Function() _clock;
 
-  /// Per unordered pair: when their speed and heading started matching.
+  /// Per unordered pair: when their speed and heading started matching (or
+  /// were seeded pre-formed - see [observe]).
   final Map<String, DateTime> _matchedSince = <String, DateTime>{};
+
+  /// Pairs that were both fresh, both NOT in a drive, and within
+  /// [BrayTokens.groupMetres] on the PREVIOUS [observe] call. Read before
+  /// this frame's set replaces it - that is what lets a still-together pair
+  /// skip the stranger proof the instant they start driving together.
+  final Set<String> _stillTogether = <String>{};
 
   static String _key(Member a, Member b) => a.id.compareTo(b.id) < 0 ? '${a.id}|${b.id}' : '${b.id}|${a.id}';
 
@@ -38,21 +55,52 @@ class GroupTracker {
     return since != null && now.difference(since) >= BrayTokens.groupMatchFor;
   }
 
-  /// Feed the latest frame. Only pairs where both are in a drive keep a
-  /// clock; the clock starts when speeds (within groupSpeedTolMph) and
-  /// headings (both known, within groupHeadingTolDeg) match inside 120 m,
-  /// and resets the moment they stop matching - except that a FORMED group
-  /// ignores heading wobble (OPEN: chosen - one phone's cog lags in a turn)
-  /// and only splits on distance or a speed gap.
+  /// Feed the latest frame.
+  ///
+  /// Both driving: the clock starts when speeds (within groupSpeedTolMph)
+  /// and headings (both known, within groupHeadingTolDeg) match inside
+  /// 120 m, and resets the moment they stop matching - except that a FORMED
+  /// group ignores heading wobble (OPEN: chosen - one phone's cog lags in a
+  /// turn) and only splits on distance or a speed gap. But first: if this
+  /// pair was still-together (both parked, within 120 m) on the PREVIOUS
+  /// frame, seed the clock pre-formed - DECISIONS ruling 3's proof is for
+  /// strangers at a light, not two phones that just pulled out of the same
+  /// driveway together.
+  ///
+  /// Both still: no clock kept (the distance rules in member_clustering
+  /// decide); instead remembered in [_stillTogether] for the seed above.
+  ///
+  /// Mixed (one driving, one still - one phone's DriveTracker fix landed a
+  /// beat before the other's): an UNFORMED pair never groups across the
+  /// split, same as before. A FORMED pair's clock survives while the two
+  /// stay within 120 m (OPEN: chosen, see the file header) - it neither
+  /// starts nor is proven here, only kept alive.
   void observe(List<Member> members, {required bool Function(Member) inDriveFor, DateTime? now}) {
     final DateTime at = now ?? _clock();
     final Set<String> seen = <String>{};
+    final Set<String> stillTogetherNow = <String>{};
     for (int i = 0; i < members.length; i++) {
       for (int j = i + 1; j < members.length; j++) {
         final Member a = members[i], b = members[j];
         final String key = _key(a, b);
-        if (a.position == null || b.position == null || a.isStaleAt(at) || b.isStaleAt(at) || !inDriveFor(a) || !inDriveFor(b)) continue;
+        if (a.position == null || b.position == null || a.isStaleAt(at) || b.isStaleAt(at)) continue;
+        final bool da = inDriveFor(a), db = inDriveFor(b);
         final bool near = groundMetres(a.position!, b.position!) <= BrayTokens.groupMetres;
+
+        if (!da && !db) {
+          if (near) stillTogetherNow.add(key);
+          continue;
+        }
+
+        if (da != db) {
+          if (near && _formed(key, at)) seen.add(key);
+          continue;
+        }
+
+        // Both driving.
+        if (near && _stillTogether.contains(key)) {
+          _matchedSince.putIfAbsent(key, () => at.subtract(BrayTokens.groupMatchFor));
+        }
         final bool speedOk = ((a.speedMph ?? 0) - (b.speedMph ?? 0)).abs() <= BrayTokens.groupSpeedTolMph;
         final bool headingOk = a.headingDeg != null && b.headingDeg != null && _angleBetween(a.headingDeg!, b.headingDeg!) <= BrayTokens.groupHeadingTolDeg;
         final bool keep = near && speedOk && (headingOk || _formed(key, at));
@@ -63,6 +111,9 @@ class GroupTracker {
       }
     }
     _matchedSince.removeWhere((String k, _) => !seen.contains(k));
+    _stillTogether
+      ..clear()
+      ..addAll(stillTogetherNow);
   }
 
   /// The clustering predicate: may [a] and [b] share a capsule as of now?
@@ -70,7 +121,14 @@ class GroupTracker {
     final DateTime at = now ?? _clock();
     if (a.isStaleAt(at) || b.isStaleAt(at)) return false;
     final bool da = inDriveFor(a), db = inDriveFor(b);
-    if (da != db) return false;
+    if (da != db) {
+      // A FORMED pair rides through the mixed moment while still within
+      // 120 m (OPEN: chosen, see the file header); an unformed pair splits.
+      return _formed(_key(a, b), at) &&
+          a.position != null &&
+          b.position != null &&
+          groundMetres(a.position!, b.position!) <= BrayTokens.groupMetres;
+    }
     if (!da) return true;                       // both still: the distance rules decide (120 m / overlapping bubbles)
     return _formed(_key(a, b), at);
   }

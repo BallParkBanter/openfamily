@@ -90,6 +90,28 @@ void main() {
       g.observe([a, b], inDriveFor: driving);
       expect(g.together(a, b, inDriveFor: driving), isFalse);
     });
+    test('a still-together pair (parked, 20 m apart) seeds pre-formed the moment they both start driving: no 60 s re-proof', () {
+      DateTime now = t0;
+      final GroupTracker g = GroupTracker(clock: () => now);
+      g.observe([mk('a'), mk('b', pos: north(20))], inDriveFor: driving);   // both still, within 120 m
+      now = t0.add(const Duration(seconds: 10));
+      final Member a = mk('a', mph: 30, heading: 90), b = mk('b', pos: north(20), mph: 30, heading: 90);
+      g.observe([a, b], inDriveFor: driving);
+      expect(g.together(a, b, inDriveFor: driving), isTrue);
+    });
+    test('a formed driving pair rides through a mixed moment (one phone\'s drive ends a beat early) while within 120 m; splits once far', () {
+      DateTime now = t0;
+      final GroupTracker g = GroupTracker(clock: () => now);
+      g.observe([mk('a', mph: 30, heading: 90), mk('b', pos: north(20), mph: 30, heading: 90)], inDriveFor: driving);
+      now = t0.add(const Duration(seconds: 61));
+      g.observe([mk('a', mph: 30, heading: 90), mk('b', pos: north(20), mph: 30, heading: 90)], inDriveFor: driving);   // formed
+      final Member a = mk('a', mph: 0), b = mk('b', pos: north(20), mph: 30, heading: 90);   // a stopped reporting a driving speed
+      g.observe([a, b], inDriveFor: driving);
+      expect(g.together(a, b, inDriveFor: driving), isTrue);
+      final Member farB = mk('b', pos: north(300), mph: 30, heading: 90);
+      g.observe([a, farB], inDriveFor: driving);
+      expect(g.together(a, farB, inDriveFor: driving), isFalse);
+    });
   });
   group('groupBadgeFor', () {
     test('anyone in a drive: the red car and the fastest speed, one line', () {
