@@ -29,6 +29,7 @@ import '../services/tile_config.dart';
 import '../services/token_storage.dart';
 import '../theme/app_theme.dart';
 import '../theme/bray_tokens.dart';
+import '../utils/drive_state.dart';
 import '../utils/focus_rules.dart';
 import '../utils/member_clustering.dart';
 import '../widgets/capsule_bubble.dart';
@@ -171,6 +172,13 @@ class _MapScreenState extends State<MapScreen>
   SheetLevel _sheetLevel = SheetLevel.hidden;
   Timer? _idleTimer;
 
+  /// Piece 5: the drive session per member (utils/drive_state.dart). Fed on
+  /// every members change and by [_driveTick] every 15 s, so a car that
+  /// stopped 2 min ago leaves its drive without waiting for the next fix.
+  final DriveTracker _drives = DriveTracker();
+  Timer? _driveTick;
+  static const Duration _driveTickEvery = Duration(seconds: 15);   // OPEN: chosen - 8 ticks per 2-minute end, one rebuild each
+
   /// Piece 4's geocode feed rides on the member (Member.place); null still
   /// draws no place chips.
   MemberPlace? _placeFor(Member m) => m.place;
@@ -192,6 +200,11 @@ class _MapScreenState extends State<MapScreen>
     WidgetsBinding.instance.addObserver(this);
     _familyService.onMembersChanged = _onMembersChanged;
     _familyService.onUserId = _onUserId;
+    _driveTick = Timer.periodic(_driveTickEvery, (_) {
+      if (!mounted) return;
+      _drives.updateAll(_members);
+      setState(() {});
+    });
     _connectivitySub =
         Connectivity().onConnectivityChanged.listen(_onConnectivityChanged);
     _load();
@@ -211,6 +224,7 @@ class _MapScreenState extends State<MapScreen>
   void _onMembersChanged(List<Member> members) {
     if (!mounted) return;
     final DateTime now = DateTime.now();
+    _drives.updateAll(members, now: now);
     for (final Member m in members) {
       final LatLng? to = m.position;
       if (to == null) continue;
@@ -628,6 +642,7 @@ class _MapScreenState extends State<MapScreen>
   @override
   void dispose() {
     _idleTimer?.cancel();
+    _driveTick?.cancel();
     _glideTicker?.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _connectivitySub?.cancel();
@@ -1159,6 +1174,7 @@ class _MapScreenState extends State<MapScreen>
                   expandedClusters: _expandedClusters,
                   selectedId: _followId,                    // J:101: the ringed face inside a capsule
                   labelFor: _labelFor,                      // every pill: You / contact name / first name (was the focused one only)
+                  inDriveFor: (Member m) => _drives.inDrive(m.id),
                   viewerId: _userId,
                   contactFor: (Member m) => ContactLinkStore.instance.linkFor(m.id),
                   onMemberTap: _focusMember,
@@ -1584,6 +1600,7 @@ class _MemberMarkerLayer extends StatelessWidget {
     required this.onMemberHold,
     required this.onClusterTap,
     required this.labelFor,
+    required this.inDriveFor,
     this.selectedId,
     this.viewerId,
     this.contactFor,
@@ -1592,6 +1609,11 @@ class _MemberMarkerLayer extends StatelessWidget {
   final List<Member> members;
   final Set<String> expandedClusters;
   final ValueChanged<Member> onMemberTap;
+
+  /// Piece 5: whether this member is currently in a drive session
+  /// (DriveTracker.inDrive), so the badge shows the live speed instead of
+  /// "here for" / "updated Xh ago".
+  final bool Function(Member) inDriveFor;
 
   /// For the capsule's "<name> arrived" callout - the same viewer / contact
   /// link the sheet gets (PeopleSheet.viewerId / contactFor).
@@ -1660,6 +1682,7 @@ class _MemberMarkerLayer extends StatelessWidget {
                 member: p.member!,
                 label: labelFor(p.member!),
                 now: now,
+                inDrive: inDriveFor(p.member!),
                 onTap: () => onMemberTap(p.member!),
                 onLongPress: () => onMemberHold(p.member!),
               ),
