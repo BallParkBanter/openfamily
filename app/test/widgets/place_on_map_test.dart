@@ -24,18 +24,18 @@ void main() {
     final handle = t.ensureSemantics();
     await t.pumpWidget(host(MemberAvatarBubble(member: m('Bo Bray', mph: 61, place: away), onTap: () {})));
     expect(find.text('Peachtree Ind.'), findsNothing);
-    expect(find.byKey(const Key('bray-pill-street')), findsNothing);
     expect(find.text('61 mph'), findsOneWidget);
     final node = t.getSemantics(sem(MemberAvatarBubble));
     expect(node.label, contains('Driving 61 mph'));
     expect(node.label, isNot(contains('Peachtree')));
     handle.dispose();
   });
-  testWidgets('no street, no second line; not driving, no pill at all', (t) async {
+  testWidgets('speed badge is a single line (no street, ever); without a since and not driving, no badge at all', (t) async {
     await t.pumpWidget(host(MemberAvatarBubble(member: m('Bo Bray', mph: 61), onTap: () {})));
-    expect(find.byKey(const Key('bray-pill-street')), findsNothing);
+    expect(find.text('61 mph'), findsOneWidget);
+    expect(find.byKey(const Key('slot-badge-label')), findsNothing);   // the speed badge is one line - no street under it
     await t.pumpWidget(host(MemberAvatarBubble(member: m('Bo Bray', place: away), onTap: () {})));
-    expect(find.byKey(const Key('bray-speed-pill')), findsNothing);
+    expect(find.byKey(const Key('slot-badge')), findsNothing);         // not driving, and `away` carries no `since`
   });
   testWidgets('solo dot hidden within 60 m of home; tail stays; semantics say at Home', (t) async {
     final handle = t.ensureSemantics();

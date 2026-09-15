@@ -111,8 +111,6 @@ void main() {
     expect(badge.top, closeTo(ring.top + BrayTokens.badgeTop, 0.5));      // .age top:-10px
     expect(find.text('here for'), findsOneWidget);
     expect(find.text('4 hr, 12 min'), findsOneWidget);
-    expect(find.byKey(const Key('bray-speed-pill')), findsNothing);
-    expect(find.byKey(const Key('bray-age-pill')), findsNothing);
     // Driving with no tracker: the badge is the speed (upstream's "42 mph" test reads the same Text).
     await t.pumpWidget(host(MemberAvatarBubble(member: who.copyWith(movement: MovementType.car, speedMph: 42), now: now, onTap: () {})));
     expect(find.text('42 mph'), findsOneWidget);
