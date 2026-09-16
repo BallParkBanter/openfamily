@@ -31,6 +31,7 @@ import '../services/token_storage.dart';
 import '../theme/app_theme.dart';
 import '../theme/bray_tokens.dart';
 import '../utils/anchor_glide.dart';
+import '../utils/dead_reckoning.dart';
 import '../utils/drive_state.dart';
 import '../utils/focus_rules.dart';
 import '../utils/member_clustering.dart';
@@ -167,7 +168,14 @@ class _MapScreenState extends State<MapScreen>
   /// to where it now is over [_glideDuration], and the camera follows the
   /// glided position, so the bubble moves down the road rather than hopping.
   static const Duration _glideDuration = Duration(seconds: 4);
-  final Map<String, _Glide> _glides = <String, _Glide>{};
+
+  /// 5b (Bo driving, 16:05: "smooth and stays smooth"): every member's drawn
+  /// point comes from utils/dead_reckoning.dart - a mover keeps advancing
+  /// at its speed along its heading every frame and each fix only re-aims
+  /// it with a ~2 s critically damped pull; a still phone's jitter is pulled
+  /// the same way. This replaces the 4 s linear glides (_Glide), which
+  /// paused between fixes and restarted on each one.
+  final MotionTracker _motion = MotionTracker();
 
   /// 5b: a riding-together capsule's own glide (utils/anchor_glide.dart) -
   /// a change of lead phone or a late post never hops it; the camera follows
@@ -295,25 +303,15 @@ class _MapScreenState extends State<MapScreen>
           if (p != null && mounted) setState(() {});
         });
       }
-      final LatLng? to = m.position;
-      if (to == null) continue;
-      final LatLng? from = _drawnPosition(m.id, now);
-      if (from == null || from == to) continue;
-      // Do not glide a jump of more than ~2 km; that is a stale-to-fresh fix,
-      // not movement, and a 4 s slide across town would look absurd.
-      if (const Distance().as(LengthUnit.Meter, from, to) > 2000) {
-        _glides.remove(m.id);
-        continue;
-      }
-      _glides[m.id] = _Glide(from: from, to: to, start: now);
     }
+    _motion.observe(members, now);   // 5b: dead reckoning + the pull (the 2 km snap rule lives there)
     setState(() {
       _members = members;
       _membersListenable.value = members;
       // Re-collapse expanded clusters whose members have moved apart.
       _pruneExpandedClusters();
     });
-    if (_glides.isNotEmpty) _startGlideTicker();
+    if (_motion.activeAt(now)) _startGlideTicker();
     _keepFollowing();
     // Overview auto-fits everyone (design list; J:228-236), pans, never snaps.
     if (_mapReady && !(_cameraAnim?.isAnimating ?? false) &&
@@ -322,11 +320,11 @@ class _MapScreenState extends State<MapScreen>
     }
   }
 
-  /// Where [memberId]'s bubble is currently drawn: mid-glide if one is
-  /// running, otherwise its last known position.
+  /// Where [memberId]'s bubble is currently drawn: its dead-reckoned,
+  /// pulled point (utils/dead_reckoning.dart), else its last known position.
   LatLng? _drawnPosition(String memberId, DateTime now) {
-    final _Glide? g = _glides[memberId];
-    if (g != null) return g.at(now, _glideDuration);
+    final LatLng? drawn = _motion.drawnAt(memberId, now);
+    if (drawn != null) return drawn;
     for (final Member m in _members) {
       if (m.id == memberId) return m.position;
     }
@@ -342,10 +340,9 @@ class _MapScreenState extends State<MapScreen>
   void _onGlideTick(Duration _) {
     if (!mounted) return;
     final DateTime now = DateTime.now();
-    _glides.removeWhere((_, g) => g.done(now, _glideDuration));
     setState(() {});
     _keepFollowing();
-    if (_glides.isEmpty && !_capsules.active) _glideTicker?.stop();
+    if (!_motion.activeAt(now) && !_capsules.active) _glideTicker?.stop();
   }
 
   /// Re-centres the camera on the followed member after a position update.
@@ -378,9 +375,17 @@ class _MapScreenState extends State<MapScreen>
       }
       return;
     }
-    // "Contains" rule: only re-centre when the bubble leaves the middle of
-    // the screen. Between re-centres it travels visibly across the map.
+    // 5b (Bo driving): while the followed person is in a drive, the camera
+    // tracks the drawn point every frame (the point is already eased by the
+    // dead reckoning's pull, so a straight move is smooth); no middle zone.
     final MapCamera cam = _mapController.camera;
+    if (_motion.isReckoning(id, now) || _capsules.drawnForMember(id) != null && _members.any((Member m) => m.id == id && _inDriveFor(m))) {
+      _mapController.move(pos, cam.zoom);
+      return;
+    }
+    // "Contains" rule (stopped members): only re-centre when the bubble
+    // leaves the middle of the screen. Between re-centres it travels
+    // visibly across the map.
     final p = cam.latLngToScreenPoint(pos);
     final double dx = (p.x - cam.size.x / 2).abs();
     final double dy = (p.y - cam.size.y / 2).abs();
@@ -801,10 +806,8 @@ class _MapScreenState extends State<MapScreen>
     final DateTime now = DateTime.now();
     return _members.map((Member m) {
       Member out = m;
-      final _Glide? g = _glides[m.id];
-      if (g != null && m.position != null) {
-        out = out.copyWith(position: g.at(now, _glideDuration));
-      }
+      final LatLng? drawn = m.position == null ? null : _motion.drawnAt(m.id, now);
+      if (drawn != null) out = out.copyWith(position: drawn);
       if (_userId != null && m.id == _userId) out = out.copyWith(name: 'You');
       return out;
     }).toList();
@@ -1879,25 +1882,3 @@ class _LoadErrorCard extends StatelessWidget {
 
 /// One bubble's in-flight movement from the position it was drawn at to the
 /// position the server just reported.
-class _Glide {
-  const _Glide({required this.from, required this.to, required this.start});
-
-  final LatLng from;
-  final LatLng to;
-  final DateTime start;
-
-  double _t(DateTime now, Duration d) {
-    final double t = now.difference(start).inMilliseconds / d.inMilliseconds;
-    return t < 0 ? 0 : (t > 1 ? 1 : t);
-  }
-
-  LatLng at(DateTime now, Duration d) {
-    final double t = _t(now, d);
-    return LatLng(
-      from.latitude + (to.latitude - from.latitude) * t,
-      from.longitude + (to.longitude - from.longitude) * t,
-    );
-  }
-
-  bool done(DateTime now, Duration d) => _t(now, d) >= 1;
-}
