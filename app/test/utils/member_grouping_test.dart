@@ -8,6 +8,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:openfamily/models/member.dart';
 import 'package:openfamily/models/member_place.dart';
 import 'package:openfamily/theme/bray_tokens.dart';
+import 'package:openfamily/utils/member_clustering.dart';
 import 'package:openfamily/utils/member_grouping.dart';
 import 'package:openfamily/widgets/slot_badge.dart';
 
@@ -33,16 +34,13 @@ void main() {
       g.observe([a, b], inDriveFor: driving);
       expect(g.together(a, b, inDriveFor: driving), isFalse);
     });
-    test('two cars at a light: matching for less than a minute is not a group; after a minute of matching speed AND heading it is', () {
+    test('two cars at a light: one matching frame is not a group; the second consecutive matching frame is (5b 16:40 - Bo chose two frames over ruling 3\'s minute)', () {
       DateTime now = t0;
       final GroupTracker g = GroupTracker(clock: () => now);
       Member a = mk('a', mph: 30, heading: 90), b = mk('b', pos: north(20), mph: 31, heading: 95);
       g.observe([a, b], inDriveFor: driving);
       expect(g.together(a, b, inDriveFor: driving), isFalse);
-      now = t0.add(const Duration(seconds: 59));
-      g.observe([a, b], inDriveFor: driving);
-      expect(g.together(a, b, inDriveFor: driving), isFalse);
-      now = t0.add(const Duration(seconds: 60));
+      now = t0.add(const Duration(seconds: 5));
       g.observe([a, b], inDriveFor: driving);
       expect(g.together(a, b, inDriveFor: driving), isTrue);
     });
@@ -58,13 +56,12 @@ void main() {
       expect(g.together(a, b, inDriveFor: driving), isFalse);            // only 30 s since the headings agreed again
 
       now = t0.add(const Duration(seconds: 100));
-      g.observe([mk('a', mph: 30, heading: 90), mk('b', pos: north(20), mph: 45, heading: 90)], inDriveFor: driving);   // b speeds up: 15 mph apart - a speed gap resets the clock too, still unformed
-      now = t0.add(const Duration(seconds: 101));
-      g.observe([a, b], inDriveFor: driving);                                  // gap closes again: clock restarts from here
-      now = t0.add(const Duration(seconds: 160));                              // 59 s after the speed gap closed
-      g.observe([a, b], inDriveFor: driving);
+      g.observe([mk('a', mph: 30, heading: 90), mk('b', pos: north(20), mph: 45, heading: 90)], inDriveFor: driving);   // b speeds up: 15 mph apart - a speed gap resets the clock and the match streak, still unformed
       expect(g.together(a, b, inDriveFor: driving), isFalse);
-      now = t0.add(const Duration(seconds: 161));                              // 60 s after the speed gap closed: formed
+      now = t0.add(const Duration(seconds: 101));
+      g.observe([a, b], inDriveFor: driving);                                  // gap closes again: one matching frame
+      expect(g.together(a, b, inDriveFor: driving), isFalse);
+      now = t0.add(const Duration(seconds: 106));                              // 5b (16:40): the second consecutive matching frame is the evidence - no 60 s proof
       g.observe([a, b], inDriveFor: driving);
       expect(g.together(a, b, inDriveFor: driving), isTrue);
 
@@ -73,9 +70,11 @@ void main() {
       final Member gapB = mk('b', pos: north(20), mph: 45, heading: 90);
       g.observe([a, gapB], inDriveFor: driving);
       expect(g.together(a, gapB, inDriveFor: driving), isTrue);
-      // but a formed pair still splits once it leaves the driving allowance
-      // (120 m + 30 s x 45 mph = 723 m; rig run 1028 - was 120 m / 300 m here)
+      // a formed pair splits only once it has been beyond 300 m for 30 s (5b 16:40) - never on one far fix
       final Member farB = mk('b', pos: north(1000), mph: 45, heading: 90);
+      g.observe([a, farB], inDriveFor: driving);
+      expect(g.together(a, farB, inDriveFor: driving), isTrue);
+      now = now.add(const Duration(seconds: 31));
       g.observe([a, farB], inDriveFor: driving);
       expect(g.together(a, farB, inDriveFor: driving), isFalse);
     });
@@ -88,7 +87,10 @@ void main() {
       final Member wob = mk('b', pos: north(20), mph: 30, heading: 140);
       g.observe([mk('a', mph: 30, heading: 90), wob], inDriveFor: driving);
       expect(g.together(mk('a', mph: 30, heading: 90), wob, inDriveFor: driving), isTrue);
-      final Member far = mk('b', pos: north(1000), mph: 30, heading: 90);   // 120 m + 30 s x 30 mph = 522 m (rig run 1028); 1 km is past it
+      final Member far = mk('b', pos: north(1000), mph: 30, heading: 90);   // 1 km apart: beyond groupSplitMetres (300)
+      g.observe([mk('a', mph: 30, heading: 90), far], inDriveFor: driving);
+      expect(g.together(mk('a', mph: 30, heading: 90), far, inDriveFor: driving), isTrue);    // 5b (16:40): never on a single fix
+      now = now.add(const Duration(seconds: 31));                                                // 31 s beyond 300 m: split
       g.observe([mk('a', mph: 30, heading: 90), far], inDriveFor: driving);
       expect(g.together(mk('a', mph: 30, heading: 90), far, inDriveFor: driving), isFalse);
     });
@@ -152,7 +154,10 @@ void main() {
       final Member a = mk('a', mph: 0), b = mk('b', pos: north(20), mph: 30, heading: 90);   // a stopped reporting a driving speed
       g.observe([a, b], inDriveFor: driving);
       expect(g.together(a, b, inDriveFor: driving), isTrue);
-      final Member farB = mk('b', pos: north(1000), mph: 30, heading: 90);   // 120 m + 30 s x 30 mph = 522 m (controller ruling on the run-1028 fix); 1 km is past it
+      final Member farB = mk('b', pos: north(1000), mph: 30, heading: 90);   // 1 km apart: beyond groupSplitMetres (300)
+      g.observe([a, farB], inDriveFor: driving);
+      expect(g.together(a, farB, inDriveFor: driving), isTrue);    // 5b (16:40): a single far fix never splits a formed pair
+      now = now.add(const Duration(seconds: 31));                  // 31 s beyond 300 m: split
       g.observe([a, farB], inDriveFor: driving);
       expect(g.together(a, farB, inDriveFor: driving), isFalse);
     });
@@ -194,16 +199,13 @@ void main() {
       expect(g.together(da, db, inDriveFor: driving), isFalse);
       expect(g.ridingTogether(da, db, inDriveFor: driving), isFalse);
     });
-    test('(c) two strangers 230 m apart matching speed AND heading for 60 s DO form: the allowance applies during the proof too (a minute of matching is the guard)', () {
+    test('(c) two strangers 230 m apart matching speed AND heading: the second consecutive matching frame forms them (5b 16:40 - was a 60 s proof)', () {
       DateTime now = t0;
       final GroupTracker g = GroupTracker(clock: () => now);
       final Member a = mk('a', mph: 50, heading: 90), b = mk('b', pos: north(230), mph: 50, heading: 90);
       g.observe([a, b], inDriveFor: driving);
       expect(g.together(a, b, inDriveFor: driving), isFalse);
-      now = t0.add(const Duration(seconds: 59));
-      g.observe([a, b], inDriveFor: driving);
-      expect(g.together(a, b, inDriveFor: driving), isFalse);
-      now = t0.add(const Duration(seconds: 60));
+      now = t0.add(const Duration(seconds: 5));
       g.observe([a, b], inDriveFor: driving);
       expect(g.together(a, b, inDriveFor: driving), isTrue);
       expect(g.ridingTogether(a, b, inDriveFor: driving), isTrue);
@@ -246,6 +248,9 @@ void main() {
       expect(g.together(a, b, inDriveFor: driving), isTrue);
       final Member farB = mk('b', pos: north(1500), mph: 45, heading: 90);
       now = t0.add(const Duration(seconds: 81));
+      g.observe([a, farB], inDriveFor: driving);
+      expect(g.together(a, farB, inDriveFor: driving), isTrue);    // 5b (16:40): a single far fix never splits a formed pair
+      now = t0.add(const Duration(seconds: 112));                  // 31 s beyond 300 m: split
       g.observe([a, farB], inDriveFor: driving);
       expect(g.together(a, farB, inDriveFor: driving), isFalse);
     });
@@ -317,6 +322,63 @@ void main() {
       final Member bo2 = bo.copyWith(speedMph: 20, headingDeg: 90), charlie2 = charlie.copyWith(speedMph: 25, headingDeg: 300);
       g.observe([bo2, charlie2], inDriveFor: (_) => true);
       expect(g.ridingTogether(bo2, charlie2, inDriveFor: (_) => true), isFalse);   // no still-together seed: the stranger proof applies
+    });
+  });
+  // 5b (Bo live 2026-09-16 16:40): one car on I-75, two solo markers. DB:
+  // Charlie ts :13 63 mph hdg 335 acc 12; Bo ts :18 61 mph hdg 336 acc 16;
+  // raw gap 162 m - Charlie's fix is 5 s older = 140 m behind at that speed.
+  group('time-aligned together (I-75, 16:40)', () {
+    const Distance d = Distance();
+    final DateTime tBo = DateTime(2026, 9, 16, 20, 40, 18), tCharlie = DateTime(2026, 9, 16, 20, 40, 13);
+    final LatLng boAt = const LatLng(34.05, -84.30);
+    // Charlie 140 m behind along the heading (bearing 155 from Bo) and 82 m off to the side: raw gap sqrt(140^2 + 82^2) = 162
+    final LatLng charlieAt = d.offset(d.offset(boAt, 140, 155), 82, 65);
+    Member bo() => Member(id: 'bo', name: 'Bo', status: MemberStatus.normal, position: boAt, batteryPercent: 90, address: '', lastSeen: tBo, speedMph: 61, headingDeg: 336, accuracyMeters: 16);
+    Member charlie() => Member(id: 'charlie', name: 'Charlie', status: MemberStatus.normal, position: charlieAt, batteryPercent: 90, address: '', lastSeen: tCharlie, speedMph: 63, headingDeg: 335, accuracyMeters: 12);
+    test('the raw gap is 162 m (fails 120 + 12 + 16); aligned to the same instant it is ~82 m', () {
+      expect(groundMetres(boAt, charlieAt), closeTo(162, 2));
+      expect(groupAllowanceMetres(bo(), charlie()), 148);
+      expect(alignedMetres(bo(), charlie()), closeTo(82, 8));
+      expect(alignedMetres(charlie(), bo()), closeTo(82, 8));   // symmetric
+    });
+    test('alignment caps at 15 s and never moves a still or heading-less phone', () {
+      final Member old = charlie().copyWith(lastSeen: tBo.subtract(const Duration(seconds: 40)));
+      final LatLng capped = d.offset(charlieAt, 63 * 0.44704 * 15, 335);
+      expect(alignedMetres(bo(), old), closeTo(groundMetres(capped, boAt), 1));
+      expect(alignedMetres(bo(), charlie().copyWith(speedMph: 1)), closeTo(162, 2));
+      final Member noHeading = Member(id: 'charlie', name: 'Charlie', status: MemberStatus.normal, position: charlieAt, batteryPercent: 90, address: '', lastSeen: tCharlie, speedMph: 63, accuracyMeters: 12);
+      expect(alignedMetres(bo(), noHeading), closeTo(162, 2));
+    });
+    test('the motion match on two consecutive frames forms the pair with no 60 s proof', () {
+      final GroupTracker g = GroupTracker(clock: () => tBo);
+      bool drive(Member m) => true;
+      g.observe([bo(), charlie()], inDriveFor: drive, now: tBo);
+      expect(g.ridingTogether(bo(), charlie(), inDriveFor: drive, now: tBo), isFalse);   // one frame: not yet
+      final DateTime t2 = tBo.add(const Duration(seconds: 5));
+      g.observe([bo().copyWith(lastSeen: t2), charlie().copyWith(lastSeen: t2.subtract(const Duration(seconds: 5)))], inDriveFor: drive, now: t2);
+      expect(g.ridingTogether(bo(), charlie(), inDriveFor: drive, now: t2), isTrue);    // two frames: formed
+      expect(g.together(bo(), charlie(), inDriveFor: drive, now: t2), isTrue);
+    });
+    test('a formed pair splits only after 30 s beyond 300 m, never on a single fix', () {
+      final GroupTracker g = GroupTracker(clock: () => tBo);
+      bool drive(Member m) => true;
+      g.observe([bo(), charlie()], inDriveFor: drive, now: tBo);
+      g.observe([bo(), charlie()], inDriveFor: drive, now: tBo.add(const Duration(seconds: 5)));
+      // one stray fix 900 m off: still together
+      final Member far = charlie().copyWith(position: d.offset(charlieAt, 900, 65), lastSeen: tBo);
+      g.observe([bo(), far], inDriveFor: drive, now: tBo.add(const Duration(seconds: 10)));
+      expect(g.ridingTogether(bo(), far, inDriveFor: drive, now: tBo.add(const Duration(seconds: 10))), isTrue);
+      // 25 s later still 900 m off: together (under 30 s)
+      g.observe([bo(), far], inDriveFor: drive, now: tBo.add(const Duration(seconds: 35)));
+      expect(g.ridingTogether(bo(), far, inDriveFor: drive, now: tBo.add(const Duration(seconds: 35))), isTrue);
+      // back within 300 m resets the split clock
+      g.observe([bo(), charlie()], inDriveFor: drive, now: tBo.add(const Duration(seconds: 38)));
+      g.observe([bo(), far], inDriveFor: drive, now: tBo.add(const Duration(seconds: 40)));
+      g.observe([bo(), far], inDriveFor: drive, now: tBo.add(const Duration(seconds: 65)));
+      expect(g.ridingTogether(bo(), far, inDriveFor: drive, now: tBo.add(const Duration(seconds: 65))), isTrue);
+      // 30 s continuously beyond 300 m: split
+      g.observe([bo(), far], inDriveFor: drive, now: tBo.add(const Duration(seconds: 71)));
+      expect(g.ridingTogether(bo(), far, inDriveFor: drive, now: tBo.add(const Duration(seconds: 71))), isFalse);
     });
   });
 }

@@ -38,11 +38,35 @@
 // mustGroup predicate (one capsule even when the fixes are a post apart).
 import 'dart:math' as math;
 
+import 'package:latlong2/latlong.dart';
+
 import '../models/member.dart';
 import '../theme/bray_tokens.dart';
 import '../widgets/capsule_callout.dart' show arrivedAgo, calloutSubject, hereFor, kCalloutTogether;
 import '../widgets/slot_badge.dart';
 import 'member_clustering.dart' show groundMetres, groupAllowanceMetres;
+
+const double _mpsPerMph = 0.44704;
+
+/// 5b (Bo live 2026-09-16 16:40: one car on I-75, two solo markers - Charlie's
+/// fix was 5 s older than Bo's = 140 m behind at 63 mph, so the raw gap
+/// (162 m) failed the together test). The two fixes compared at the SAME
+/// instant: the older fix is dead-reckoned forward at its speed along its
+/// heading to the newer fix's ts (up to [BrayTokens.groupAlignCap]; a phone
+/// under driveStillMph or without a heading is not moved), then the ground
+/// distance is measured. Without timestamps it is the raw distance.
+double alignedMetres(Member a, Member b) {
+  final LatLng pa = a.position!, pb = b.position!;
+  final DateTime? ta = a.lastSeen, tb = b.lastSeen;
+  if (ta == null || tb == null || ta == tb) return groundMetres(pa, pb);
+  final Member older = ta.isBefore(tb) ? a : b, newer = ta.isBefore(tb) ? b : a;
+  final int mph = older.speedMph ?? 0;
+  final double? heading = older.headingDeg;
+  if (mph < BrayTokens.driveStillMph || heading == null) return groundMetres(pa, pb);
+  final double secs = math.min(newer.lastSeen!.difference(older.lastSeen!).inMilliseconds / 1000, BrayTokens.groupAlignCap.inMilliseconds / 1000);
+  final LatLng projected = const Distance().offset(older.position!, mph * _mpsPerMph * secs, heading);
+  return groundMetres(projected, newer.position!);
+}
 
 class GroupTracker {
   GroupTracker({DateTime Function()? clock}) : _clock = clock ?? DateTime.now;
@@ -52,6 +76,14 @@ class GroupTracker {
   /// Per unordered pair: when their speed and heading started matching (or
   /// were seeded pre-formed - see [observe]).
   final Map<String, DateTime> _matchedSince = <String, DateTime>{};
+
+  /// Per pair: consecutive frames of a motion match (5b, 16:40) - two in a
+  /// row seed the clock pre-formed.
+  final Map<String, int> _motionStreak = <String, int>{};
+
+  /// Per FORMED pair: since when the aligned gap has been over
+  /// BrayTokens.groupSplitMetres (hysteresis: a split takes groupSplitAfter).
+  final Map<String, DateTime> _apartSince = <String, DateTime>{};
 
   /// Pairs that were both fresh, both NOT in a drive, and within
   /// [BrayTokens.groupMetres] on the PREVIOUS [observe] call. Read before
@@ -85,7 +117,20 @@ class GroupTracker {
     return groupAllowanceMetres(a, b) + BrayTokens.groupPostLag.inSeconds * mph * _metresPerSecondPerMph;   // 5b: the 120 m base is accuracy-aware
   }
 
-  static bool _within(Member a, Member b, double metres) => groundMetres(a.position!, b.position!) <= metres;
+  static bool _within(Member a, Member b, double metres) => alignedMetres(a, b) <= metres;
+
+  /// Whether a FORMED pair is still together this frame (hysteresis, 5b
+  /// 16:40): yes while the aligned gap is within [BrayTokens.groupSplitMetres];
+  /// beyond it the pair is only dropped once it has stayed beyond it for
+  /// [BrayTokens.groupSplitAfter] - never on a single fix.
+  bool _holdFormed(String key, double gap, DateTime at) {
+    if (gap <= BrayTokens.groupSplitMetres) {
+      _apartSince.remove(key);
+      return true;
+    }
+    final DateTime since = _apartSince.putIfAbsent(key, () => at);
+    return at.difference(since) < BrayTokens.groupSplitAfter;
+  }
 
   /// Feed the latest frame.
   ///
@@ -124,13 +169,17 @@ class GroupTracker {
     final DateTime at = now ?? _clock();
     final Set<String> seen = <String>{};
     final Set<String> stillTogetherNow = <String>{};
+    final Set<String> matchedNow = <String>{};
     for (int i = 0; i < members.length; i++) {
       for (int j = i + 1; j < members.length; j++) {
         final Member a = members[i], b = members[j];
         final String key = _key(a, b);
         if (a.position == null || b.position == null || a.isStaleAt(at) || b.isStaleAt(at)) continue;
         final bool da = inDriveFor(a), db = inDriveFor(b);
-        final bool near = groundMetres(a.position!, b.position!) <= groupAllowanceMetres(a, b);   // 5b: 120 m + both fixes' accuracy (a parked pair needs no heading match: this is the whole still test)
+        // 5b (16:40): the two fixes compared at the same instant - the older
+        // one dead-reckoned forward to the newer's ts (alignedMetres).
+        final double gap = alignedMetres(a, b);
+        final bool near = gap <= groupAllowanceMetres(a, b);   // 5b: 120 m + both fixes' accuracy (a parked pair needs no heading match: this is the whole still test)
 
         if (!da && !db) {
           if (near) stillTogetherNow.add(key);
@@ -138,11 +187,10 @@ class GroupTracker {
         }
 
         if (da != db) {
-          // A FORMED pair is kept through the drive's first/last beat within
-          // the driving phone's post-lag allowance (controller ruling on the
-          // run-1028 fix): that post is a point ahead too, so the plain 120 m
-          // dropped the pair the moment one phone's drive verdict landed.
-          if (_within(a, b, _allowanceMetres(a, b, [da ? a.speedMph : b.speedMph])) && _formed(key, at)) seen.add(key);
+          // A FORMED pair is kept through the drive's first/last beat
+          // (controller ruling on the run-1028 fix; 5b: with the split
+          // hysteresis - it takes 30 s beyond 300 m to drop it).
+          if (_formed(key, at) && _holdFormed(key, gap, at)) seen.add(key);
           // A's drive starts on one WS frame and B's on the next (DriveTracker
           // judges each phone's own fix cadence): the still-together memory
           // must survive this mixed frame while they are still within 120 m,
@@ -153,22 +201,38 @@ class GroupTracker {
           continue;
         }
 
-        // Both driving: the post-lag allowance, not the plain 120 m (rig
-        // run 1028 - one phone's post is a point ahead on every frame).
-        final bool nearDriving = _within(a, b, _allowanceMetres(a, b, [a.speedMph, b.speedMph]));
+        // Both driving: the post-lag allowance on the ALIGNED gap (rig run
+        // 1028 - one phone's post is a point ahead on every frame).
+        final bool nearDriving = gap <= _allowanceMetres(a, b, [a.speedMph, b.speedMph]);
         if (nearDriving && _stillTogether.contains(key)) {
           _matchedSince.putIfAbsent(key, () => at.subtract(BrayTokens.groupMatchFor));
         }
         final bool speedOk = ((a.speedMph ?? 0) - (b.speedMph ?? 0)).abs() <= BrayTokens.groupSpeedTolMph;
         final bool headingOk = a.headingDeg != null && b.headingDeg != null && _angleBetween(a.headingDeg!, b.headingDeg!) <= BrayTokens.groupHeadingTolDeg;
-        final bool keep = nearDriving && ((speedOk && headingOk) || _formed(key, at));
-        if (keep) {
+        // 5b (16:40): a motion match - close, same speed, same heading -
+        // on two consecutive frames is enough evidence: no 60 s proof.
+        final bool motionMatch = gap <= BrayTokens.groupMotionGapMetres && speedOk &&
+            a.headingDeg != null && b.headingDeg != null && _angleBetween(a.headingDeg!, b.headingDeg!) <= BrayTokens.groupMotionHeadingTolDeg;
+        if (motionMatch) {
+          matchedNow.add(key);
+          final int streak = (_motionStreak[key] ?? 0) + 1;
+          _motionStreak[key] = streak;
+          if (streak >= 2) {
+            final DateTime seed = at.subtract(BrayTokens.groupMatchFor);
+            if (_matchedSince[key] == null || _matchedSince[key]!.isAfter(seed)) _matchedSince[key] = seed;   // formed now, even if the proof clock started a frame ago
+          }
+        }
+        if (_formed(key, at)) {
+          if (_holdFormed(key, gap, at)) seen.add(key);   // hysteresis: only a 30 s split beyond 300 m drops a formed pair
+        } else if (nearDriving && speedOk && headingOk) {
           _matchedSince.putIfAbsent(key, () => at);
           seen.add(key);
         }
       }
     }
     _matchedSince.removeWhere((String k, _) => !seen.contains(k));
+    _apartSince.removeWhere((String k, _) => !seen.contains(k));
+    _motionStreak.removeWhere((String k, _) => !matchedNow.contains(k));
     _stillTogether
       ..clear()
       ..addAll(stillTogetherNow);
@@ -180,13 +244,10 @@ class GroupTracker {
     if (a.isStaleAt(at) || b.isStaleAt(at)) return false;
     final bool da = inDriveFor(a), db = inDriveFor(b);
     if (da != db) {
-      // A FORMED pair rides through the mixed moment while still within
-      // 120 m plus the driving phone's post-lag allowance (OPEN: chosen, see
-      // the file header; rig run 1028); an unformed pair splits.
-      return _formed(_key(a, b), at) &&
-          a.position != null &&
-          b.position != null &&
-          _within(a, b, _allowanceMetres(a, b, [da ? a.speedMph : b.speedMph]));
+      // A FORMED pair rides through the mixed moment (rig run 1028); 5b:
+      // observe() already applied the split hysteresis, so formed is the
+      // answer. An unformed pair splits.
+      return _formed(_key(a, b), at);
     }
     if (!da) return true;                       // both still: the distance rules decide (120 m / overlapping bubbles)
     return _formed(_key(a, b), at);
