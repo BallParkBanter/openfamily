@@ -209,7 +209,11 @@ class GroupTracker {
         final bool headingOk = a.headingDeg != null && b.headingDeg != null && _angleBetween(a.headingDeg!, b.headingDeg!) <= BrayTokens.groupHeadingTolDeg;
         // 5b (16:40): a motion match - close, same speed, same heading -
         // on two consecutive frames is enough evidence: no 60 s proof.
+        // Both moving (>= groupMotionMinMph): two cars at a light at 0 mph
+        // share a heading and a spot and prove nothing - ruling 3's 60 s
+        // proof stays for them.
         final bool motionMatch = gap <= BrayTokens.groupMotionGapMetres && speedOk &&
+            (a.speedMph ?? 0) >= BrayTokens.groupMotionMinMph && (b.speedMph ?? 0) >= BrayTokens.groupMotionMinMph &&
             a.headingDeg != null && b.headingDeg != null && _angleBetween(a.headingDeg!, b.headingDeg!) <= BrayTokens.groupMotionHeadingTolDeg;
         if (motionMatch) {
           matchedNow.add(key);

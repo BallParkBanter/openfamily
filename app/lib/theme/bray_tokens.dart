@@ -449,6 +449,7 @@ class BrayTokens {
   static const int groupSpeedTolMph = 5;                      // OPEN: chosen - two phones in one car read within 5 mph of each other
   static const double groupHeadingTolDeg = 20;                // OPEN: chosen - and within 20 degrees (a lane change is under that)
   static const Duration groupAlignCap = Duration(seconds: 15);   // OPEN: chosen (Bo via coordinator 2026-09-16 16:40) - the older of two fixes is dead-reckoned forward to the newer's ts before they are compared, up to this
+  static const int groupMotionMinMph = 15;                    // OPEN: chosen (coordinator 2026-09-16 16:55) - the motion match needs BOTH phones at or above this: moving on the same road at the same speed and heading is the evidence; sitting at a light at 0 mph is not (DECISIONS ruling 3 keeps its 60 s proof there)
   static const double groupMotionGapMetres = 250;             // OPEN: chosen - motion match: aligned gap under this ...
   static const double groupMotionHeadingTolDeg = 15;          // OPEN: chosen - ... AND headings within this AND speeds within groupSpeedTolMph, on two consecutive frames = together, no 60 s proof
   static const double groupSplitMetres = 300;                 // OPEN: chosen - a FORMED pair splits only after the aligned gap has stayed over this ...
