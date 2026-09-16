@@ -448,6 +448,11 @@ class BrayTokens {
   static const Duration groupMatchFor = Duration(minutes: 1);        // DECISIONS ruling 3: "group only after ~1 min of matching speed AND heading"
   static const int groupSpeedTolMph = 5;                      // OPEN: chosen - two phones in one car read within 5 mph of each other
   static const double groupHeadingTolDeg = 20;                // OPEN: chosen - and within 20 degrees (a lane change is under that)
+  static const Duration groupAlignCap = Duration(seconds: 15);   // OPEN: chosen (Bo via coordinator 2026-09-16 16:40) - the older of two fixes is dead-reckoned forward to the newer's ts before they are compared, up to this
+  static const double groupMotionGapMetres = 250;             // OPEN: chosen - motion match: aligned gap under this ...
+  static const double groupMotionHeadingTolDeg = 15;          // OPEN: chosen - ... AND headings within this AND speeds within groupSpeedTolMph, on two consecutive frames = together, no 60 s proof
+  static const double groupSplitMetres = 300;                 // OPEN: chosen - a FORMED pair splits only after the aligned gap has stayed over this ...
+  static const Duration groupSplitAfter = Duration(seconds: 30);   // OPEN: chosen - ... for this long (never on a single fix)
   static const Duration groupPostLag = Duration(seconds: 30);   // OPEN: chosen - two phones in one car post at different moments; their last-known positions differ by up to this lag x the speed (at 60 mph ~800 m)
   static const Duration arrivedWithin = Duration(hours: 1);   // DECISIONS ruling 2: "'Bo arrived 41 min ago' for the first hour after someone joins"
 
