@@ -17,8 +17,8 @@ const double _mPerDegLat = 6371000 * 3.141592653589793 / 180; // 111194.93
 
 LatLng north(double metres) => LatLng(home.latitude + metres / _mPerDegLat, home.longitude);
 
-Member at(String name, LatLng pos) => Member(
-    id: name, name: name, status: MemberStatus.normal, position: pos, batteryPercent: 0, address: '');
+Member at(String name, LatLng pos, {DateTime? seen}) => Member(
+    id: name, name: name, status: MemberStatus.normal, position: pos, batteryPercent: 0, address: '', lastSeen: seen);
 
 /// A fake camera: [pxPerMetre] screen pixels per metre north of home.
 LatLngToScreenOffset camera(double pxPerMetre) => (LatLng p) =>
@@ -61,5 +61,43 @@ void main() {
     final clusters = clusterMembers([at('Bo Bray', home), at('Charlie', north(10))],
         toScreenOffset: camera(1.5), canGroup: (a, b) => false);
     expect(clusters.length, 2);
+  });
+
+  // Bray piece 5 (rig run 1028): a pair the tracker calls riding together is
+  // one capsule even when their last-known fixes are a post apart.
+  group('mustGroup (rig run 1028)', () {
+    final DateTime t0 = DateTime(2026, 9, 16, 10, 28);
+    test('(d) 500 m apart and 750 px apart: one cluster when mustGroup says yes, centred on the member with the newer lastSeen (the lead phone)', () {
+      final Member bo = at('Bo Bray', home, seen: t0.subtract(const Duration(seconds: 10)));
+      final Member charlie = at('Charlie', north(500), seen: t0);
+      final clusters = clusterMembers([bo, charlie], toScreenOffset: camera(1.5), mustGroup: (a, b) => true);
+      expect(clusters.length, 1);
+      expect(clusters.single.members.length, 2);
+      expect(clusters.single.centroid, charlie.position);
+      // the lead phone is whoever is freshest, not whoever is listed first
+      final reversed = clusterMembers([charlie, bo], toScreenOffset: camera(1.5), mustGroup: (a, b) => true);
+      expect(reversed.single.centroid, charlie.position);
+      // and placeBubbles puts the capsule there
+      final placements = placeBubbles([bo, charlie], toScreenOffset: camera(1.5), toLatLng: (_) => home, mustGroup: (a, b) => true);
+      expect(placements.length, 1);
+      expect(placements.single.isCluster, isTrue);
+      expect(placements.single.position, charlie.position);
+    });
+    test('(e) mustGroup never overrides a canGroup veto', () {
+      final clusters = clusterMembers([at('Bo Bray', home, seen: t0), at('Charlie', north(10), seen: t0)],
+          toScreenOffset: camera(1.5), canGroup: (a, b) => false, mustGroup: (a, b) => true);
+      expect(clusters.length, 2);
+      final placements = placeBubbles([at('Bo Bray', home, seen: t0), at('Charlie', north(10), seen: t0)],
+          toScreenOffset: camera(1.5), toLatLng: (_) => home, canGroup: (a, b) => false, mustGroup: (a, b) => true);
+      expect(placements.length, 2);
+    });
+    test('mustGroup saying no changes nothing: the two distance rules and the geometric centroid stand', () {
+      final clusters = clusterMembers([at('Bo Bray', home, seen: t0), at('Charlie', north(100), seen: t0.subtract(const Duration(seconds: 10)))],
+          toScreenOffset: camera(1.5), mustGroup: (a, b) => false);
+      expect(clusters.length, 1);
+      expect(clusters.single.centroid.latitude, closeTo(north(50).latitude, 1e-9));
+      expect(clusterMembers([at('Bo Bray', home, seen: t0), at('Charlie', north(500), seen: t0)],
+          toScreenOffset: camera(1.5), mustGroup: (a, b) => false).length, 2);
+    });
   });
 }

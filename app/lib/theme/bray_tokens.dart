@@ -446,6 +446,7 @@ class BrayTokens {
   static const Duration groupMatchFor = Duration(minutes: 1);        // DECISIONS ruling 3: "group only after ~1 min of matching speed AND heading"
   static const int groupSpeedTolMph = 5;                      // OPEN: chosen - two phones in one car read within 5 mph of each other
   static const double groupHeadingTolDeg = 20;                // OPEN: chosen - and within 20 degrees (a lane change is under that)
+  static const Duration groupPostLag = Duration(seconds: 30);   // OPEN: chosen - two phones in one car post at different moments; their last-known positions differ by up to this lag x the speed (at 60 mph ~800 m)
   static const Duration arrivedWithin = Duration(hours: 1);   // DECISIONS ruling 2: "'Bo arrived 41 min ago' for the first hour after someone joins"
 
   // -- the card (focus-29.html, zoom:1.3; states.html for the grey dot and the low colour)

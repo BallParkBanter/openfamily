@@ -1224,6 +1224,7 @@ class _MapScreenState extends State<MapScreen>
                   labelFor: _labelFor,                      // every pill: You / contact name / first name (was the focused one only)
                   inDriveFor: _inDriveFor,
                   canGroup: (Member a, Member b) => _groups.together(a, b, inDriveFor: _inDriveFor),
+                  mustGroup: (Member a, Member b) => _groups.ridingTogether(a, b, inDriveFor: _inDriveFor),   // rig run 1028: one capsule even a post apart
                   viewerId: _userId,
                   contactFor: (Member m) => ContactLinkStore.instance.linkFor(m.id),
                   onMemberTap: _focusMember,
@@ -1592,6 +1593,7 @@ class _MemberMarkerLayer extends StatelessWidget {
     required this.labelFor,
     required this.inDriveFor,
     required this.canGroup,
+    required this.mustGroup,
     this.selectedId,
     this.viewerId,
     this.contactFor,
@@ -1609,6 +1611,11 @@ class _MemberMarkerLayer extends StatelessWidget {
   /// Task 8: GroupTracker.together - the ~1 min matching-speed-and-heading
   /// veto on top of clusterMembers' two distance rules.
   final bool Function(Member, Member) canGroup;
+
+  /// Rig run 1028: GroupTracker.ridingTogether - a formed driving pair is
+  /// one capsule even when their last-known fixes are a post apart (beyond
+  /// both of clusterMembers' distance rules), centred on the lead phone.
+  final bool Function(Member, Member) mustGroup;
 
   /// For the capsule's "<name> arrived" callout - the same viewer / contact
   /// link the sheet gets (PeopleSheet.viewerId / contactFor).
@@ -1644,6 +1651,7 @@ class _MemberMarkerLayer extends StatelessWidget {
       toLatLng: camera.offsetToCrs,
       expandedClusterIds: expandedClusters,
       canGroup: canGroup,
+      mustGroup: mustGroup,
     );
 
     return MarkerLayer(

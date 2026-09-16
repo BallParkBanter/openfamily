@@ -73,12 +73,13 @@ void main() {
       final Member gapB = mk('b', pos: north(20), mph: 45, heading: 90);
       g.observe([a, gapB], inDriveFor: driving);
       expect(g.together(a, gapB, inDriveFor: driving), isTrue);
-      // but a formed pair still splits once it leaves 120 m
-      final Member farB = mk('b', pos: north(300), mph: 45, heading: 90);
+      // but a formed pair still splits once it leaves the driving allowance
+      // (120 m + 30 s x 45 mph = 723 m; rig run 1028 - was 120 m / 300 m here)
+      final Member farB = mk('b', pos: north(1000), mph: 45, heading: 90);
       g.observe([a, farB], inDriveFor: driving);
       expect(g.together(a, farB, inDriveFor: driving), isFalse);
     });
-    test('once formed, a heading wobble does not split the group; leaving 120 m does', () {
+    test('once formed, a heading wobble does not split the group; leaving the driving allowance (120 m + 30 s x speed) does', () {
       DateTime now = t0;
       final GroupTracker g = GroupTracker(clock: () => now);
       g.observe([mk('a', mph: 30, heading: 90), mk('b', pos: north(20), mph: 30, heading: 90)], inDriveFor: driving);
@@ -87,7 +88,7 @@ void main() {
       final Member wob = mk('b', pos: north(20), mph: 30, heading: 140);
       g.observe([mk('a', mph: 30, heading: 90), wob], inDriveFor: driving);
       expect(g.together(mk('a', mph: 30, heading: 90), wob, inDriveFor: driving), isTrue);
-      final Member far = mk('b', pos: north(300), mph: 30, heading: 90);
+      final Member far = mk('b', pos: north(1000), mph: 30, heading: 90);   // 120 m + 30 s x 30 mph = 522 m (rig run 1028); 1 km is past it
       g.observe([mk('a', mph: 30, heading: 90), far], inDriveFor: driving);
       expect(g.together(mk('a', mph: 30, heading: 90), far, inDriveFor: driving), isFalse);
     });
@@ -142,7 +143,7 @@ void main() {
       g.observe([a, b], inDriveFor: driving);
       expect(g.together(a, b, inDriveFor: driving), isFalse);
     });
-    test('a formed driving pair rides through a mixed moment (one phone\'s drive ends a beat early) while within 120 m; splits once far', () {
+    test('a formed driving pair rides through a mixed moment (one phone\'s drive ends a beat early) while within the driving phone\'s allowance (120 m + 30 s x speed); splits once far', () {
       DateTime now = t0;
       final GroupTracker g = GroupTracker(clock: () => now);
       g.observe([mk('a', mph: 30, heading: 90), mk('b', pos: north(20), mph: 30, heading: 90)], inDriveFor: driving);
@@ -151,9 +152,113 @@ void main() {
       final Member a = mk('a', mph: 0), b = mk('b', pos: north(20), mph: 30, heading: 90);   // a stopped reporting a driving speed
       g.observe([a, b], inDriveFor: driving);
       expect(g.together(a, b, inDriveFor: driving), isTrue);
-      final Member farB = mk('b', pos: north(300), mph: 30, heading: 90);
+      final Member farB = mk('b', pos: north(1000), mph: 30, heading: 90);   // 120 m + 30 s x 30 mph = 522 m (controller ruling on the run-1028 fix); 1 km is past it
       g.observe([a, farB], inDriveFor: driving);
       expect(g.together(a, farB, inDriveFor: driving), isFalse);
+    });
+  });
+  group('post lag (rig run 1028): a driving pair\'s distance allowance is 120 m + 30 s x speed', () {
+    // Run 1028: two phones in one car post at different moments, and each
+    // post reaches the app as its own WS frame - on every interleaved frame
+    // one phone is a point ahead (190-260 m at 50+ mph), so a per-frame 120 m
+    // rule dropped the formed pair and restarted the 60 s proof forever.
+    test('(a) a formed driving pair at 50 mph observed 230 m apart on an interleaved frame stays together, and ridingTogether is true', () {
+      DateTime now = t0;
+      final GroupTracker g = GroupTracker(clock: () => now);
+      g.observe([mk('a', mph: 50, heading: 90), mk('b', pos: north(20), mph: 50, heading: 90)], inDriveFor: driving);
+      now = t0.add(const Duration(seconds: 61));
+      g.observe([mk('a', mph: 50, heading: 90), mk('b', pos: north(20), mph: 50, heading: 90)], inDriveFor: driving);   // formed
+      final Member a = mk('a', mph: 50, heading: 90), b = mk('b', pos: north(230), mph: 50, heading: 90);   // b's post is a point ahead
+      now = t0.add(const Duration(seconds: 71));
+      g.observe([a, b], inDriveFor: driving);
+      expect(g.together(a, b, inDriveFor: driving), isTrue);
+      expect(g.ridingTogether(a, b, inDriveFor: driving), isTrue);
+      // and the next interleaved frame, a's post catches up: still together
+      final Member a2 = mk('a', pos: north(240), mph: 50, heading: 90);
+      now = t0.add(const Duration(seconds: 81));
+      g.observe([a2, b], inDriveFor: driving);
+      expect(g.together(a2, b, inDriveFor: driving), isTrue);
+      expect(g.ridingTogether(a2, b, inDriveFor: driving), isTrue);
+    });
+    test('(b) a still pair 230 m apart is NOT together: the plain 120 m rule (no allowance, no still-together memory, not riding)', () {
+      DateTime now = t0;
+      final GroupTracker g = GroupTracker(clock: () => now);
+      final Member a = mk('a'), b = mk('b', pos: north(230));
+      g.observe([a, b], inDriveFor: driving);
+      expect(g.ridingTogether(a, b, inDriveFor: driving), isFalse);
+      // no still-together memory was kept: when both start driving they go
+      // through the stranger proof, not the pre-formed seed
+      now = t0.add(const Duration(seconds: 10));
+      final Member da = mk('a', mph: 30, heading: 90), db = mk('b', pos: north(20), mph: 30, heading: 90);
+      g.observe([da, db], inDriveFor: driving);
+      expect(g.together(da, db, inDriveFor: driving), isFalse);
+      expect(g.ridingTogether(da, db, inDriveFor: driving), isFalse);
+    });
+    test('(c) two strangers 230 m apart matching speed AND heading for 60 s DO form: the allowance applies during the proof too (a minute of matching is the guard)', () {
+      DateTime now = t0;
+      final GroupTracker g = GroupTracker(clock: () => now);
+      final Member a = mk('a', mph: 50, heading: 90), b = mk('b', pos: north(230), mph: 50, heading: 90);
+      g.observe([a, b], inDriveFor: driving);
+      expect(g.together(a, b, inDriveFor: driving), isFalse);
+      now = t0.add(const Duration(seconds: 59));
+      g.observe([a, b], inDriveFor: driving);
+      expect(g.together(a, b, inDriveFor: driving), isFalse);
+      now = t0.add(const Duration(seconds: 60));
+      g.observe([a, b], inDriveFor: driving);
+      expect(g.together(a, b, inDriveFor: driving), isTrue);
+      expect(g.ridingTogether(a, b, inDriveFor: driving), isTrue);
+    });
+    test('the allowance scales with the FASTER speed: 230 m apart at 8 mph (allowance ~227 m) is too far, at 9 mph (~241 m) is not', () {
+      // 120 + 30 s x 8 mph x 0.44704 = 227.3 m; at 9 mph = 240.7 m. Both are
+      // inside a drive (DriveTracker keeps a drive alive under driveStartMph),
+      // so the drive verdict is forced rather than read off the speed.
+      bool inDrive(Member m) => true;
+      DateTime now = t0;
+      final GroupTracker slow = GroupTracker(clock: () => now);
+      for (int s = 0; s <= 60; s += 30) {
+        now = t0.add(Duration(seconds: s));
+        slow.observe([mk('a', mph: 9, heading: 90), mk('b', pos: north(230), mph: 8, heading: 90)], inDriveFor: inDrive);
+      }
+      expect(slow.together(mk('a', mph: 9, heading: 90), mk('b', pos: north(230), mph: 8, heading: 90), inDriveFor: inDrive), isTrue);   // max(9, 8) = 9 mph
+      now = t0;
+      final GroupTracker slower = GroupTracker(clock: () => now);
+      for (int s = 0; s <= 60; s += 30) {
+        now = t0.add(Duration(seconds: s));
+        slower.observe([mk('a', mph: 8, heading: 90), mk('b', pos: north(230), mph: 8, heading: 90)], inDriveFor: inDrive);
+      }
+      expect(slower.together(mk('a', mph: 8, heading: 90), mk('b', pos: north(230), mph: 8, heading: 90), inDriveFor: inDrive), isFalse);
+    });
+    test('the allowance also holds a formed pair through its mixed beat: A reads 0 mph (drive over) while B still drives at 45 mph - 400 m apart together, 1500 m apart not', () {
+      // Controller ruling on the run-1028 fix: the drive's first/last beat is
+      // a mixed frame (one phone's DriveTracker verdict lands a post before
+      // the other's), and that post is a point ahead too - the mixed
+      // retention uses 120 m + 30 s x the driving member's speed (723 m at
+      // 45 mph), not the plain 120 m.
+      DateTime now = t0;
+      final GroupTracker g = GroupTracker(clock: () => now);
+      g.observe([mk('a', mph: 45, heading: 90), mk('b', pos: north(20), mph: 45, heading: 90)], inDriveFor: driving);
+      now = t0.add(const Duration(seconds: 61));
+      g.observe([mk('a', mph: 45, heading: 90), mk('b', pos: north(20), mph: 45, heading: 90)], inDriveFor: driving);   // formed
+      final Member a = mk('a', mph: 0), b = mk('b', pos: north(400), mph: 45, heading: 90);
+      now = t0.add(const Duration(seconds: 71));
+      g.observe([a, b], inDriveFor: driving);
+      expect(g.together(a, b, inDriveFor: driving), isTrue);
+      final Member farB = mk('b', pos: north(1500), mph: 45, heading: 90);
+      now = t0.add(const Duration(seconds: 81));
+      g.observe([a, farB], inDriveFor: driving);
+      expect(g.together(a, farB, inDriveFor: driving), isFalse);
+    });
+    test('ridingTogether is false for a stale member and for an unformed pair', () {
+      DateTime now = t0;
+      final GroupTracker g = GroupTracker(clock: () => now);
+      final Member a = mk('a', mph: 50, heading: 90), b = mk('b', pos: north(20), mph: 50, heading: 90);
+      g.observe([a, b], inDriveFor: driving);
+      expect(g.ridingTogether(a, b, inDriveFor: driving), isFalse);                    // unformed
+      now = t0.add(const Duration(seconds: 61));
+      g.observe([a, b], inDriveFor: driving);
+      expect(g.ridingTogether(a, b, inDriveFor: driving), isTrue);
+      final Member staleB = mk('b', pos: north(20), mph: 50, heading: 90, ago: const Duration(hours: 1));
+      expect(g.ridingTogether(a, staleB, inDriveFor: driving), isFalse);               // stale
     });
   });
   group('groupBadgeFor', () {

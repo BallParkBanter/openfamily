@@ -52,7 +52,10 @@ class MemberCluster {
   /// tracked across rebuilds.
   final String id;
 
-  /// Geographic centroid of the cluster (average of member positions).
+  /// Geographic centroid of the cluster (average of member positions) - or,
+  /// for a cluster holding a must-group join (Bray piece 5, rig run 1028),
+  /// the position of the member with the latest [Member.lastSeen]: the lead
+  /// phone. The group is where its freshest phone is.
   final LatLng centroid;
 
   final List<Member> members;
@@ -111,12 +114,23 @@ class BubblePlacement {
 /// GroupTracker.together) vetoes a join for a stale member, a driver next to
 /// a parked person, or two cars that have not matched speed and heading for
 /// a minute (DECISIONS ruling 3). Null keeps the two distance rules alone.
+///
+/// Bray piece 5 (rig run 1028): a pair the tracker calls riding together is
+/// one capsule even when their last-known fixes are a post apart -
+/// [mustGroup] (GroupTracker.ridingTogether) joins regardless of pixel or
+/// ground distance (two phones in one car post at different moments; at
+/// 60 mph 30 s of lag is ~800 m, beyond both distance rules), still subject
+/// to [canGroup]'s veto. A cluster holding at least one must-group join is
+/// centred on the member with the latest lastSeen - the lead phone - instead
+/// of the geometric centroid, so the capsule sits on the car, not halfway
+/// between a post and the one before it. Null never forces a join.
 List<MemberCluster> clusterMembers(
   List<Member> members, {
   required LatLngToScreenOffset toScreenOffset,
   double clusterRadiusPx = kClusterRadiusPx,
   double groupMetres = BrayTokens.groupMetres,
   bool Function(Member a, Member b)? canGroup,
+  bool Function(Member a, Member b)? mustGroup,
 }) {
   // Members without a reported location have no bubble and are skipped.
   final List<Member> positioned =
@@ -132,28 +146,34 @@ List<MemberCluster> clusterMembers(
   while (remaining.isNotEmpty) {
     final Member seed = remaining.removeAt(0);
     final List<Member> group = <Member>[seed];
+    bool forced = false;   // at least one must-group join in this cluster
     bool changed = true;
     while (changed) {
       changed = false;
       for (int i = remaining.length - 1; i >= 0; i--) {
         final Member m = remaining[i];
-        final bool near = group.any(
-          (Member g) =>
-              (canGroup == null || canGroup(g, m)) &&
-              (_distancePx(points[g.id]!, points[m.id]!) <= clusterRadiusPx ||
-                  groundMetres(g.position!, m.position!) <= groupMetres),
-        );
+        bool must = false;
+        final bool near = group.any((Member g) {
+          if (canGroup != null && !canGroup(g, m)) return false;
+          if (mustGroup != null && mustGroup(g, m)) {
+            must = true;
+            return true;
+          }
+          return _distancePx(points[g.id]!, points[m.id]!) <= clusterRadiusPx ||
+              groundMetres(g.position!, m.position!) <= groupMetres;
+        });
         if (near) {
           group.add(m);
           remaining.removeAt(i);
           changed = true;
+          forced = forced || must;
         }
       }
     }
     clusters.add(
       MemberCluster(
         id: _clusterId(group),
-        centroid: _centroid(group),
+        centroid: forced ? _leadPosition(group) : _centroid(group),
         members: group,
       ),
     );
@@ -178,6 +198,7 @@ List<BubblePlacement> placeBubbles(
   double fanOutRadiusPx = kFanOutRadiusPx,
   Set<String> expandedClusterIds = const {},
   bool Function(Member a, Member b)? canGroup,
+  bool Function(Member a, Member b)? mustGroup,
 }) {
   final List<MemberCluster> clusters = clusterMembers(
     members,
@@ -185,6 +206,7 @@ List<BubblePlacement> placeBubbles(
     clusterRadiusPx: clusterRadiusPx,
     groupMetres: groupMetres,
     canGroup: canGroup,
+    mustGroup: mustGroup,
   );
   final List<BubblePlacement> placements = <BubblePlacement>[];
 
@@ -237,6 +259,19 @@ LatLng _centroid(List<Member> members) {
     lng += m.position!.longitude;
   }
   return LatLng(lat / members.length, lng / members.length);
+}
+
+/// Bray piece 5 (rig run 1028): where a must-group cluster sits - the position
+/// of the member with the latest [Member.lastSeen] (the lead phone; "the
+/// group is where its freshest phone is"). A member with no lastSeen counts
+/// as oldest; ties keep the earlier-listed member.
+LatLng _leadPosition(List<Member> members) {
+  Member lead = members.first;
+  for (final Member m in members.skip(1)) {
+    final DateTime? seen = m.lastSeen;
+    if (seen != null && (lead.lastSeen == null || seen.isAfter(lead.lastSeen!))) lead = m;
+  }
+  return lead.position!;
 }
 
 /// Screen-space centroid of a group of members (average of their projected
