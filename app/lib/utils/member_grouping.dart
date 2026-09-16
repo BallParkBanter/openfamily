@@ -117,8 +117,6 @@ class GroupTracker {
     return groupAllowanceMetres(a, b) + BrayTokens.groupPostLag.inSeconds * mph * _metresPerSecondPerMph;   // 5b: the 120 m base is accuracy-aware
   }
 
-  static bool _within(Member a, Member b, double metres) => alignedMetres(a, b) <= metres;
-
   /// Whether a FORMED pair is still together this frame (hysteresis, 5b
   /// 16:40): yes while the aligned gap is within [BrayTokens.groupSplitMetres];
   /// beyond it the pair is only dropped once it has stayed beyond it for
