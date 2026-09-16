@@ -46,21 +46,37 @@ void main() {
       g.observe([a, b], inDriveFor: driving);
       expect(g.together(a, b, inDriveFor: driving), isTrue);
     });
-    test('a heading mismatch (two cars, different ways) or a speed gap resets the clock', () {
+    test('a heading mismatch (two cars, different ways) or a speed gap resets the clock before formation; once formed, only distance splits (run 0956)', () {
       DateTime now = t0;
       final GroupTracker g = GroupTracker(clock: () => now);
       g.observe([mk('a', mph: 30, heading: 90), mk('b', pos: north(20), mph: 30, heading: 90)], inDriveFor: driving);
       now = t0.add(const Duration(seconds: 40));
-      g.observe([mk('a', mph: 30, heading: 90), mk('b', pos: north(20), mph: 30, heading: 150)], inDriveFor: driving);   // b turned
+      g.observe([mk('a', mph: 30, heading: 90), mk('b', pos: north(20), mph: 30, heading: 150)], inDriveFor: driving);   // b turned: heading mismatch resets the clock
       now = t0.add(const Duration(seconds: 70));
       final Member a = mk('a', mph: 30, heading: 90), b = mk('b', pos: north(20), mph: 30, heading: 90);
       g.observe([a, b], inDriveFor: driving);
       expect(g.together(a, b, inDriveFor: driving), isFalse);            // only 30 s since the headings agreed again
-      now = t0.add(const Duration(seconds: 130));                              // 60 s after the headings agreed again
+
+      now = t0.add(const Duration(seconds: 100));
+      g.observe([mk('a', mph: 30, heading: 90), mk('b', pos: north(20), mph: 45, heading: 90)], inDriveFor: driving);   // b speeds up: 15 mph apart - a speed gap resets the clock too, still unformed
+      now = t0.add(const Duration(seconds: 101));
+      g.observe([a, b], inDriveFor: driving);                                  // gap closes again: clock restarts from here
+      now = t0.add(const Duration(seconds: 160));                              // 59 s after the speed gap closed
+      g.observe([a, b], inDriveFor: driving);
+      expect(g.together(a, b, inDriveFor: driving), isFalse);
+      now = t0.add(const Duration(seconds: 161));                              // 60 s after the speed gap closed: formed
       g.observe([a, b], inDriveFor: driving);
       expect(g.together(a, b, inDriveFor: driving), isTrue);
-      g.observe([mk('a', mph: 30, heading: 90), mk('b', pos: north(20), mph: 45, heading: 90)], inDriveFor: driving);   // 15 mph apart: split
-      expect(g.together(mk('a', mph: 30, heading: 90), mk('b', pos: north(20), mph: 45, heading: 90), inDriveFor: driving), isFalse);
+
+      // once formed, a 15 mph gap while still within 120 m rides through - interleaved WS
+      // frames read different speeds on every brake (controller ruling, run 0956).
+      final Member gapB = mk('b', pos: north(20), mph: 45, heading: 90);
+      g.observe([a, gapB], inDriveFor: driving);
+      expect(g.together(a, gapB, inDriveFor: driving), isTrue);
+      // but a formed pair still splits once it leaves 120 m
+      final Member farB = mk('b', pos: north(300), mph: 45, heading: 90);
+      g.observe([a, farB], inDriveFor: driving);
+      expect(g.together(a, farB, inDriveFor: driving), isFalse);
     });
     test('once formed, a heading wobble does not split the group; leaving 120 m does', () {
       DateTime now = t0;

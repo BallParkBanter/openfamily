@@ -17,6 +17,11 @@
 // separately): the pair's clock survives a mixed state instead of the
 // controller-review finding's flicker (capsule -> split -> capsule -> split
 // -> capsule for a single car with two phones).
+// OPEN: chosen - once formed, only distance or staleness splits a pair
+// (controller ruling, run 0956): two phones in one car post at different
+// moments and read different speeds on every brake, so speed AND heading
+// matching is the FORMATION proof for strangers only, not a standing
+// requirement on an already-formed pair.
 // Pure Dart with an injected clock; the map owns one GroupTracker and feeds
 // it every members frame and the 15 s tick, then hands `together` to
 // clusterMembers as its canGroup predicate.
@@ -59,13 +64,16 @@ class GroupTracker {
   ///
   /// Both driving: the clock starts when speeds (within groupSpeedTolMph)
   /// and headings (both known, within groupHeadingTolDeg) match inside
-  /// 120 m, and resets the moment they stop matching - except that a FORMED
-  /// group ignores heading wobble (OPEN: chosen - one phone's cog lags in a
-  /// turn) and only splits on distance or a speed gap. But first: if this
-  /// pair was still-together (both parked, within 120 m) on the PREVIOUS
-  /// frame, seed the clock pre-formed - DECISIONS ruling 3's proof is for
-  /// strangers at a light, not two phones that just pulled out of the same
-  /// driveway together.
+  /// 120 m, and resets the moment they stop matching - except that once
+  /// FORMED, only distance (> groupMetres) or staleness splits a pair
+  /// (controller ruling, run 0956: speed AND heading matching is the
+  /// FORMATION proof for strangers only; two phones in one car post at
+  /// different moments and read different speeds - and wobble heading - on
+  /// every brake, so a formed pair must ride through both). But first: if
+  /// this pair was still-together (both parked, within 120 m) on the
+  /// PREVIOUS frame, seed the clock pre-formed - DECISIONS ruling 3's proof
+  /// is for strangers at a light, not two phones that just pulled out of
+  /// the same driveway together.
   ///
   /// Both still: no clock kept (the distance rules in member_clustering
   /// decide); instead remembered in [_stillTogether] for the seed above.
@@ -112,7 +120,7 @@ class GroupTracker {
         }
         final bool speedOk = ((a.speedMph ?? 0) - (b.speedMph ?? 0)).abs() <= BrayTokens.groupSpeedTolMph;
         final bool headingOk = a.headingDeg != null && b.headingDeg != null && _angleBetween(a.headingDeg!, b.headingDeg!) <= BrayTokens.groupHeadingTolDeg;
-        final bool keep = near && speedOk && (headingOk || _formed(key, at));
+        final bool keep = near && ((speedOk && headingOk) || _formed(key, at));
         if (keep) {
           _matchedSince.putIfAbsent(key, () => at);
           seen.add(key);
