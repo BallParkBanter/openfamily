@@ -16,11 +16,13 @@ typedef LatLngToScreenOffset = Offset Function(LatLng latLng);
 /// their bubbles stay visually separated at any zoom.
 typedef ScreenOffsetToLatLng = LatLng Function(Offset offset);
 
-/// On-screen distance (logical pixels) within which two member bubbles are
-/// considered to visually overlap and therefore cluster. Sized to the
-/// diameter of a member bubble (~48 px) so bubbles that would overlap merge
-/// into a single count bubble.
-const double kClusterRadiusPx = 48.0;
+/// On-screen distance (logical pixels) between two ring centres under which
+/// the rings intersect: two radii (BrayTokens.soloFace = 56). 5b (2026-09-16,
+/// Bo): rings that overlap at the current zoom are one capsule, whatever the
+/// ground distance or the group tracker says - a purely visual group that
+/// splits the moment the zoom separates them. (Upstream clustered at 48 px
+/// between the points; the rings are what the eye sees overlap.)
+const double kRingOverlapPx = BrayTokens.soloFace;
 
 /// On-screen radius (logical pixels) of the fan-out ring used to separate
 /// clustered members so their bubbles never stack or overlap when expanded.
@@ -46,6 +48,7 @@ class MemberCluster {
     required this.id,
     required this.centroid,
     required this.members,
+    this.visual = false,
   });
 
   /// Stable identifier (sorted member ids) so an expanded cluster can be
@@ -59,6 +62,11 @@ class MemberCluster {
   final LatLng centroid;
 
   final List<Member> members;
+
+  /// True when at least one member joined by the ring-overlap rule alone
+  /// (5b): the capsule is visual - CapsuleBubble shows overlapBadgeFor (the
+  /// lead's own words), not the physical group's badge.
+  final bool visual;
 }
 
 /// A single bubble to render on the map: either a lone member, a fanned-out
@@ -70,6 +78,7 @@ class BubblePlacement {
     this.clusterCount = 1,
     this.clusterId,
     this.clusterMembers = const [],
+    this.visual = false,
   });
 
   /// Where to pin the bubble.
@@ -91,53 +100,49 @@ class BubblePlacement {
   /// bubbles.
   final List<Member> clusterMembers;
 
+  /// 5b: a cluster joined by the ring-overlap rule alone (MemberCluster.visual).
+  final bool visual;
+
   bool get isCluster => member == null;
 }
 
-/// Groups [members] into clusters by *on-screen* proximity OR ground distance.
+/// Groups [members] into clusters - three rules, checked per pair in this
+/// order:
 ///
-/// Each member's geographic position is projected to a screen offset via
-/// [toScreenOffset] (which reflects the map's current center and zoom), and
-/// members are clustered when their screen offsets are within
-/// [clusterRadiusPx] of each other. This means the same set of members will
-/// cluster at a low zoom and separate as the user zooms in — matching the
-/// "cluster and separate as people move" behavior, now also zoom-aware.
+/// 1. [mustGroup] (GroupTracker.ridingTogether, rig run 1028): a formed
+///    driving pair is one capsule even a post apart; the cluster sits on the
+///    lead phone (latest lastSeen), not the centroid. Subject to [canGroup].
+/// 2. Ground: within [groupMetres] (the Family Viewer's rule, app.js:42
+///    GROUP_M = 120) whatever the zoom. Subject to [canGroup]
+///    (GroupTracker.together: a stale member, a driver next to a parked
+///    person, two cars not yet matched for a minute - DECISIONS ruling 3).
+/// 3. Screen (5b, 2026-09-16): the two RINGS overlap at this camera - their
+///    centres (the point raised by [ringLift]: at home the pin sits 9 up on
+///    the house chip) are closer than [ringOverlapPx]. NOT subject to
+///    [canGroup]: this is what the eye sees, a purely visual group with no
+///    clock and no proof - Bo at home and a STALE Charlie at school drew on
+///    top of each other at the continent fit and he expected the capsule.
+///    A cluster with such a join is [MemberCluster.visual].
 ///
-/// Bray: members also cluster when they are within [groupMetres] of each other
-/// on the ground, whatever the zoom - the Family Viewer's rule (app.js:42
-/// GROUP_M = 120, app.js:140-149 clusters()), so Bo and Charlie at home are
-/// one capsule here as they are there. The viewer joins to a group's running
-/// centroid; this keeps upstream's member-to-member (single-link) join, which
-/// only ever groups more, never less.
-///
-/// Bray piece 5: [canGroup] (utils/member_grouping.dart
-/// GroupTracker.together) vetoes a join for a stale member, a driver next to
-/// a parked person, or two cars that have not matched speed and heading for
-/// a minute (DECISIONS ruling 3). Null keeps the two distance rules alone.
-///
-/// Bray piece 5 (rig run 1028): a pair the tracker calls riding together is
-/// one capsule even when their last-known fixes are a post apart -
-/// [mustGroup] (GroupTracker.ridingTogether) joins regardless of pixel or
-/// ground distance (two phones in one car post at different moments; at
-/// 60 mph 30 s of lag is ~800 m, beyond both distance rules), still subject
-/// to [canGroup]'s veto. A cluster holding at least one must-group join is
-/// centred on the member with the latest lastSeen - the lead phone - instead
-/// of the geometric centroid, so the capsule sits on the car, not halfway
-/// between a post and the one before it. Null never forces a join.
+/// Single-link join (a member joins a group when ANY member of it qualifies),
+/// so the rules only ever group more, never less. Null predicates keep the
+/// distance rules alone.
 List<MemberCluster> clusterMembers(
   List<Member> members, {
   required LatLngToScreenOffset toScreenOffset,
-  double clusterRadiusPx = kClusterRadiusPx,
+  double ringOverlapPx = kRingOverlapPx,
   double groupMetres = BrayTokens.groupMetres,
   bool Function(Member a, Member b)? canGroup,
   bool Function(Member a, Member b)? mustGroup,
+  double Function(Member m)? ringLift,
 }) {
   // Members without a reported location have no bubble and are skipped.
   final List<Member> positioned =
       members.where((m) => m.position != null).toList();
 
-  final Map<String, Offset> points = <String, Offset>{
-    for (final Member m in positioned) m.id: toScreenOffset(m.position!),
+  // Ring centres: the point, raised by the marker's lift.
+  final Map<String, Offset> rings = <String, Offset>{
+    for (final Member m in positioned) m.id: toScreenOffset(m.position!) - Offset(0, ringLift?.call(m) ?? 0),
   };
 
   final List<MemberCluster> clusters = <MemberCluster>[];
@@ -147,26 +152,32 @@ List<MemberCluster> clusterMembers(
     final Member seed = remaining.removeAt(0);
     final List<Member> group = <Member>[seed];
     bool forced = false;   // at least one must-group join in this cluster
+    bool visual = false;   // at least one ring-overlap-only join
     bool changed = true;
     while (changed) {
       changed = false;
       for (int i = remaining.length - 1; i >= 0; i--) {
         final Member m = remaining[i];
-        bool must = false;
+        bool must = false, overlapOnly = false;
         final bool near = group.any((Member g) {
-          if (canGroup != null && !canGroup(g, m)) return false;
-          if (mustGroup != null && mustGroup(g, m)) {
+          final bool allowed = canGroup == null || canGroup(g, m);
+          if (allowed && mustGroup != null && mustGroup(g, m)) {
             must = true;
             return true;
           }
-          return _distancePx(points[g.id]!, points[m.id]!) <= clusterRadiusPx ||
-              groundMetres(g.position!, m.position!) <= groupMetres;
+          if (allowed && groundMetres(g.position!, m.position!) <= groupMetres) return true;
+          if (_distancePx(rings[g.id]!, rings[m.id]!) < ringOverlapPx) {
+            overlapOnly = true;
+            return true;
+          }
+          return false;
         });
         if (near) {
           group.add(m);
           remaining.removeAt(i);
           changed = true;
           forced = forced || must;
+          visual = visual || overlapOnly;
         }
       }
     }
@@ -175,6 +186,7 @@ List<MemberCluster> clusterMembers(
         id: _clusterId(group),
         centroid: forced ? _leadPosition(group) : _centroid(group),
         members: group,
+        visual: visual,
       ),
     );
   }
@@ -193,20 +205,22 @@ List<BubblePlacement> placeBubbles(
   List<Member> members, {
   required LatLngToScreenOffset toScreenOffset,
   required ScreenOffsetToLatLng toLatLng,
-  double clusterRadiusPx = kClusterRadiusPx,
+  double ringOverlapPx = kRingOverlapPx,
   double groupMetres = BrayTokens.groupMetres,
   double fanOutRadiusPx = kFanOutRadiusPx,
   Set<String> expandedClusterIds = const {},
   bool Function(Member a, Member b)? canGroup,
   bool Function(Member a, Member b)? mustGroup,
+  double Function(Member m)? ringLift,
 }) {
   final List<MemberCluster> clusters = clusterMembers(
     members,
     toScreenOffset: toScreenOffset,
-    clusterRadiusPx: clusterRadiusPx,
+    ringOverlapPx: ringOverlapPx,
     groupMetres: groupMetres,
     canGroup: canGroup,
     mustGroup: mustGroup,
+    ringLift: ringLift,
   );
   final List<BubblePlacement> placements = <BubblePlacement>[];
 
@@ -238,6 +252,7 @@ List<BubblePlacement> placeBubbles(
           clusterCount: cluster.members.length,
           clusterId: cluster.id,
           clusterMembers: cluster.members,
+          visual: cluster.visual,
         ),
       );
     }
