@@ -342,7 +342,25 @@ class _MapScreenState extends State<MapScreen>
     final DateTime now = DateTime.now();
     setState(() {});
     _keepFollowing();
+    _trackFit(now);
     if (!_motion.activeAt(now) && !_capsules.active) _glideTicker?.stop();
+  }
+
+  /// 5b (Bo driving): in the default view the overview fit used to re-aim
+  /// only when a fix arrived (a 600 ms tween per fix - the "hiccups" while
+  /// the reckoned markers moved smoothly between fixes). While anyone is
+  /// being dead-reckoned, keep the camera on the near cluster's fit every
+  /// frame with a straight move; the fit's centre moves as smoothly as the
+  /// markers do. Off while focused / following, mid-animation, or within
+  /// the 12 s after a gesture (autoFitDue - the user is panning).
+  void _trackFit(DateTime now) {
+    if (!_mapReady || !_motion.activeAt(now)) return;
+    if (_cameraAnim?.isAnimating ?? false) return;
+    if (!autoFitDue(lastGesture: _lastGesture, now: now, focused: _focus.focusedId != null, following: _followId != null)) return;
+    final List<Member> members = nearMembers(_liveMembers(), viewerId: _userId);
+    if (members.length < 2) return;   // one person: the follow / launch centre, never re-fitted per frame
+    final MapCamera fitted = _fitFor(members, maxZoom: 16);
+    _mapController.move(fitted.center, fitted.zoom);
   }
 
   /// Re-centres the camera on the followed member after a position update.
