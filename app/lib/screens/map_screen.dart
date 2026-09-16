@@ -30,6 +30,7 @@ import '../services/tile_config.dart';
 import '../services/token_storage.dart';
 import '../theme/app_theme.dart';
 import '../theme/bray_tokens.dart';
+import '../utils/anchor_glide.dart';
 import '../utils/drive_state.dart';
 import '../utils/focus_rules.dart';
 import '../utils/member_clustering.dart';
@@ -167,6 +168,17 @@ class _MapScreenState extends State<MapScreen>
   /// glided position, so the bubble moves down the road rather than hopping.
   static const Duration _glideDuration = Duration(seconds: 4);
   final Map<String, _Glide> _glides = <String, _Glide>{};
+
+  /// 5b: a riding-together capsule's own glide (utils/anchor_glide.dart) -
+  /// a change of lead phone or a late post never hops it; the camera follows
+  /// its drawn anchor while following one of its members.
+  final CapsuleAnchorSmoother _capsules = CapsuleAnchorSmoother(duration: _glideDuration);
+
+  LatLng _capsuleAnchor(String clusterId, LatLng target, DateTime now) {
+    final LatLng drawn = _capsules.anchor(clusterId, target, now);
+    if (_capsules.active) _startGlideTicker();
+    return drawn;
+  }
   Ticker? _glideTicker;
 
   /// Piece 5 live words: the device geocode per member position and where
@@ -333,7 +345,7 @@ class _MapScreenState extends State<MapScreen>
     _glides.removeWhere((_, g) => g.done(now, _glideDuration));
     setState(() {});
     _keepFollowing();
-    if (_glides.isEmpty) _glideTicker?.stop();
+    if (_glides.isEmpty && !_capsules.active) _glideTicker?.stop();
   }
 
   /// Re-centres the camera on the followed member after a position update.
@@ -348,7 +360,9 @@ class _MapScreenState extends State<MapScreen>
       if (now.isBefore(_followPausedUntil!)) return;
       setState(() => _followPausedUntil = null);
     }
-    final LatLng? pos = _drawnPosition(id, now);
+    // 5b: inside a riding-together capsule the camera follows the capsule's
+    // drawn anchor (one smooth point), not this phone's own glide.
+    final LatLng? pos = _capsules.drawnForMember(id) ?? _drawnPosition(id, now);
     if (pos == null) {
       if (!_members.any((Member m) => m.id == id)) {
         // Left the roster. Piece 3: one focus/follow state - if they were the
@@ -1235,6 +1249,8 @@ class _MapScreenState extends State<MapScreen>
                   onMemberTap: _focusMember,
                   onMemberHold: _openMemberDetails,         // design list: hold = full details
                   onClusterTap: _expandCluster,
+                  anchorFor: _capsuleAnchor,               // 5b: the capsule's own glide
+                  onCapsulesDrawn: (Set<String> ids, DateTime now) => _capsules.prune(now, drawnIds: ids),
                 ),
                 // 5b step 2: far members (beyond kNearFitMetres of the
                 // viewer) as edge chips; a tap does what tapping their face does.
@@ -1608,6 +1624,8 @@ class _MemberMarkerLayer extends StatelessWidget {
     required this.inDriveFor,
     required this.canGroup,
     required this.mustGroup,
+    this.anchorFor,
+    this.onCapsulesDrawn,
     this.selectedId,
     this.viewerId,
     this.contactFor,
@@ -1630,6 +1648,14 @@ class _MemberMarkerLayer extends StatelessWidget {
   /// one capsule even when their last-known fixes are a post apart (beyond
   /// both of clusterMembers' distance rules), centred on the lead phone.
   final bool Function(Member, Member) mustGroup;
+
+  /// 5b: where to draw a capsule for its computed anchor (the map's
+  /// CapsuleAnchorSmoother); null draws it at the anchor.
+  final LatLng Function(String clusterId, LatLng target, DateTime now)? anchorFor;
+
+  /// Which capsules this build drew (the smoother forgets the rest, so a
+  /// split capsule's anchor never steers the camera).
+  final void Function(Set<String> clusterIds, DateTime now)? onCapsulesDrawn;
 
   /// For the capsule's "<name> arrived" callout - the same viewer / contact
   /// link the sheet gets (PeopleSheet.viewerId / contactFor).
@@ -1667,7 +1693,10 @@ class _MemberMarkerLayer extends StatelessWidget {
       canGroup: canGroup,
       mustGroup: mustGroup,
       ringLift: (Member m) => m.place?.atHome == true ? MemberAvatarBubble.atHomeLift : 0,   // 5b step 3: the ring sits 9 up on the house chip
+      now: now,
     );
+    LatLng capsuleAt(BubblePlacement p) => anchorFor == null ? p.position : anchorFor!(p.clusterId!, p.position, now);
+    onCapsulesDrawn?.call(placements.where((BubblePlacement p) => p.isCluster).map((BubblePlacement p) => p.clusterId!).toSet(), now);
 
     // 5b step 3: a fanned solo marker keeps a thin leader line in the
     // person's colour from its dot to its true spot. OPEN: chosen - 1.5 px.
@@ -1688,7 +1717,7 @@ class _MemberMarkerLayer extends StatelessWidget {
             // flutter_map 7 marker.dart:33-34 - Alignment.topCenter would put
             // the box's bottom edge, not the dot's centre, on the point).
             Marker(
-              point: p.position,
+              point: capsuleAt(p),
               width: CapsuleBubble.markerWidth,
               height: CapsuleBubble.markerHeight,
               alignment: CapsuleBubble.markerAlignment,

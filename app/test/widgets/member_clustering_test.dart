@@ -2,8 +2,6 @@
 // Grouping by ground distance, like the Family Viewer (app.js:42 GROUP_M = 120,
 // app.js:140-149 clusters()): two people within 120 m are one capsule however
 // far apart their bubbles are on screen. Upstream's on-screen rule is kept too.
-import 'dart:ui' show Offset;
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:openfamily/models/member.dart';
@@ -68,18 +66,19 @@ void main() {
   // one capsule even when their last-known fixes are a post apart.
   group('mustGroup (rig run 1028)', () {
     final DateTime t0 = DateTime(2026, 9, 16, 10, 28);
-    test('(d) 500 m apart and 750 px apart: one cluster when mustGroup says yes, centred on the member with the newer lastSeen (the lead phone)', () {
+    test('(d) 500 m apart and 750 px apart: one cluster when mustGroup says yes - both fresh: the centroid (5b: one smooth anchor); one stale: the fresh phone (the lead fallback)', () {
       final Member bo = at('Bo Bray', home, seen: t0.subtract(const Duration(seconds: 10)));
       final Member charlie = at('Charlie', north(500), seen: t0);
-      final clusters = clusterMembers([bo, charlie], toScreenOffset: camera(1.5), mustGroup: (a, b) => true);
+      final clusters = clusterMembers([bo, charlie], toScreenOffset: camera(1.5), mustGroup: (a, b) => true, now: t0);
       expect(clusters.length, 1);
       expect(clusters.single.members.length, 2);
-      expect(clusters.single.centroid, charlie.position);
-      // the lead phone is whoever is freshest, not whoever is listed first
-      final reversed = clusterMembers([charlie, bo], toScreenOffset: camera(1.5), mustGroup: (a, b) => true);
-      expect(reversed.single.centroid, charlie.position);
+      expect(clusters.single.centroid.latitude, closeTo(north(250).latitude, 1e-9));
+      // Bo stale: Charlie's phone is where the car is, whoever is listed first
+      final Member boStale = at('Bo Bray', home, seen: t0.subtract(const Duration(hours: 2)));
+      expect(clusterMembers([boStale, charlie], toScreenOffset: camera(1.5), mustGroup: (a, b) => true, now: t0).single.centroid, charlie.position);
+      expect(clusterMembers([charlie, boStale], toScreenOffset: camera(1.5), mustGroup: (a, b) => true, now: t0).single.centroid, charlie.position);
       // and placeBubbles puts the capsule there
-      final placements = placeBubbles([bo, charlie], toScreenOffset: camera(1.5), toLatLng: (_) => home, mustGroup: (a, b) => true);
+      final placements = placeBubbles([boStale, charlie], toScreenOffset: camera(1.5), toLatLng: (_) => home, mustGroup: (a, b) => true, now: t0);
       expect(placements.length, 1);
       expect(placements.single.isCluster, isTrue);
       expect(placements.single.position, charlie.position);
