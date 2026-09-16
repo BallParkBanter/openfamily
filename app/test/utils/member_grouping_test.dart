@@ -34,15 +34,32 @@ void main() {
       g.observe([a, b], inDriveFor: driving);
       expect(g.together(a, b, inDriveFor: driving), isFalse);
     });
-    test('two cars at a light: one matching frame is not a group; the second consecutive matching frame is (5b 16:40 - Bo chose two frames over ruling 3\'s minute)', () {
+    test('two cars at a light (0 mph, same heading, 40 m apart): two matching frames are NOT a group - ruling 3\'s minute stands below 15 mph', () {
       DateTime now = t0;
       final GroupTracker g = GroupTracker(clock: () => now);
-      Member a = mk('a', mph: 30, heading: 90), b = mk('b', pos: north(20), mph: 31, heading: 95);
+      bool inDrive(Member m) => true;   // both inside a drive, stopped at the light
+      Member a = mk('a', mph: 0, heading: 90), b = mk('b', pos: north(40), mph: 0, heading: 90);
+      g.observe([a, b], inDriveFor: inDrive);
+      now = t0.add(const Duration(seconds: 5));
+      g.observe([a, b], inDriveFor: inDrive);
+      expect(g.together(a, b, inDriveFor: inDrive), isFalse);
+      now = t0.add(const Duration(seconds: 59));
+      g.observe([a, b], inDriveFor: inDrive);
+      expect(g.together(a, b, inDriveFor: inDrive), isFalse);
+      now = t0.add(const Duration(seconds: 60));
+      g.observe([a, b], inDriveFor: inDrive);
+      expect(g.together(a, b, inDriveFor: inDrive), isTrue);   // a minute of matching speed AND heading, as ruling 3 says
+    });
+    test('the same pair at 45 mph: the second consecutive matching frame forms them (5b 16:40 - moving together on the road is the evidence)', () {
+      DateTime now = t0;
+      final GroupTracker g = GroupTracker(clock: () => now);
+      Member a = mk('a', mph: 45, heading: 90), b = mk('b', pos: north(40), mph: 45, heading: 90);
       g.observe([a, b], inDriveFor: driving);
       expect(g.together(a, b, inDriveFor: driving), isFalse);
       now = t0.add(const Duration(seconds: 5));
       g.observe([a, b], inDriveFor: driving);
       expect(g.together(a, b, inDriveFor: driving), isTrue);
+      expect(BrayTokens.groupMotionMinMph, 15);
     });
     test('a heading mismatch (two cars, different ways) or a speed gap resets the clock before formation; once formed, only distance splits (run 0956)', () {
       DateTime now = t0;
