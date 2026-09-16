@@ -61,11 +61,14 @@ void main() {
     expect(s.facts, ['🕒 Updated 4h ago', '📏 last seen 10 mi away']);
     expect(s.facts.join(), isNot(contains('mph')));
   });
-  test('precedence: at Home and standing still beats the drive tracker\'s tail; moving inside the geofence is still Driving', () {
+  test('precedence: parked at Home is not a drive - the CALLER decides (utils/drive_state.dart inDriveVerdict) and the card obeys inDrive; moving inside the geofence is still Driving', () {
     // DECISIONS state 1 + ruling 6: the server's geofence is a fact; "Driving"
-    // at 0 mph inside it is fake data; a member still moving inside it stays Driving.
+    // at 0 mph inside it is fake data. Decided ONCE in map_screen._inDriveFor
+    // (inDriveVerdict) for the marker, the capsule and the card alike - the
+    // card no longer re-judges it, so `inDrive: false` is what the map hands
+    // it for a parked-at-home phone.
     final MemberPlace home = MemberPlace(atHome: true, placeName: 'Home', since: local(15, 42), homeDistanceM: 5, street: 'Twin Lakes Drive');
-    final CardState parked = st(m(mph: 0), place: home, inDrive: true);
+    final CardState parked = st(m(mph: 0), place: home, inDrive: false);
     expect(parked.placeLine, '🏠 Home');
     expect(parked.facts.first, startsWith('🕒 Home since'));
     expect(parked.facts.join(), isNot(contains('mph')));
@@ -74,6 +77,14 @@ void main() {
     expect(rolling.placeLine, startsWith('🚗 Driving'));
     expect(rolling.facts.first, '🚗 25 mph');
     expect(rolling.action, CardAction.noShow);   // the action is place-based
+    // No tracker at all (inDrive null): the card's old rule, H:92 >= 8 mph - 0 mph at Home is not driving either.
+    expect(st(m(mph: 0), place: home).placeLine, '🏠 Home');
+  });
+  test('single source of truth: the card does NOT second-guess an explicit inDrive: true at Home (that judgement is the caller\'s)', () {
+    final MemberPlace home = MemberPlace(atHome: true, placeName: 'Home', since: local(15, 42), homeDistanceM: 5, street: 'Twin Lakes Drive');
+    final CardState s = st(m(mph: 0), place: home, inDrive: true);
+    expect(s.placeLine, startsWith('🚗 Driving'));
+    expect(s.facts.first, '🚗 0 mph');
   });
   test('stale at Home: "🕒 Updated 4h ago" alone - no distance at home (state 1 rule)', () {
     final CardState s = st(m(mph: 65, ago: const Duration(hours: 4)), place: MemberPlace(atHome: true, placeName: 'Home', since: local(7, 9), homeDistanceM: 5), inDrive: true);

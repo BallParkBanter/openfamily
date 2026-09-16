@@ -13,6 +13,7 @@ import '../models/member.dart';
 import '../services/contact_link_store.dart';
 import '../theme/bray_tokens.dart';
 import '../utils/member_grouping.dart' show groupBadgeFor;
+import 'marker_pointer.dart' show MarkerPointerPainter;
 import 'member_avatar_bubble.dart' show StatusAvatar;
 import 'slot_badge.dart';
 
@@ -175,7 +176,8 @@ class CapsuleBubble extends StatelessWidget {
                 Positioned(
                   top: badgeZone + _pillH,
                   left: markerWidth / 2 - BrayTokens.tailW / 2,
-                  child: CustomPaint(size: const Size(BrayTokens.tailW, BrayTokens.tailH), painter: const _TailPainter(BrayTokens.capsuleGrey)),
+                  // .ctail: the same downward triangle as the solo pointer (marker_pointer.dart), in the capsule grey, no shadow.
+                  child: const CustomPaint(size: Size(BrayTokens.tailW, BrayTokens.tailH), painter: MarkerPointerPainter(BrayTokens.capsuleGrey)),
                 ),
                 if (!members.every((m) => m.place?.nearHome == true))
                   Positioned(
@@ -216,24 +218,4 @@ class CapsuleBubble extends StatelessWidget {
       ),
     );
   }
-}
-
-/// .ctail: a 20x14 downward triangle in the capsule grey.
-class _TailPainter extends CustomPainter {
-  const _TailPainter(this.color);
-
-  final Color color;
-
-  @override
-  void paint(Canvas c, Size s) {
-    final Path p = Path()
-      ..moveTo(0, 0)
-      ..lineTo(s.width, 0)
-      ..lineTo(s.width / 2, s.height)
-      ..close();
-    c.drawPath(p, Paint()..color = color);                                              // .ctail has no shadow (unlike S:83)
-  }
-
-  @override
-  bool shouldRepaint(_TailPainter old) => old.color != color;
 }

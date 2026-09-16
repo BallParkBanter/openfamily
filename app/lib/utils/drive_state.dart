@@ -10,6 +10,20 @@
 import '../models/member.dart';
 import '../theme/bray_tokens.dart';
 
+/// The ONE verdict every consumer reads - the marker's badge, the capsule's
+/// badge, the grouping tracker and the card: the DriveTracker's
+/// [trackerInDrive], except that a phone inside the home geofence and
+/// standing still (under [BrayTokens.driveStillMph]) is NOT in a drive.
+/// DECISIONS state 1 + ruling 6 - parked inside the home geofence is not a
+/// drive, for the marker, the capsule and the card alike: the tracker's
+/// 2-minute tail after pulling into the driveway would otherwise show
+/// "🚗 0 mph" on the marker while the card says Home. A phone still moving
+/// inside the geofence stays in its drive. Decided here, once, so
+/// map_screen._inDriveFor is the only caller and card_state does not
+/// re-judge it.
+bool inDriveVerdict(bool trackerInDrive, Member m) =>
+    trackerInDrive && !(m.place?.atHome == true && (m.speedMph ?? 0) < BrayTokens.driveStillMph);
+
 class DriveState {
   const DriveState._({required this.inDrive, this.stillSince});
 

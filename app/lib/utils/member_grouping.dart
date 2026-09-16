@@ -74,7 +74,9 @@ class GroupTracker {
   /// beat before the other's): an UNFORMED pair never groups across the
   /// split, same as before. A FORMED pair's clock survives while the two
   /// stay within 120 m (OPEN: chosen, see the file header) - it neither
-  /// starts nor is proven here, only kept alive.
+  /// starts nor is proven here, only kept alive. A STILL-TOGETHER memory
+  /// likewise survives the mixed frame while within 120 m, so staggered
+  /// drive starts (A this frame, B the next) still seed pre-formed.
   void observe(List<Member> members, {required bool Function(Member) inDriveFor, DateTime? now}) {
     final DateTime at = now ?? _clock();
     final Set<String> seen = <String>{};
@@ -94,6 +96,13 @@ class GroupTracker {
 
         if (da != db) {
           if (near && _formed(key, at)) seen.add(key);
+          // A's drive starts on one WS frame and B's on the next (DriveTracker
+          // judges each phone's own fix cadence): the still-together memory
+          // must survive this mixed frame while they are still within 120 m,
+          // or by the time both drive it is gone and the pair goes through the
+          // 60 s stranger proof (capsule flicker). Kept, never seeded here -
+          // the seed itself still requires both driving AND near.
+          if (near && _stillTogether.contains(key)) stillTogetherNow.add(key);
           continue;
         }
 

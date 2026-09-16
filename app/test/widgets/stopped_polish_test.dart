@@ -12,6 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:openfamily/models/member.dart';
 import 'package:openfamily/models/member_place.dart';
+import 'package:openfamily/utils/drive_state.dart';
 import 'package:openfamily/widgets/capsule_bubble.dart';
 import 'package:openfamily/widgets/member_avatar_bubble.dart';
 import 'package:openfamily/widgets/person_card.dart';
@@ -61,8 +62,14 @@ void main() {
   });
 
   testWidgets('card place line: parked at home reads Home, not "Driving · Home" - even inside the drive tracker\'s 2-minute tail', (t) async {
+    // The map decides once (map_screen._inDriveFor = inDriveVerdict): the
+    // tracker's tail says drive, the verdict says parked at Home -> the card
+    // receives inDrive: false. The card itself no longer re-judges it.
     final MemberPlace home = MemberPlace(atHome: true, placeName: 'Home', since: DateTime(2026, 9, 14, 7, 30));
-    await t.pumpWidget(host(PersonCard(member: m('Bo Bray', mph: 0, place: home), label: 'Dad', charging: false, now: now, place: home, inDrive: true)));
+    final Member parked = m('Bo Bray', mph: 0, place: home);
+    final bool verdict = inDriveVerdict(true, parked);   // the tracker's 2-minute tail, judged
+    expect(verdict, isFalse);
+    await t.pumpWidget(host(PersonCard(member: parked, label: 'Dad', charging: false, now: now, place: home, inDrive: verdict)));
     expect(find.text('🏠 Home'), findsOneWidget);
     expect(find.textContaining('Driving'), findsNothing);
     expect(find.textContaining('mph'), findsNothing);

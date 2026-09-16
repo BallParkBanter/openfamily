@@ -139,4 +139,51 @@ void main() {
       expect(out.since, isNull);
     });
   });
+  group('serverWordsChanged (the C1 fix: the backend sends `place` on EVERY stored fix)', () {
+    // backend/internal/handlers/location.go loadMemberPlace -> `Place: place`
+    // in every broadcast, and member_mapper builds a fresh MemberPlace per
+    // frame - so object identity changes every frame. Only the WORDS decide
+    // whether the server's place was measured at this fix.
+    final MemberPlace words = MemberPlace(street: 'Dacula Road', poiName: 'Kroger', city: 'Dacula', placeName: null, atHome: false, since: DateTime(2026, 9, 15, 7, 9), homeDistanceM: 500);
+    test('first sighting counts as a change; nothing -> nothing does not', () {
+      expect(serverWordsChanged(null, words), isTrue);
+      expect(serverWordsChanged(null, const MemberPlace()), isTrue);
+      expect(serverWordsChanged(null, null), isFalse);
+      expect(serverWordsChanged(words, null), isTrue);
+    });
+    test('a fresh object with the same street / poi / city / placeName / atHome is NOT a change (since and distance do not count)', () {
+      final MemberPlace again = MemberPlace(street: 'Dacula Road', poiName: 'Kroger', city: 'Dacula', since: DateTime(2026, 9, 15, 7, 10), homeDistanceM: 700);
+      expect(identical(words, again), isFalse);
+      expect(serverWordsChanged(words, again), isFalse);
+    });
+    test('any one of the five words changing is a change', () {
+      expect(serverWordsChanged(words, words.copyWith(street: 'Harbins Road')), isTrue);
+      expect(serverWordsChanged(words, words.copyWith(poiName: 'Publix')), isTrue);
+      expect(serverWordsChanged(words, words.copyWith(city: 'Lawrenceville')), isTrue);
+      expect(serverWordsChanged(words, words.copyWith(placeName: 'Home')), isTrue);
+      expect(serverWordsChanged(words, words.copyWith(atHome: true)), isTrue);
+    });
+    test('the map\'s bookkeeping: server words unchanged across two fixes 200 m apart, device words present -> the device words show', () {
+      // Frame 1: the server's words land with fix1 -> "measured at fix1".
+      const LatLng fix1 = LatLng(33.98, -83.90);
+      final LatLng fix2 = LatLng(fix1.latitude + 200 / 111320, fix1.longitude);   // 200 m north
+      MemberPlace? last;
+      LatLng? measuredAt;
+      final MemberPlace frame1 = MemberPlace(street: 'Old Street', since: DateTime(2026, 9, 15, 7, 9));
+      if (serverWordsChanged(last, frame1)) { last = frame1; measuredAt = fix1; }
+      // Frame 2: a NEW MemberPlace object (per-frame `place`), same words, fix 200 m on.
+      final MemberPlace frame2 = MemberPlace(street: 'Old Street', since: DateTime(2026, 9, 15, 7, 9));
+      if (serverWordsChanged(last, frame2)) { last = frame2; measuredAt = fix2; }
+      expect(measuredAt, fix1);   // the identity test would have moved this to fix2 and killed the device branch
+      final MemberPlace shown = mergePlace(frame2, measuredAt, fix2, const DevicePlace(street: 'Dacula Road', city: 'Dacula'));
+      expect(shown.street, 'Dacula Road');
+      expect(shown.city, 'Dacula');
+      expect(shown.since, frame2.since);
+      // Frame 3: the server's geocoder catches up with NEW words at fix2 -> the server is current again.
+      final MemberPlace frame3 = MemberPlace(street: 'Dacula Road', since: DateTime(2026, 9, 15, 7, 9));
+      if (serverWordsChanged(last, frame3)) { last = frame3; measuredAt = fix2; }
+      expect(measuredAt, fix2);
+      expect(mergePlace(frame3, measuredAt, fix2, const DevicePlace(street: 'Device Road')).street, 'Dacula Road');
+    });
+  });
 }

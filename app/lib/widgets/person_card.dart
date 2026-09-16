@@ -193,7 +193,7 @@ class _PersonCardState extends State<PersonCard> {
             Padding(
               padding: const EdgeInsets.only(top: BrayTokens.cardPlaceTop),                          // .pl margin-top:2px
               child: Text(s.placeLine!, key: const Key('card-place'), maxLines: 1, overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: BrayTokens.cardPlaceFont, fontWeight: BrayTokens.cardPlaceWeight, color: BrayTokens.cardLime, height: 1.2)),   // .pl 17px 600 #A3E635
+                  style: const TextStyle(fontSize: BrayTokens.cardPlaceFont, fontWeight: BrayTokens.cardPlaceWeight, color: BrayTokens.cardLime, height: BrayTokens.cardTextLineHeight)),   // .pl 17px 600 #A3E635
             ),
           if (s.facts.isNotEmpty)
             Padding(
@@ -219,7 +219,7 @@ class _PersonCardState extends State<PersonCard> {
                           border: Border.all(color: BrayTokens.cardFactBorder),                     // .fact border:1px solid rgba(255,255,255,.14)
                         ),
                         child: Text(s.facts[i], maxLines: 1, softWrap: false,
-                            style: const TextStyle(fontSize: BrayTokens.cardFactFont, color: BrayTokens.cardFactColor, height: 1.2)),   // .fact 14px #dfe8df
+                            style: const TextStyle(fontSize: BrayTokens.cardFactFont, color: BrayTokens.cardFactColor, height: BrayTokens.cardTextLineHeight)),   // .fact 14px #dfe8df
                       ),
                     ],
                   ],
@@ -263,7 +263,7 @@ class _PersonCardState extends State<PersonCard> {
                 gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [BrayTokens.cardSaveGradTop, BrayTokens.cardSaveGradBottom]),   // .save linear-gradient(180deg,#2a3441,#151c26)
                 boxShadow: const [
                   BoxShadow(color: BrayTokens.cardSaveShadow, blurRadius: BrayTokens.cardSaveShadowBlur, offset: Offset(0, BrayTokens.cardSaveShadowDy)),   // 0 8px 18px rgba(0,0,0,.55)
-                  BoxShadow(color: Color(0x99000000), spreadRadius: 1),                                                                                    // 0 0 0 1px rgba(0,0,0,.6)
+                  BoxShadow(color: BrayTokens.cardSaveRing, spreadRadius: 1),                                                                               // 0 0 0 1px rgba(0,0,0,.6)
                   BoxShadow(color: BrayTokens.cardSaveGlow, blurRadius: BrayTokens.cardSaveGlowBlur),                                                      // 0 0 14px rgba(163,230,53,.25)
                 ],
               ),
@@ -285,7 +285,7 @@ class _PersonCardState extends State<PersonCard> {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               const Padding(
-                padding: EdgeInsets.only(top: 4 * BrayTokens.cardScale),                             // .bwrap padding-top:4px
+                padding: EdgeInsets.only(top: BrayTokens.cardBattLabelTop),                          // .bwrap padding-top:4px
                 child: Text('BATTERY', key: Key('card-batt-label'),
                     style: TextStyle(fontSize: BrayTokens.cardBattLabelFont, letterSpacing: BrayTokens.cardBattLabelSpacing * BrayTokens.cardBattLabelFont, color: BrayTokens.cardBattLabelColor, height: 1)),   // .eb2 11px .14em #b9c9ba
               ),
@@ -298,7 +298,7 @@ class _PersonCardState extends State<PersonCard> {
                       offset: const Offset(0, -BrayTokens.cardBattEmojiLift),                        // .bt span top:-4px
                       child: Text(s.battery.substring(0, s.battery.indexOf(' ')), style: const TextStyle(fontSize: BrayTokens.cardBattEmojiFont, height: 1)),   // .bt span font-size:16px
                     ),
-                    const SizedBox(width: 4 * BrayTokens.cardScale),                                 // .bt gap:4px
+                    const SizedBox(width: BrayTokens.cardBattEmojiGap),                              // .bt gap:4px
                   ],
                   Text.rich(
                     TextSpan(

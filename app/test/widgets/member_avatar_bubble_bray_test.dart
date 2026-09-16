@@ -122,6 +122,21 @@ void main() {
     final List<Key?> keys = find.byWidgetPredicate((w) => w.key == const Key('bray-ring') || w.key == const Key('slot-badge')).evaluate().map((e) => e.widget.key).toList();
     expect(keys, const [Key('bray-ring'), Key('slot-badge')]);
   });
+  testWidgets('parked at Home with inDrive: false (map_screen._inDriveFor / inDriveVerdict): the badge is "home for", never "0 mph"', (t) async {
+    // DECISIONS state 1 + ruling 6 - parked inside the home geofence is not a
+    // drive, for the marker, the capsule and the card alike. The map decides
+    // once and hands the bubble `inDrive: false`; the bubble draws the stay.
+    final DateTime now = DateTime(2026, 9, 15, 12);
+    final Member who = Member(id: 'h', name: 'Heidi', status: MemberStatus.normal, position: const LatLng(33.9, -84.4),
+        batteryPercent: 80, address: '', lastSeen: now.subtract(const Duration(minutes: 1)),
+        movement: MovementType.car, speedMph: 0,
+        place: MemberPlace(atHome: true, placeName: 'Home', since: now.subtract(const Duration(minutes: 3))));
+    final Size s = MemberAvatarBubble.markerSizeFor(who);
+    await t.pumpWidget(host(SizedBox(width: s.width, height: s.height, child: MemberAvatarBubble(member: who, now: now, inDrive: false, onTap: () {}))));
+    expect(find.text('home for'), findsOneWidget);
+    expect(find.textContaining('mph'), findsNothing);
+    expect(find.byKey(const Key('glyph-car')), findsNothing);
+  });
   test('marker alignment puts the map point on the dot centre', () {
     // flutter_map 7 MarkerLayer (marker_layer.dart:52-55, 75-76): left = w/2*(x+1),
     // top = h/2*(y+1), and the box is placed at (pos.x - (w - left), pos.y - (h - top)),

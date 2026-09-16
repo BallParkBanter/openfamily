@@ -105,6 +105,26 @@ class DevicePlaceResolver {
   static String? _clean(String? s) => (s == null || s.trim().isEmpty) ? null : s.trim();
 }
 
+/// Did the server's WORDS change between the place it sent last and the one
+/// on this frame? The map moves "where the server's place was measured"
+/// (map_screen `_serverPlaceAt`) only when this is true. It cannot be an
+/// identity test: the backend sends `place` on EVERY stored fix
+/// (backend/internal/handlers/location.go `loadMemberPlace` -> `Place: place`
+/// in the broadcast), and member_mapper builds a fresh MemberPlace per
+/// frame, so identity changes every frame and the device branch of
+/// [mergePlace] would never run. Compares (street, poiName, city,
+/// placeName, atHome) - `since` and the distance are not words. The first
+/// sighting counts as a change; nothing -> nothing does not.
+bool serverWordsChanged(MemberPlace? last, MemberPlace? now) {
+  if (now == null) return last != null;
+  if (last == null) return true;
+  return last.street != now.street ||
+      last.poiName != now.poiName ||
+      last.city != now.city ||
+      last.placeName != now.placeName ||
+      last.atHome != now.atHome;
+}
+
 /// Within this of the position the server's place was measured at, the
 /// server's words are current. OPEN: chosen - 75 m, under the 120 m group
 /// rule and over GPS jitter.

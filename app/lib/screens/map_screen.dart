@@ -187,7 +187,18 @@ class _MapScreenState extends State<MapScreen>
   /// stopped 2 min ago leaves its drive without waiting for the next fix.
   final DriveTracker _drives = DriveTracker();
   Timer? _driveTick;
-  static const Duration _driveTickEvery = Duration(seconds: 15);   // OPEN: chosen - 8 ticks per 2-minute end, one rebuild each
+
+  /// OPEN: chosen - 15 s, 8 ticks per 2-minute drive end. Each tick
+  /// rebuilds the whole screen unconditionally (setState with no change
+  /// check), 4x a minute for as long as the map is open - accepted: the
+  /// rebuild is what moves a "here for" / drive-end without a new fix.
+  static const Duration _driveTickEvery = Duration(seconds: 15);
+
+  /// The ONE in-drive verdict for every consumer - the marker's badge, the
+  /// capsule's badge, the grouping tracker and the card (utils/drive_state.dart
+  /// inDriveVerdict). DECISIONS state 1 + ruling 6 - parked inside the home
+  /// geofence is not a drive, for the marker, the capsule and the card alike.
+  bool _inDriveFor(Member m) => inDriveVerdict(_drives.inDrive(m.id), m);
 
   /// Task 8: the ~1 min matching-speed-and-heading clock per pair
   /// (utils/member_grouping.dart), fed alongside [_drives] so a group forms
@@ -230,7 +241,7 @@ class _MapScreenState extends State<MapScreen>
     _driveTick = Timer.periodic(_driveTickEvery, (_) {
       if (!mounted) return;
       _drives.updateAll(_members);
-      _groups.observe(_members, inDriveFor: (Member m) => _drives.inDrive(m.id));
+      _groups.observe(_members, inDriveFor: _inDriveFor);
       setState(() {});
     });
     _connectivitySub =
@@ -253,9 +264,14 @@ class _MapScreenState extends State<MapScreen>
     if (!mounted) return;
     final DateTime now = DateTime.now();
     _drives.updateAll(members, now: now);
-    _groups.observe(members, inDriveFor: (Member m) => _drives.inDrive(m.id), now: now);
+    _groups.observe(members, inDriveFor: _inDriveFor, now: now);
     for (final Member m in members) {
-      if (!identical(m.place, _lastServerPlace[m.id])) {
+      // A VALUE test on the server's words, not identity: the backend sends
+      // `place` on EVERY stored fix (backend/internal/handlers/location.go
+      // loadMemberPlace -> Place: place in the broadcast) and member_mapper
+      // builds a fresh MemberPlace per frame, so identity changes every frame
+      // and the device geocoder (mergePlace's device branch) would never engage.
+      if (serverWordsChanged(_lastServerPlace[m.id], m.place)) {
         _lastServerPlace[m.id] = m.place;
         if (m.position != null) _serverPlaceAt[m.id] = m.position!;
       }
@@ -1206,8 +1222,8 @@ class _MapScreenState extends State<MapScreen>
                   expandedClusters: _expandedClusters,
                   selectedId: _followId,                    // J:101: the ringed face inside a capsule
                   labelFor: _labelFor,                      // every pill: You / contact name / first name (was the focused one only)
-                  inDriveFor: (Member m) => _drives.inDrive(m.id),
-                  canGroup: (Member a, Member b) => _groups.together(a, b, inDriveFor: (Member m) => _drives.inDrive(m.id)),
+                  inDriveFor: _inDriveFor,
+                  canGroup: (Member a, Member b) => _groups.together(a, b, inDriveFor: _inDriveFor),
                   viewerId: _userId,
                   contactFor: (Member m) => ContactLinkStore.instance.linkFor(m.id),
                   onMemberTap: _focusMember,
@@ -1366,7 +1382,7 @@ class _MapScreenState extends State<MapScreen>
                   placeFor: _placeFor,
                   contactFor: (Member m) => ContactLinkStore.instance.linkFor(m.id),
                   savedKindFor: _savedKindFor,
-                  inDriveFor: (Member m) => _drives.inDrive(m.id),
+                  inDriveFor: _inDriveFor,
                   onLinkContact: _linkContact,
                   onSavePlace: _savePlace,
                   onCheckIn: (_) => _openCheckIn(),
@@ -1692,7 +1708,9 @@ double fabLiftFor(double sheetHeight, {bool clear = false}) => sheetHeight > 0 &
 bool fabClearOfColumn(double screenWidth) =>
     PeopleSheet.columnLeftFor(screenWidth) + PeopleSheet.columnWidthFor(screenWidth) + 8 <= screenWidth - 12 - 40;
 
-/// The map area the sheet may cover (S:49 caps it at 62 % of this).
+/// The map area the sheet may cover (S:49 caps it at 62 % of this). Kept
+/// for map_focus_wiring_test; no longer drives the sheet (Round 4: the
+/// PeopleSheet sizes its own card column).
 double sheetMaxHeight({required double screenHeight, required double topInset, required double controlBarReserved}) =>
     screenHeight - topInset - controlBarReserved;
 

@@ -5,6 +5,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:openfamily/models/member.dart';
+import 'package:openfamily/models/member_place.dart';
 import 'package:openfamily/theme/bray_tokens.dart';
 import 'package:openfamily/utils/drive_state.dart';
 
@@ -84,6 +85,24 @@ void main() {
       final DriveTracker tr = DriveTracker(clock: () => t0);
       tr.update(car(30).copyWith(movement: MovementType.none));
       expect(tr.inDrive('h'), isTrue);
+    });
+  });
+  group('inDriveVerdict (DECISIONS state 1 + ruling 6: parked inside the home geofence is not a drive - marker, capsule and card alike)', () {
+    const MemberPlace atHome = MemberPlace(atHome: true, placeName: 'Home', street: 'Twin Lakes Drive');
+    test('the tracker says drive, the phone is at Home and standing still: NOT a drive (the 2-minute tail after pulling in is fake data)', () {
+      expect(inDriveVerdict(true, car(0).copyWith(place: atHome)), isFalse);
+      expect(inDriveVerdict(true, car(2).copyWith(place: atHome)), isFalse);     // under driveStillMph (3)
+      expect(inDriveVerdict(true, car(null).copyWith(place: atHome)), isFalse);  // no speed on the frame = still
+    });
+    test('still moving inside the geofence stays a drive; at Home without the tracker\'s verdict is never a drive', () {
+      expect(inDriveVerdict(true, car(25).copyWith(place: atHome)), isTrue);
+      expect(inDriveVerdict(true, car(3).copyWith(place: atHome)), isTrue);      // driveStillMph itself is moving (DriveState.next)
+      expect(inDriveVerdict(false, car(25).copyWith(place: atHome)), isFalse);
+    });
+    test('away from Home (or no place at all) the tracker\'s verdict passes through untouched', () {
+      expect(inDriveVerdict(true, car(0)), isTrue);                                                       // 0 mph at a light is real
+      expect(inDriveVerdict(true, car(0).copyWith(place: const MemberPlace(placeName: 'School'))), isTrue);   // a saved place that is not Home
+      expect(inDriveVerdict(false, car(40)), isFalse);
     });
   });
 }

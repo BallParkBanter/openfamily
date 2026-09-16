@@ -66,11 +66,11 @@ CardState cardStateFor(
   String? savedKind,
 }) {
   final bool stale = m.isStaleAt(now);
-  // DECISIONS state 1 + ruling 6: the server's geofence is a fact; "Driving"
-  // at 0 mph inside it is fake data (the drive tracker's 2-minute tail after
-  // pulling in); a member still moving inside the geofence stays Driving.
-  final bool parkedAtHome = place?.atHome == true && (m.speedMph ?? 0) < BrayTokens.driveStillMph;
-  final bool driving = !stale && !parkedAtHome && (inDrive ?? isDriving(m));          // no tracker: the card's old rule, H:92 >= 8 mph
+  // [inDrive] is the caller's verdict, already parked-at-home-aware
+  // (utils/drive_state.dart inDriveVerdict via map_screen._inDriveFor -
+  // DECISIONS state 1 + ruling 6 decided ONCE for the marker, the capsule
+  // and the card). The card does not re-judge it.
+  final bool driving = !stale && (inDrive ?? isDriving(m));                           // no tracker: the card's old rule, H:92 >= 8 mph
   final String? miles = place?.homeDistanceM == null ? null : milesText(place!.homeDistanceM!);
   final String? since = place?.since == null ? null : sinceText(place!.since!, now: now);
 

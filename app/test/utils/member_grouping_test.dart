@@ -99,6 +99,33 @@ void main() {
       g.observe([a, b], inDriveFor: driving);
       expect(g.together(a, b, inDriveFor: driving), isTrue);
     });
+    test('staggered drive starts: A drives on one frame, B on the next - the still-together memory survives the mixed frame, no 60 s re-proof', () {
+      // Two phones in one car: DriveTracker judges each phone's own fix
+      // cadence, so A's drive starts on one WS frame and B's on the next.
+      // The memory must survive the mixed frame, or the pair goes through the
+      // stranger proof and the capsule flickers.
+      DateTime now = t0;
+      final GroupTracker g = GroupTracker(clock: () => now);
+      g.observe([mk('a'), mk('b', pos: north(20))], inDriveFor: driving);                             // t0: both still, 20 m apart
+      now = t0.add(const Duration(seconds: 5));
+      g.observe([mk('a', mph: 30, heading: 90), mk('b', pos: north(20))], inDriveFor: driving);        // t0+5 s: A drives, B still
+      expect(g.together(mk('a', mph: 30, heading: 90), mk('b', pos: north(20)), inDriveFor: driving), isFalse);   // an unformed mixed pair still splits
+      now = t0.add(const Duration(seconds: 10));
+      final Member a = mk('a', mph: 30, heading: 90), b = mk('b', pos: north(20), mph: 30, heading: 90);
+      g.observe([a, b], inDriveFor: driving);                                                        // t0+10 s: B drives too
+      expect(g.together(a, b, inDriveFor: driving), isTrue);
+    });
+    test('the memory does not survive a mixed frame once the pair is apart (> 120 m): the stranger proof applies', () {
+      DateTime now = t0;
+      final GroupTracker g = GroupTracker(clock: () => now);
+      g.observe([mk('a'), mk('b', pos: north(20))], inDriveFor: driving);
+      now = t0.add(const Duration(seconds: 5));
+      g.observe([mk('a', mph: 30, heading: 90), mk('b', pos: north(300))], inDriveFor: driving);      // A drove off; B still, 300 m away
+      now = t0.add(const Duration(seconds: 10));
+      final Member a = mk('a', mph: 30, heading: 90), b = mk('b', pos: north(20), mph: 30, heading: 90);
+      g.observe([a, b], inDriveFor: driving);
+      expect(g.together(a, b, inDriveFor: driving), isFalse);
+    });
     test('a formed driving pair rides through a mixed moment (one phone\'s drive ends a beat early) while within 120 m; splits once far', () {
       DateTime now = t0;
       final GroupTracker g = GroupTracker(clock: () => now);

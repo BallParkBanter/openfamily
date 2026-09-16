@@ -22,11 +22,11 @@ import 'slot_badge.dart';
 /// ring's colour behind the ring with no gap, the dot 6 px under the
 /// pointer's tip, a battery badge bottom-left and ONE badge top-right.
 ///
-/// Every visual constant is a BrayTokens value or a bare number with its source:
-///   S = family-viewer2/static/style.css   J = family-viewer2/static/app.js
-/// (line numbers verified 2026-09-12 against the live viewer on BrayNextcloudServer);
-/// "measured" numbers were read off rig/goldens/focus_dad.png (1600x2560, DPR 2,
-/// so CSS px = device px / 2) along the marker's centre column x=799.
+/// Every visual constant is a BrayTokens value citing mock2 markers-13.html
+/// (the redesign's marker mockup - .face .shadow .tail .dot .nm .age .chg),
+/// or a bare number with its source. The older S = style.css / J = app.js
+/// citations and the focus_dad.png measurements that remain in this file
+/// describe the pre-redesign viewer and apply only where they are quoted.
 class MemberAvatarBubble extends StatelessWidget {
   const MemberAvatarBubble({
     super.key,

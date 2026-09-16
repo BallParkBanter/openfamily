@@ -504,6 +504,10 @@ class BrayTokens {
   static const double cardBattEmojiFont = 16 * cardScale;     // mock2 focus-29.html .bt span style="font-size:16px"
   static const double cardBattEmojiLift = 4 * cardScale;      // mock2 focus-29.html .bt span style="top:-4px"
   static const Color cardBattLow = Color(0xFFFF6B6B);         // mock2 states.html .bt.low color:#ff6b6b ("🪫 12%")
+  static const double cardTextLineHeight = 1.2;               // OPEN: chosen - browser normal line height (the .pl place line and the .fact chips set none)
+  static const Color cardSaveRing = Color(0x99000000);        // mock2 focus-29.html .save box-shadow 0 0 0 1px rgba(0,0,0,.6) (the 1px is the spread)
+  static const double cardBattLabelTop = 4 * cardScale;       // mock2 focus-29.html .bwrap padding-top:4px
+  static const double cardBattEmojiGap = 4 * cardScale;       // mock2 focus-29.html .bt gap:4px
   /// Photo crop: object-position x 62% for everyone (focus-29.html / states.html
   /// img.bg); y per person from states.html inline styles: Charlie 30%,
   /// Heidi 45%, Bo 40%, anyone else 30%. CSS p% -> Alignment 2p - 1.

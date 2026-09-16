@@ -169,6 +169,10 @@ void main() {
     expect(BrayTokens.cardBattEmojiFont, closeTo(20.8, 0.01));
     expect(BrayTokens.cardBattEmojiLift, closeTo(5.2, 0.01));
     expect(BrayTokens.cardBattLow, const Color(0xFFFF6B6B));
+    expect(BrayTokens.cardTextLineHeight, 1.2);                       // OPEN: chosen - browser normal line height
+    expect(BrayTokens.cardSaveRing, const Color(0x99000000));         // .save 0 0 0 1px rgba(0,0,0,.6)
+    expect(BrayTokens.cardBattLabelTop, closeTo(5.2, 0.01));          // .bwrap padding-top:4px
+    expect(BrayTokens.cardBattEmojiGap, closeTo(5.2, 0.01));          // .bt gap:4px
     expect(BrayTokens.cardPhotoX, 0.24);
   });
 }
