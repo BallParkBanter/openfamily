@@ -300,12 +300,22 @@ func (s *Server) CreatePlace(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to create place")
 		return
 	}
+	// 5b: everyone standing inside the new circle is at it NOW, not on their
+	// phone's next fix (Bo saved "Heidi's Work" from her card; the card kept
+	// saying "Near DIRECTV - LA5" for hours because her phone was quiet).
+	changed, err := reevaluateMemberPlaces(r.Context(), tx, familyID, time.Now())
+	if err != nil {
+		slog.Error("place create: member re-check failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "failed to re-check member places")
+		return
+	}
 
 	if err := tx.Commit(r.Context()); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to commit")
 		return
 	}
 	s.logAudit(r.Context(), claims.UserID, familyID, "place.create", "created place "+p.ID+" ("+p.Name+")", clientIP(r))
+	s.broadcastPlaces(changed)
 	writeJSON(w, http.StatusCreated, p)
 }
 
@@ -490,6 +500,21 @@ func (s *Server) UpdatePlace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 5b: the members at this place get new words (a rename) or may have
+	// left it (moved / shrunk), and others may now be inside it - re-check
+	// the whole family now, not on each phone's next fix.
+	was, err := membersAtPlace(r.Context(), tx, id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load members at place")
+		return
+	}
+	changed, err := reevaluateMemberPlaces(r.Context(), tx, familyID, time.Now())
+	if err != nil {
+		slog.Error("place update: member re-check failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "failed to re-check member places")
+		return
+	}
+
 	if geometryChanged {
 		if _, err := tx.Exec(r.Context(), `
 			DELETE FROM geofence_states WHERE geofence_id IN (
@@ -504,6 +529,7 @@ func (s *Server) UpdatePlace(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to commit")
 		return
 	}
+	s.broadcastPlaces(unionIDs(was, changed))
 	writeJSON(w, http.StatusOK, p)
 }
 
@@ -550,6 +576,15 @@ func (s *Server) DeletePlace(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback(r.Context())
 
+	// 5b: read who is at the place BEFORE the delete - the FK clears their
+	// place_id, so the re-check below sees no change for them, yet their
+	// cards need the words back to the street / POI.
+	was, err := membersAtPlace(r.Context(), tx, id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load members at place")
+		return
+	}
+
 	// Delete the place's geofences first so no zombie rows remain (the schema
 	// would otherwise SET NULL on place_id).
 	if _, err := tx.Exec(r.Context(), `DELETE FROM geofences WHERE place_id = $1 AND family_id = $2`, id, familyID); err != nil {
@@ -566,11 +601,19 @@ func (s *Server) DeletePlace(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "place not found")
 		return
 	}
+	// 5b: a bigger place may now hold the members the deleted one covered.
+	changed, err := reevaluateMemberPlaces(r.Context(), tx, familyID, time.Now())
+	if err != nil {
+		slog.Error("place delete: member re-check failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "failed to re-check member places")
+		return
+	}
 
 	if err := tx.Commit(r.Context()); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to commit")
 		return
 	}
 	s.logAudit(r.Context(), claims.UserID, familyID, "place.delete", "deleted place "+id, clientIP(r))
+	s.broadcastPlaces(unionIDs(was, changed))
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
