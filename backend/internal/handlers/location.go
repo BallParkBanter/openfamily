@@ -202,6 +202,10 @@ func (s *Server) IngestLocation(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "failed to update member place")
 			return
 		}
+		if err := updateStationarySince(r.Context(), tx, ownerID, mpLat, mpLon, req.Lon, req.Lat, ts); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update member stay")
+			return
+		}
 		if err := tx.Commit(r.Context()); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to commit")
 			return
@@ -250,6 +254,11 @@ func (s *Server) IngestLocation(w http.ResponseWriter, r *http.Request) {
 
 	if err := updateMemberPlace(r.Context(), tx, ownerID, req.Lon, req.Lat, ts); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to update member place")
+		return
+	}
+	// bray 5b: the "here for" clock - mpLat/mpLon are the row BEFORE the upsert above.
+	if err := updateStationarySince(r.Context(), tx, ownerID, mpLat, mpLon, req.Lon, req.Lat, ts); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update member stay")
 		return
 	}
 

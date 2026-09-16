@@ -20,7 +20,7 @@ const geocodeStaleMeters = 1000.0
 // `u` (users) and `mp` (member_positions) and includes memberPlaceJoins.
 // Eleven columns, scanned by memberPlaceRow.scanTargets() in this order.
 const memberPlaceColumns = `,
-		       mp.place_since, pl.name, (pl.type = 'home'),
+		       CASE WHEN mp.place_id IS NOT NULL THEN mp.place_since ELSE mp.stationary_since END, pl.name, (pl.type = 'home'),
 		       ST_Distance(home.geom::geography, ST_SetSRID(ST_MakePoint(mp.lon, mp.lat), 4326)::geography),
 		       g.street, g.city, g.county, g.lat, g.lon, g.poi_name, g.poi_kind`
 
@@ -102,6 +102,36 @@ func updateMemberPlace(ctx context.Context, tx pgx.Tx, userID string, lon, lat f
 				ELSE mp.place_since END,
 			place_id = (SELECT id FROM here)
 		WHERE mp.user_id = $1 AND (mp.ts IS NULL OR mp.ts <= $4)`, userID, lon, lat, ts)
+	return err
+}
+
+// stationaryMoveMeters: a fix this far from the previous member_positions
+// row means the member moved on - the "here for" clock restarts there.
+// OPEN: chosen (coordinator 2026-09-16 17:13) - clear of the 25 m dedup
+// radius and of a parking-lot walk, under a block.
+const stationaryMoveMeters = 150.0
+
+// stationaryReset reports whether the new fix restarts the stationary clock:
+// no previous row, or more than stationaryMoveMeters from it.
+func stationaryReset(prevLat, prevLon *float64, lat, lon float64) bool {
+	if prevLat == nil || prevLon == nil {
+		return true
+	}
+	return haversineMeters(*prevLat, *prevLon, lat, lon) > stationaryMoveMeters
+}
+
+// updateStationarySince keeps member_positions.stationary_since - the moment
+// the member arrived at the spot they are at now (bray 5b, East Cobb: the
+// capsule read "here for 2 hr, 24 min" fifteen minutes after they stopped,
+// because place_since only moves when place_id changes). Runs on BOTH
+// ingest paths, in the ingest transaction, with the previous row's lat/lon
+// read before the upsert. `since` in the members JSON / WS frames is
+// place_since at a saved place, else this.
+func updateStationarySince(ctx context.Context, tx pgx.Tx, userID string, prevLat, prevLon *float64, lon, lat float64, ts time.Time) error {
+	_, err := tx.Exec(ctx, `
+		UPDATE member_positions SET
+			stationary_since = CASE WHEN $2 THEN $3 ELSE COALESCE(stationary_since, $3) END
+		WHERE user_id = $1`, userID, stationaryReset(prevLat, prevLon, lat, lon), ts)
 	return err
 }
 
