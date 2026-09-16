@@ -115,8 +115,9 @@ class GroupTracker {
   /// Mixed (one driving, one still - one phone's DriveTracker fix landed a
   /// beat before the other's): an UNFORMED pair never groups across the
   /// split, same as before. A FORMED pair's clock survives while the two
-  /// stay within 120 m (OPEN: chosen, see the file header) - it neither
-  /// starts nor is proven here, only kept alive. A STILL-TOGETHER memory
+  /// stay within 120 m plus the driving phone's post-lag allowance (OPEN:
+  /// chosen, see the file header; controller ruling on the run-1028 fix) -
+  /// it neither starts nor is proven here, only kept alive. A STILL-TOGETHER memory
   /// likewise survives the mixed frame while within 120 m, so staggered
   /// drive starts (A this frame, B the next) still seed pre-formed.
   void observe(List<Member> members, {required bool Function(Member) inDriveFor, DateTime? now}) {
@@ -137,7 +138,11 @@ class GroupTracker {
         }
 
         if (da != db) {
-          if (near && _formed(key, at)) seen.add(key);
+          // A FORMED pair is kept through the drive's first/last beat within
+          // the driving phone's post-lag allowance (controller ruling on the
+          // run-1028 fix): that post is a point ahead too, so the plain 120 m
+          // dropped the pair the moment one phone's drive verdict landed.
+          if (_within(a, b, _allowanceMetres([da ? a.speedMph : b.speedMph])) && _formed(key, at)) seen.add(key);
           // A's drive starts on one WS frame and B's on the next (DriveTracker
           // judges each phone's own fix cadence): the still-together memory
           // must survive this mixed frame while they are still within 120 m,
