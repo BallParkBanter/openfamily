@@ -34,9 +34,11 @@ import '../utils/drive_state.dart';
 import '../utils/focus_rules.dart';
 import '../utils/member_clustering.dart';
 import '../utils/member_grouping.dart';
+import '../utils/near_fit.dart';
 import '../widgets/capsule_bubble.dart';
 import '../widgets/circle_switcher.dart';
 import '../widgets/contact_link_sheet.dart';
+import '../widgets/edge_chip.dart';
 import '../widgets/family_header.dart';
 import '../widgets/focus_trail_layer.dart';
 import '../widgets/following_pill.dart';
@@ -521,7 +523,9 @@ class _MapScreenState extends State<MapScreen>
   /// tween to it with the sheet's height as bottom padding.
   void _animatedFit() {
     if (!_mapReady) return;
-    final List<Member> members = _liveMembers().where((Member m) => m.position != null).toList();
+    // 5b step 2: frame the people near the signed-in seat (utils/near_fit.dart);
+    // the far ones ride the screen edge as chips (EdgeChipLayer).
+    final List<Member> members = nearMembers(_liveMembers(), viewerId: _userId);
     if (members.isEmpty) return;
     final MapCamera cam = _mapController.camera;
     if (members.length == 1) {
@@ -893,8 +897,7 @@ class _MapScreenState extends State<MapScreen>
   /// Frames all members of the current family.
   void _fitToMembers() {
     if (!mounted) return;   // _currentSheetHeight reads MediaQuery.of(context)
-    final List<Member> members =
-        _liveMembers().where((Member m) => m.position != null).toList();
+    final List<Member> members = nearMembers(_liveMembers(), viewerId: _userId);   // 5b step 2: the near cluster
     if (members.isEmpty) return;
     // Same target as _animatedFit, so the overview auto-fit that follows the
     // first members snapshot finds nothing to correct (no launch bounce).
@@ -1232,6 +1235,15 @@ class _MapScreenState extends State<MapScreen>
                   onMemberTap: _focusMember,
                   onMemberHold: _openMemberDetails,         // design list: hold = full details
                   onClusterTap: _expandCluster,
+                ),
+                // 5b step 2: far members (beyond kNearFitMetres of the
+                // viewer) as edge chips; a tap does what tapping their face does.
+                EdgeChipLayer(
+                  members: _liveMembers(),
+                  viewerId: _userId,
+                  labelFor: _labelFor,
+                  onTap: _focusMember,
+                  chromeBottom: BrayTokens.fitChromeBottom + safeBottom,
                 ),
               ],
             ),
@@ -1654,9 +1666,20 @@ class _MemberMarkerLayer extends StatelessWidget {
       expandedClusterIds: expandedClusters,
       canGroup: canGroup,
       mustGroup: mustGroup,
+      ringLift: (Member m) => m.place?.atHome == true ? MemberAvatarBubble.atHomeLift : 0,   // 5b step 3: the ring sits 9 up on the house chip
     );
 
-    return MarkerLayer(
+    // 5b step 3: a fanned solo marker keeps a thin leader line in the
+    // person's colour from its dot to its true spot. OPEN: chosen - 1.5 px.
+    final List<Polyline> leaders = <Polyline>[
+      for (final BubblePlacement p in placements)
+        if (p.anchor != null)
+          Polyline(points: <LatLng>[p.position, p.anchor!], color: MemberAvatarBubble.ringColourFor(p.member!, now), strokeWidth: 1.5),
+    ];
+
+    return Stack(children: [
+      if (leaders.isNotEmpty) PolylineLayer(polylines: leaders),
+      MarkerLayer(
       markers: [
         for (final BubblePlacement p in placements)
           if (p.isCluster)
@@ -1696,7 +1719,8 @@ class _MemberMarkerLayer extends StatelessWidget {
               ),
             ),
       ],
-    );
+      ),
+    ]);
   }
 
   /// 5b (Bo: "nothing cut off, ever"): a marker within its badges' width of
