@@ -149,7 +149,9 @@ List<MemberCluster> clusterMembers(
   double groupMetres = BrayTokens.groupMetres,
   bool Function(Member a, Member b)? canGroup,
   bool Function(Member a, Member b)? mustGroup,
+  DateTime? now,
 }) {
+  final DateTime at = now ?? DateTime.now();
   // Members without a reported location have no bubble and are skipped.
   final List<Member> positioned =
       members.where((m) => m.position != null).toList();
@@ -186,7 +188,7 @@ List<MemberCluster> clusterMembers(
     clusters.add(
       MemberCluster(
         id: _clusterId(group),
-        centroid: forced ? _leadPosition(group) : _centroid(group),
+        centroid: forced ? forcedAnchor(group, at) : _centroid(group),
         members: group,
       ),
     );
@@ -220,6 +222,7 @@ List<BubblePlacement> placeBubbles(
   bool Function(Member a, Member b)? canGroup,
   bool Function(Member a, Member b)? mustGroup,
   double Function(Member m)? ringLift,
+  DateTime? now,
 }) {
   final List<MemberCluster> clusters = clusterMembers(
     members,
@@ -227,6 +230,7 @@ List<BubblePlacement> placeBubbles(
     groupMetres: groupMetres,
     canGroup: canGroup,
     mustGroup: mustGroup,
+    now: now,
   );
   final List<BubblePlacement> placements = <BubblePlacement>[];
   final List<Member> solos = <Member>[];
@@ -329,10 +333,20 @@ LatLng _centroid(List<Member> members) {
   return LatLng(lat / members.length, lng / members.length);
 }
 
-/// Bray piece 5 (rig run 1028): where a must-group cluster sits - the position
-/// of the member with the latest [Member.lastSeen] (the lead phone; "the
-/// group is where its freshest phone is"). A member with no lastSeen counts
-/// as oldest; ties keep the earlier-listed member.
+/// Where a must-group (riding-together) cluster sits. 5b (Bo, live
+/// 2026-09-16 15:35 - "not seeing smooth movements for our capsule"): when
+/// every member is fresh, the centroid of their positions - the caller
+/// passes GLIDED members (map_screen._liveMembers), so the point moves
+/// smoothly, and a change of which phone posted last moves nothing. The
+/// lead phone (below) is only the fallback when a member is stale: then the
+/// fresh phone is where the car is.
+LatLng forcedAnchor(List<Member> members, DateTime now) =>
+    members.every((Member m) => !m.isStaleAt(now)) ? _centroid(members) : _leadPosition(members);
+
+/// Bray piece 5 (rig run 1028): the position of the member with the latest
+/// [Member.lastSeen] (the lead phone; "the group is where its freshest
+/// phone is"). A member with no lastSeen counts as oldest; ties keep the
+/// earlier-listed member. Since 5b only the fallback in [forcedAnchor].
 LatLng _leadPosition(List<Member> members) {
   Member lead = members.first;
   for (final Member m in members.skip(1)) {
