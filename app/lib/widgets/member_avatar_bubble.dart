@@ -37,9 +37,18 @@ class MemberAvatarBubble extends StatelessWidget {
     this.radius = 22,
     this.now,
     this.inDrive,
+    this.mirrored = false,
   });
 
   final Member member;
+
+  /// 5b (2026-09-16, Bo: "nothing cut off, ever"): the badges mirrored about
+  /// the ring - name underlay top-RIGHT, slot badge top-LEFT, battery
+  /// bottom-RIGHT - set by the marker layer when the normal layout would be
+  /// cut more at the screen's edge (marker_extents.dart mirrorMarker). The
+  /// ring, pointer, dot and beam are symmetric and do not move; the ring is
+  /// centred in the box, so a mirror is the same number from the other edge.
+  final bool mirrored;
   final VoidCallback? onTap;
 
   /// The DriveTracker's verdict for this member (Task 5); null = no tracker.
@@ -170,8 +179,10 @@ class MemberAvatarBubble extends StatelessWidget {
                     child: HeadingBeam(headingDeg: member.headingDeg!, accent: BrayTokens.accentFor(member)),
                   ),
                 const Positioned(left: ringLeft, top: topZone, child: RingShadowDisc()),
-                Positioned(
-                  right: markerWidth - (ringLeft + BrayTokens.soloFace - BrayTokens.nameBadgeRight),   // .nm right:38px
+                _sided(
+                  mirrored: mirrored,
+                  fromLeft: false,
+                  near: markerWidth - (ringLeft + BrayTokens.soloFace - BrayTokens.nameBadgeRight),     // .nm right:38px
                   bottom: avatarBox - (topZone + BrayTokens.soloFace - BrayTokens.nameBadgeBottom),      // .nm bottom:44px
                   child: NameBadge(text: pillText, accent: colour),
                 ),
@@ -203,14 +214,18 @@ class MemberAvatarBubble extends StatelessWidget {
                   ),
                 ),
                 if (batt != null)
-                  Positioned(
-                    left: ringLeft + BrayTokens.battBadgeLeft,                                              // .chg left:-5px
+                  _sided(
+                    mirrored: mirrored,
+                    fromLeft: true,
+                    near: ringLeft + BrayTokens.battBadgeLeft,                                              // .chg left:-5px
                     top: topZone + BrayTokens.soloFace - BrayTokens.battBadgeBottom - BrayTokens.battBadgeH,  // .chg bottom:-4px
                     child: BatteryBadge(spec: batt),
                   ),
                 if (badge != null)
-                  Positioned(
-                    left: ringLeft + BrayTokens.badgeLeft,                                              // .age left:44px
+                  _sided(
+                    mirrored: mirrored,
+                    fromLeft: true,
+                    near: ringLeft + BrayTokens.badgeLeft,                                              // .age left:44px
                     top: topZone + BrayTokens.badgeTop,                                                  // .age top:-10px
                     child: SlotBadge(spec: badge),
                   ),
@@ -236,6 +251,15 @@ class MemberAvatarBubble extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  /// A badge pinned [near] px from its home edge - the box's left when
+  /// [fromLeft] (the slot and battery badges, `.age left` / `.chg left`),
+  /// else its right (the name badge, `.nm right`) - or from the opposite
+  /// edge when [mirrored].
+  static Widget _sided({required bool mirrored, required bool fromLeft, required double near, double? top, double? bottom, required Widget child}) {
+    final bool left = fromLeft != mirrored;
+    return Positioned(left: left ? near : null, right: left ? null : near, top: top, bottom: bottom, child: child);
   }
 
   /// Colorblind-safe, screen-reader-friendly description of this bubble.

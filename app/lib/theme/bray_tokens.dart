@@ -458,6 +458,16 @@ class BrayTokens {
   static const double cardBottomGap = 120.0 - 88.0;           // mock2 focus-29.html .float bottom:120px minus MapBottomBar.height 88 (the safe inset is added by the widget)
   static const Color cardShadow = Color(0x73000000);          // mock2 focus-29.html .k box-shadow:0 10px 30px rgba(0,0,0,.45)
   static const double cardShadowBlur = 30 * cardScale;
+
+  // -- 5b fit padding (2026-09-16, Bo: "nothing cut off, ever")
+  static const double fitChromeTop = 80;                       // OPEN: kept - upstream _fitToMembers padding: the header row (family chip, summary chip) the fit stays under
+  static const double fitChromeBottom = 80;                    // OPEN: kept - upstream _fitToMembers padding: the bottom bar (SOS, people, places)
+  static const double fitAir = 8;                              // OPEN: chosen - air between a badge's outer edge and the screen edge after a fit
+  /// How far the beam is visible from the ring's centre: the mask reaches
+  /// nothing at beamMaskStops.last (56 %) of the gradient ray, which CSS sizes
+  /// to the disc's corner: radius x sqrt(2) (HeadingBeamPainter.ray). 115 x
+  /// 1.41421 x 0.56 = 91.08.
+  static const double beamReach = beamDisc / 2 * 1.4142135623730951 * 0.56;   // mock2 markers-15.html .beam mask radial-gradient last stop 56%
   static const double cardShadowDy = 10 * cardScale;
   static const Color cardShade = Color(0x8C080B10);           // mock2 focus-29.html .k .shade background:rgba(8,11,16,.55) - ONE even tint (Round 4)
   static const EdgeInsets cardPad = EdgeInsets.fromLTRB(16 * cardScale, 16 * cardScale, 16 * cardScale, 14 * cardScale);   // mock2 focus-29.html .in padding:16px 16px 14px
