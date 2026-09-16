@@ -111,6 +111,7 @@ void main() {
     expect(BrayTokens.groupSpeedTolMph, 5);
     expect(BrayTokens.groupHeadingTolDeg, 20);
     expect(BrayTokens.groupMetres, 120);
+    expect(BrayTokens.groupPostLag, const Duration(seconds: 30));   // rig run 1028: two phones in one car post at different moments
     expect(BrayTokens.arrivedWithin, const Duration(hours: 1));
   });
   test('card (focus-29.html, zoom:1.3): CSS px x cardScale', () {
