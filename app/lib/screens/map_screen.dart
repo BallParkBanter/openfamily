@@ -859,12 +859,6 @@ class _MapScreenState extends State<MapScreen>
   /// zoom-16 cap where it always did) and fans them out while they still
   /// overlap there.
   void _expandCluster(String clusterId, List<Member> members) {
-    // A capsule tap is a gesture: the overview auto-fit waits its 12 s
-    // (autoFitDue) as after a pan - measured live 2026-09-16 (build
-    // 29826387): the fit landed and the next members frame pulled the map
-    // straight back to everyone.
-    _lastGesture = DateTime.now();
-    _touch();
     setState(() => _expandedClusters.add(clusterId));
     final MapCamera fitted = _fitFor(members, maxZoom: _expandZoom);
     _animateTo(fitted.center, fitted.zoom);
