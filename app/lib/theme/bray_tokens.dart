@@ -104,6 +104,8 @@ class BrayTokens {
   // J:42 GROUP_M = 120 - "people within this many metres draw as one capsule";
   // J:140-149 clusters() joins a person to a group when metres() < GROUP_M.
   static const double groupMetres = 120;
+  static const double accuracyDefaultMetres = 25;   // OPEN: chosen (Bo via coordinator 2026-09-16 15:17) - a fix with no accuracy_meters counts as 25 m
+  static const double accuracyCapMetres = 100;      // OPEN: chosen - one fix never widens the together allowance by more than this
 
   // ------------------------------------------------------------ mock2 (live)
   // Bo's approved card mockup, /tmp/mock2 (family-app piece 5): everyone-2.html

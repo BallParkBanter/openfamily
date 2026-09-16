@@ -1666,9 +1666,20 @@ class _MemberMarkerLayer extends StatelessWidget {
       expandedClusterIds: expandedClusters,
       canGroup: canGroup,
       mustGroup: mustGroup,
+      ringLift: (Member m) => m.place?.atHome == true ? MemberAvatarBubble.atHomeLift : 0,   // 5b step 3: the ring sits 9 up on the house chip
     );
 
-    return MarkerLayer(
+    // 5b step 3: a fanned solo marker keeps a thin leader line in the
+    // person's colour from its dot to its true spot. OPEN: chosen - 1.5 px.
+    final List<Polyline> leaders = <Polyline>[
+      for (final BubblePlacement p in placements)
+        if (p.anchor != null)
+          Polyline(points: <LatLng>[p.position, p.anchor!], color: MemberAvatarBubble.ringColourFor(p.member!, now), strokeWidth: 1.5),
+    ];
+
+    return Stack(children: [
+      if (leaders.isNotEmpty) PolylineLayer(polylines: leaders),
+      MarkerLayer(
       markers: [
         for (final BubblePlacement p in placements)
           if (p.isCluster)
@@ -1708,7 +1719,8 @@ class _MemberMarkerLayer extends StatelessWidget {
               ),
             ),
       ],
-    );
+      ),
+    ]);
   }
 
   /// 5b (Bo: "nothing cut off, ever"): a marker within its badges' width of

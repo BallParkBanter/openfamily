@@ -208,8 +208,9 @@ void main() {
       expect(g.together(a, b, inDriveFor: driving), isTrue);
       expect(g.ridingTogether(a, b, inDriveFor: driving), isTrue);
     });
-    test('the allowance scales with the FASTER speed: 230 m apart at 8 mph (allowance ~227 m) is too far, at 9 mph (~241 m) is not', () {
-      // 120 + 30 s x 8 mph x 0.44704 = 227.3 m; at 9 mph = 240.7 m. Both are
+    test('the allowance scales with the FASTER speed: 280 m apart at 8 mph (allowance ~277 m) is too far, at 9 mph (~291 m) is not', () {
+      // 5b: the base is 120 + 25 + 25 (no accuracy reported = 25 m each) = 170;
+      // 170 + 30 s x 8 mph x 0.44704 = 277.3 m; at 9 mph = 290.7 m. Both are
       // inside a drive (DriveTracker keeps a drive alive under driveStartMph),
       // so the drive verdict is forced rather than read off the speed.
       bool inDrive(Member m) => true;
@@ -217,16 +218,16 @@ void main() {
       final GroupTracker slow = GroupTracker(clock: () => now);
       for (int s = 0; s <= 60; s += 30) {
         now = t0.add(Duration(seconds: s));
-        slow.observe([mk('a', mph: 9, heading: 90), mk('b', pos: north(230), mph: 8, heading: 90)], inDriveFor: inDrive);
+        slow.observe([mk('a', mph: 9, heading: 90), mk('b', pos: north(280), mph: 8, heading: 90)], inDriveFor: inDrive);
       }
-      expect(slow.together(mk('a', mph: 9, heading: 90), mk('b', pos: north(230), mph: 8, heading: 90), inDriveFor: inDrive), isTrue);   // max(9, 8) = 9 mph
+      expect(slow.together(mk('a', mph: 9, heading: 90), mk('b', pos: north(280), mph: 8, heading: 90), inDriveFor: inDrive), isTrue);   // max(9, 8) = 9 mph
       now = t0;
       final GroupTracker slower = GroupTracker(clock: () => now);
       for (int s = 0; s <= 60; s += 30) {
         now = t0.add(Duration(seconds: s));
-        slower.observe([mk('a', mph: 8, heading: 90), mk('b', pos: north(230), mph: 8, heading: 90)], inDriveFor: inDrive);
+        slower.observe([mk('a', mph: 8, heading: 90), mk('b', pos: north(280), mph: 8, heading: 90)], inDriveFor: inDrive);
       }
-      expect(slower.together(mk('a', mph: 8, heading: 90), mk('b', pos: north(230), mph: 8, heading: 90), inDriveFor: inDrive), isFalse);
+      expect(slower.together(mk('a', mph: 8, heading: 90), mk('b', pos: north(280), mph: 8, heading: 90), inDriveFor: inDrive), isFalse);
     });
     test('the allowance also holds a formed pair through its mixed beat: A reads 0 mph (drive over) while B still drives at 45 mph - 400 m apart together, 1500 m apart not', () {
       // Controller ruling on the run-1028 fix: the drive's first/last beat is
@@ -291,6 +292,31 @@ void main() {
     });
     test('nothing true to say: no badge', () {
       expect(groupBadgeFor([mk('a'), mk('b')], now: t0, inDriveFor: driving), isNull);
+    });
+  });
+
+  // 5b (Bo live 2026-09-16 15:17): a parked pair 145 m apart with 30 + 40 m
+  // fixes is together; heading never enters the still test.
+  group('accuracy-aware still pair', () {
+    test('both still, 145 m apart, accuracies 30 + 40, no headings: together on the first frame, and remembered as still-together', () {
+      final GroupTracker g = GroupTracker(clock: () => t0);
+      final Member bo = mk('bo', pos: home).copyWith(accuracyMeters: 30);
+      final Member charlie = mk('charlie', pos: north(145), heading: 344).copyWith(accuracyMeters: 40);
+      g.observe([bo, charlie], inDriveFor: (_) => false);
+      expect(g.together(bo, charlie, inDriveFor: (_) => false), isTrue);
+      // the still-together memory seeds a pre-formed clock when they both start driving
+      final Member bo2 = bo.copyWith(speedMph: 20, headingDeg: 90), charlie2 = charlie.copyWith(speedMph: 25, headingDeg: 300);
+      g.observe([bo2, charlie2], inDriveFor: (_) => true);
+      expect(g.ridingTogether(bo2, charlie2, inDriveFor: (_) => true), isTrue);
+    });
+    test('sharp fixes (8 + 16) at 145 m: not together', () {
+      final GroupTracker g = GroupTracker(clock: () => t0);
+      final Member bo = mk('bo', pos: home).copyWith(accuracyMeters: 8);
+      final Member charlie = mk('charlie', pos: north(145)).copyWith(accuracyMeters: 16);
+      g.observe([bo, charlie], inDriveFor: (_) => false);
+      final Member bo2 = bo.copyWith(speedMph: 20, headingDeg: 90), charlie2 = charlie.copyWith(speedMph: 25, headingDeg: 300);
+      g.observe([bo2, charlie2], inDriveFor: (_) => true);
+      expect(g.ridingTogether(bo2, charlie2, inDriveFor: (_) => true), isFalse);   // no still-together seed: the stranger proof applies
     });
   });
 }

@@ -42,7 +42,7 @@ import '../models/member.dart';
 import '../theme/bray_tokens.dart';
 import '../widgets/capsule_callout.dart' show arrivedAgo, calloutSubject, hereFor, kCalloutTogether;
 import '../widgets/slot_badge.dart';
-import 'member_clustering.dart' show groundMetres;
+import 'member_clustering.dart' show groundMetres, groupAllowanceMetres;
 
 class GroupTracker {
   GroupTracker({DateTime Function()? clock}) : _clock = clock ?? DateTime.now;
@@ -80,9 +80,9 @@ class GroupTracker {
   /// speeds that count (both phones for a driving pair, the driving phone
   /// for a mixed pair; null reads 0); a still pair passes none and keeps the
   /// plain 120 m.
-  static double _allowanceMetres(Iterable<int?> speedsMph) {
+  static double _allowanceMetres(Member a, Member b, Iterable<int?> speedsMph) {
     final int mph = speedsMph.fold<int>(0, (int m, int? s) => math.max(m, s ?? 0));
-    return BrayTokens.groupMetres + BrayTokens.groupPostLag.inSeconds * mph * _metresPerSecondPerMph;
+    return groupAllowanceMetres(a, b) + BrayTokens.groupPostLag.inSeconds * mph * _metresPerSecondPerMph;   // 5b: the 120 m base is accuracy-aware
   }
 
   static bool _within(Member a, Member b, double metres) => groundMetres(a.position!, b.position!) <= metres;
@@ -130,7 +130,7 @@ class GroupTracker {
         final String key = _key(a, b);
         if (a.position == null || b.position == null || a.isStaleAt(at) || b.isStaleAt(at)) continue;
         final bool da = inDriveFor(a), db = inDriveFor(b);
-        final bool near = groundMetres(a.position!, b.position!) <= BrayTokens.groupMetres;
+        final bool near = groundMetres(a.position!, b.position!) <= groupAllowanceMetres(a, b);   // 5b: 120 m + both fixes' accuracy (a parked pair needs no heading match: this is the whole still test)
 
         if (!da && !db) {
           if (near) stillTogetherNow.add(key);
@@ -142,7 +142,7 @@ class GroupTracker {
           // the driving phone's post-lag allowance (controller ruling on the
           // run-1028 fix): that post is a point ahead too, so the plain 120 m
           // dropped the pair the moment one phone's drive verdict landed.
-          if (_within(a, b, _allowanceMetres([da ? a.speedMph : b.speedMph])) && _formed(key, at)) seen.add(key);
+          if (_within(a, b, _allowanceMetres(a, b, [da ? a.speedMph : b.speedMph])) && _formed(key, at)) seen.add(key);
           // A's drive starts on one WS frame and B's on the next (DriveTracker
           // judges each phone's own fix cadence): the still-together memory
           // must survive this mixed frame while they are still within 120 m,
@@ -155,7 +155,7 @@ class GroupTracker {
 
         // Both driving: the post-lag allowance, not the plain 120 m (rig
         // run 1028 - one phone's post is a point ahead on every frame).
-        final bool nearDriving = _within(a, b, _allowanceMetres([a.speedMph, b.speedMph]));
+        final bool nearDriving = _within(a, b, _allowanceMetres(a, b, [a.speedMph, b.speedMph]));
         if (nearDriving && _stillTogether.contains(key)) {
           _matchedSince.putIfAbsent(key, () => at.subtract(BrayTokens.groupMatchFor));
         }
@@ -186,7 +186,7 @@ class GroupTracker {
       return _formed(_key(a, b), at) &&
           a.position != null &&
           b.position != null &&
-          _within(a, b, _allowanceMetres([da ? a.speedMph : b.speedMph]));
+          _within(a, b, _allowanceMetres(a, b, [da ? a.speedMph : b.speedMph]));
     }
     if (!da) return true;                       // both still: the distance rules decide (120 m / overlapping bubbles)
     return _formed(_key(a, b), at);

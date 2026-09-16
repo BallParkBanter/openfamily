@@ -16,11 +16,16 @@ typedef LatLngToScreenOffset = Offset Function(LatLng latLng);
 /// their bubbles stay visually separated at any zoom.
 typedef ScreenOffsetToLatLng = LatLng Function(Offset offset);
 
-/// On-screen distance (logical pixels) within which two member bubbles are
-/// considered to visually overlap and therefore cluster. Sized to the
-/// diameter of a member bubble (~48 px) so bubbles that would overlap merge
-/// into a single count bubble.
-const double kClusterRadiusPx = 48.0;
+/// On-screen distance (logical pixels) between two ring centres under which
+/// the rings intersect: two radii (BrayTokens.soloFace = 56). 5b step 3 (Bo,
+/// 2026-09-16: people are NEVER merged unless physically together): solo
+/// markers whose rings overlap at this zoom are not clustered - they fan
+/// apart (placeBubbles), each keeping its own ring, face and badges, with a
+/// leader line to its true spot. (Upstream merged bubbles 48 px apart.)
+const double kRingOverlapPx = BrayTokens.soloFace;
+
+/// Air between two fanned rings (5b step 3). OPEN: chosen.
+const double kFanGapPx = 8;
 
 /// On-screen radius (logical pixels) of the fan-out ring used to separate
 /// clustered members so their bubbles never stack or overlap when expanded.
@@ -38,6 +43,18 @@ double groundMetres(LatLng a, LatLng b) {
       math.cos(t(a.latitude)) * math.cos(t(b.latitude)) * math.pow(math.sin(dlo / 2), 2);
   return r * 2 * math.asin(math.sqrt(x));
 }
+
+/// One fix's share of the together allowance: its accuracy_meters, or
+/// BrayTokens.accuracyDefaultMetres when the phone sent none, never more
+/// than BrayTokens.accuracyCapMetres.
+double accuracyAllowance(Member m) => (m.accuracyMeters ?? BrayTokens.accuracyDefaultMetres).clamp(0.0, BrayTokens.accuracyCapMetres);
+
+/// How far apart two last fixes may be and still count as "together" (5b,
+/// Bo live 2026-09-16 15:17: he and Charlie sat in one parked car at the
+/// school with their rows 145 m apart - the flat 120 m said no): the
+/// [base] (BrayTokens.groupMetres) plus each fix's accuracy - the two
+/// accuracy circles reaching the 120 m allowance.
+double groupAllowanceMetres(Member a, Member b, {double base = BrayTokens.groupMetres}) => base + accuracyAllowance(a) + accuracyAllowance(b);
 
 /// A group of members whose bubbles visually overlap at the current zoom, or
 /// who are within [BrayTokens.groupMetres] of each other on the ground.
@@ -70,6 +87,7 @@ class BubblePlacement {
     this.clusterCount = 1,
     this.clusterId,
     this.clusterMembers = const [],
+    this.anchor,
   });
 
   /// Where to pin the bubble.
@@ -91,43 +109,43 @@ class BubblePlacement {
   /// bubbles.
   final List<Member> clusterMembers;
 
+  /// 5b step 3: the member's TRUE spot when this solo bubble was fanned
+  /// away from an overlapping neighbour ([position] is the fanned point);
+  /// null when drawn where they are. The layer draws a leader line to it.
+  final LatLng? anchor;
+
   bool get isCluster => member == null;
 }
 
-/// Groups [members] into clusters by *on-screen* proximity OR ground distance.
+/// Groups [members] into clusters by GROUND distance only.
 ///
-/// Each member's geographic position is projected to a screen offset via
-/// [toScreenOffset] (which reflects the map's current center and zoom), and
-/// members are clustered when their screen offsets are within
-/// [clusterRadiusPx] of each other. This means the same set of members will
-/// cluster at a low zoom and separate as the user zooms in — matching the
-/// "cluster and separate as people move" behavior, now also zoom-aware.
-///
-/// Bray: members also cluster when they are within [groupMetres] of each other
+/// Bray: members cluster when they are within [groupMetres] of each other
 /// on the ground, whatever the zoom - the Family Viewer's rule (app.js:42
 /// GROUP_M = 120, app.js:140-149 clusters()), so Bo and Charlie at home are
-/// one capsule here as they are there. The viewer joins to a group's running
-/// centroid; this keeps upstream's member-to-member (single-link) join, which
-/// only ever groups more, never less.
+/// one capsule here as they are there. Single-link join (a member joins a
+/// group when ANY member of it qualifies): the rule only ever groups more,
+/// never less. 5b step 3 (Bo, 2026-09-16): upstream's on-screen rule
+/// (bubbles 48 px apart merged into one count bubble) is GONE - people are
+/// never merged unless physically together; overlapping solo markers fan
+/// apart in placeBubbles instead.
 ///
 /// Bray piece 5: [canGroup] (utils/member_grouping.dart
 /// GroupTracker.together) vetoes a join for a stale member, a driver next to
 /// a parked person, or two cars that have not matched speed and heading for
-/// a minute (DECISIONS ruling 3). Null keeps the two distance rules alone.
+/// a minute (DECISIONS ruling 3). Null keeps the distance rule alone.
 ///
 /// Bray piece 5 (rig run 1028): a pair the tracker calls riding together is
 /// one capsule even when their last-known fixes are a post apart -
-/// [mustGroup] (GroupTracker.ridingTogether) joins regardless of pixel or
-/// ground distance (two phones in one car post at different moments; at
-/// 60 mph 30 s of lag is ~800 m, beyond both distance rules), still subject
-/// to [canGroup]'s veto. A cluster holding at least one must-group join is
-/// centred on the member with the latest lastSeen - the lead phone - instead
-/// of the geometric centroid, so the capsule sits on the car, not halfway
-/// between a post and the one before it. Null never forces a join.
+/// [mustGroup] (GroupTracker.ridingTogether) joins regardless of ground
+/// distance (two phones in one car post at different moments; at 60 mph
+/// 30 s of lag is ~800 m), still subject to [canGroup]'s veto. A cluster
+/// holding at least one must-group join is centred on the member with the
+/// latest lastSeen - the lead phone - instead of the geometric centroid, so
+/// the capsule sits on the car, not halfway between a post and the one
+/// before it. Null never forces a join.
 List<MemberCluster> clusterMembers(
   List<Member> members, {
   required LatLngToScreenOffset toScreenOffset,
-  double clusterRadiusPx = kClusterRadiusPx,
   double groupMetres = BrayTokens.groupMetres,
   bool Function(Member a, Member b)? canGroup,
   bool Function(Member a, Member b)? mustGroup,
@@ -135,10 +153,6 @@ List<MemberCluster> clusterMembers(
   // Members without a reported location have no bubble and are skipped.
   final List<Member> positioned =
       members.where((m) => m.position != null).toList();
-
-  final Map<String, Offset> points = <String, Offset>{
-    for (final Member m in positioned) m.id: toScreenOffset(m.position!),
-  };
 
   final List<MemberCluster> clusters = <MemberCluster>[];
   final List<Member> remaining = List<Member>.of(positioned);
@@ -159,8 +173,7 @@ List<MemberCluster> clusterMembers(
             must = true;
             return true;
           }
-          return _distancePx(points[g.id]!, points[m.id]!) <= clusterRadiusPx ||
-              groundMetres(g.position!, m.position!) <= groupMetres;
+          return groundMetres(g.position!, m.position!) <= groupAllowanceMetres(g, m, base: groupMetres);   // accuracy-aware (5b)
         });
         if (near) {
           group.add(m);
@@ -184,8 +197,14 @@ List<MemberCluster> clusterMembers(
 
 /// Produces a flat list of [BubblePlacement]s:
 ///
-/// * A lone member stays at its own position.
-/// * A cluster (2+) collapses into a single cluster-count bubble.
+/// * A lone member stays at its own position - unless its ring overlaps
+///   another solo marker's at this camera (5b step 3): then the overlapping
+///   solos fan apart evenly round their screen centroid, each keeping its
+///   own ring, face and badges, with [BubblePlacement.anchor] = the true
+///   spot for the leader line. They split back the moment the zoom
+///   separates their rings. Rings are measured at [ringLift] above the
+///   point (at home the pin sits on the house chip).
+/// * A cluster (2+, physically together) collapses into a single capsule.
 /// * A cluster whose id is in [expandedClusterIds] fans out around its
 ///   screen-space centroid (converted back to geographic positions) so each
 ///   member can be tapped individually without overlapping.
@@ -193,31 +212,28 @@ List<BubblePlacement> placeBubbles(
   List<Member> members, {
   required LatLngToScreenOffset toScreenOffset,
   required ScreenOffsetToLatLng toLatLng,
-  double clusterRadiusPx = kClusterRadiusPx,
   double groupMetres = BrayTokens.groupMetres,
   double fanOutRadiusPx = kFanOutRadiusPx,
+  double ringOverlapPx = kRingOverlapPx,
+  double fanGapPx = kFanGapPx,
   Set<String> expandedClusterIds = const {},
   bool Function(Member a, Member b)? canGroup,
   bool Function(Member a, Member b)? mustGroup,
+  double Function(Member m)? ringLift,
 }) {
   final List<MemberCluster> clusters = clusterMembers(
     members,
     toScreenOffset: toScreenOffset,
-    clusterRadiusPx: clusterRadiusPx,
     groupMetres: groupMetres,
     canGroup: canGroup,
     mustGroup: mustGroup,
   );
   final List<BubblePlacement> placements = <BubblePlacement>[];
+  final List<Member> solos = <Member>[];
 
   for (final MemberCluster cluster in clusters) {
     if (cluster.members.length == 1) {
-      placements.add(
-        BubblePlacement(
-          position: cluster.members.first.position!,
-          member: cluster.members.first,
-        ),
-      );
+      solos.add(cluster.members.first);
     } else if (expandedClusterIds.contains(cluster.id)) {
       final Offset centroid = _screenCentroid(cluster.members, toScreenOffset);
       for (int i = 0; i < cluster.members.length; i++) {
@@ -243,7 +259,59 @@ List<BubblePlacement> placeBubbles(
     }
   }
 
+  placements.addAll(fanSolos(solos, toScreenOffset: toScreenOffset, toLatLng: toLatLng, ringOverlapPx: ringOverlapPx, fanGapPx: fanGapPx, ringLift: ringLift));
   return placements;
+}
+
+/// 5b step 3: solo placements, with every set of solos whose rings overlap
+/// on screen (single-link, centres closer than [ringOverlapPx]) spread
+/// evenly round their screen centroid at the radius that leaves [fanGapPx]
+/// between neighbouring rings (two people: 32 px either side; the ring
+/// diameter plus the gap is the chord). The first member of a set sits at
+/// the top (12 o'clock) and the rest follow clockwise, in list order.
+List<BubblePlacement> fanSolos(
+  List<Member> solos, {
+  required LatLngToScreenOffset toScreenOffset,
+  required ScreenOffsetToLatLng toLatLng,
+  double ringOverlapPx = kRingOverlapPx,
+  double fanGapPx = kFanGapPx,
+  double Function(Member m)? ringLift,
+}) {
+  final Map<String, Offset> ring = <String, Offset>{
+    for (final Member m in solos) m.id: toScreenOffset(m.position!) - Offset(0, ringLift?.call(m) ?? 0),
+  };
+  final List<BubblePlacement> out = <BubblePlacement>[];
+  final List<Member> remaining = List<Member>.of(solos);
+  while (remaining.isNotEmpty) {
+    final List<Member> set = <Member>[remaining.removeAt(0)];
+    bool changed = true;
+    while (changed) {
+      changed = false;
+      for (int i = remaining.length - 1; i >= 0; i--) {
+        final Member m = remaining[i];
+        if (set.any((Member g) => _distancePx(ring[g.id]!, ring[m.id]!) < ringOverlapPx)) {
+          set.add(m);
+          remaining.removeAt(i);
+          changed = true;
+        }
+      }
+    }
+    if (set.length == 1) {
+      out.add(BubblePlacement(position: set.single.position!, member: set.single));
+      continue;
+    }
+    final Offset centroid = _screenCentroid(set, toScreenOffset);
+    final double radius = (ringOverlapPx + fanGapPx) / (2 * math.sin(math.pi / set.length));
+    for (int i = 0; i < set.length; i++) {
+      final double angle = -math.pi / 2 + (2 * math.pi * i) / set.length;   // 12 o'clock first, clockwise
+      out.add(BubblePlacement(
+        position: toLatLng(centroid + Offset.fromDirection(angle, radius)),
+        member: set[i],
+        anchor: set[i].position,
+      ));
+    }
+  }
+  return out;
 }
 
 String _clusterId(List<Member> members) {
