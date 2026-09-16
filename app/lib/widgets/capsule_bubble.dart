@@ -12,13 +12,13 @@ import 'package:flutter/material.dart';
 import '../models/member.dart';
 import '../services/contact_link_store.dart';
 import '../theme/bray_tokens.dart';
-import '../utils/member_grouping.dart' show groupBadgeFor, overlapBadgeFor;
+import '../utils/member_grouping.dart' show groupBadgeFor;
 import 'marker_pointer.dart' show MarkerPointerPainter;
 import 'member_avatar_bubble.dart' show StatusAvatar;
 import 'slot_badge.dart';
 
 class CapsuleBubble extends StatelessWidget {
-  const CapsuleBubble({super.key, required this.members, this.onTap, this.selectedId, this.now, this.viewerId, this.contactFor, this.inDriveFor, this.visual = false});
+  const CapsuleBubble({super.key, required this.members, this.onTap, this.selectedId, this.now, this.viewerId, this.contactFor, this.inDriveFor});
 
   final List<Member> members;
   final VoidCallback? onTap;
@@ -32,11 +32,6 @@ class CapsuleBubble extends StatelessWidget {
   final bool Function(Member)? inDriveFor;
 
   final DateTime? now;
-
-  /// 5b: joined by the ring-overlap rule alone (BubblePlacement.visual) -
-  /// the badge is overlapBadgeFor (the lead's own words, or one speed when
-  /// everyone drives), not the physical group's arrivals / oldest stay.
-  final bool visual;
 
   /// Life360: the selected person's face gets the ring inside the capsule.
   final String? selectedId;
@@ -88,9 +83,7 @@ class CapsuleBubble extends StatelessWidget {
     final DateTime at = now ?? DateTime.now();
     final List<Member> faces = members.take(BrayTokens.capsuleMaxFaces).toList();
     final int more = members.length - faces.length;
-    final SlotBadgeSpec? badge = visual
-        ? overlapBadgeFor(members, now: at, inDriveFor: (m) => _driving(m, at))
-        : groupBadgeFor(members, now: at, inDriveFor: (m) => _driving(m, at), labelFor: _labelFor);
+    final SlotBadgeSpec? badge = groupBadgeFor(members, now: at, inDriveFor: (m) => _driving(m, at), labelFor: _labelFor);
     final String label = _label(badge, at);
     const double step = BrayTokens.capsuleAvatar - BrayTokens.capsuleOverlap;         // .cap img + img margin-left:-18px -> each next circle 40 on
     final int circles = faces.length + (more > 0 ? 1 : 0);
