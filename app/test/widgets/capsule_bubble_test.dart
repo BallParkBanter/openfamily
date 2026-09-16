@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:openfamily/models/member.dart';
+import 'package:openfamily/models/member_place.dart';
 import 'package:openfamily/theme/bray_tokens.dart';
 import 'package:openfamily/widgets/capsule_bubble.dart';
 import 'package:openfamily/widgets/glyphs.dart';
@@ -80,5 +81,15 @@ void main() {
     // the 88px capsule marker: pill 66 + lift 17 + half dot 5. The box grew
     // upward only.
     expect(CapsuleBubble.markerHeight, CapsuleBubble.badgeZone + 66 + BrayTokens.capsuleLift + BrayTokens.dotSize / 2);
+  });
+
+  testWidgets('5b visual capsule: a stale member and a fresh one at home read the lead\'s "home for", no speed', (t) async {
+    final DateTime now = DateTime(2026, 9, 16, 13, 25);
+    final Member bo = m('Bo Bray').copyWith(lastSeen: now, place: MemberPlace(atHome: true, placeName: 'Home', since: now.subtract(const Duration(hours: 3, minutes: 47))));
+    final Member charlie = m('Charlie', mph: 56).copyWith(lastSeen: now.subtract(const Duration(hours: 4)));
+    await t.pumpWidget(host(CapsuleBubble(members: [charlie, bo], now: now, inDriveFor: (_) => false, visual: true)));
+    expect(find.text('home for'), findsOneWidget);
+    expect(find.text('3 hr, 47 min'), findsOneWidget);
+    expect(find.textContaining('mph'), findsNothing);
   });
 }
