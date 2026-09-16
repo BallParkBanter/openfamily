@@ -34,7 +34,30 @@ const (
 	// noise (~5-15 m) so jitter while standing still still dedups, but well
 	// below real movement.
 	stationaryDedupMeters = 25.0
+
+	// dedupSpeedDeltaMPS: bray piece 5: a stop or a start inside the dedup
+	// radius is new information (DECISIONS ruling 6) - store it.
+	dedupSpeedDeltaMPS = 0.5
 )
+
+// speedUnchanged reports whether stored and reported speed represent the
+// same state closely enough that a report within the dedup radius is still
+// "not moved". Both nil (never reported a speed) counts as unchanged; one
+// nil and the other not is a change (a speed appeared or vanished); otherwise
+// the two are unchanged only if they differ by less than dedupSpeedDeltaMPS.
+func speedUnchanged(stored, reported *float64) bool {
+	if stored == nil && reported == nil {
+		return true
+	}
+	if stored == nil || reported == nil {
+		return false
+	}
+	delta := *stored - *reported
+	if delta < 0 {
+		delta = -delta
+	}
+	return delta < dedupSpeedDeltaMPS
+}
 
 // IngestLocation stores a single location point for a device owned by the
 // authenticated user. The device must already be registered.
@@ -134,26 +157,34 @@ func (s *Server) IngestLocation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Load the stored last-known position for stationary dedup (below).
-	var mpLat, mpLon *float64
+	// Load the stored last-known position (and speed) for stationary dedup
+	// (below).
+	var mpLat, mpLon, mpSpeed *float64
 	err = tx.QueryRow(r.Context(), `
-		SELECT lat, lon FROM member_positions WHERE user_id = $1`, ownerID,
-	).Scan(&mpLat, &mpLon)
+		SELECT lat, lon, speed_mps FROM member_positions WHERE user_id = $1`, ownerID,
+	).Scan(&mpLat, &mpLon, &mpSpeed)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, http.StatusInternalServerError, "failed to check last position")
 		return
 	}
 
-	// Stationary dedup: the point is within GPS noise of the stored position,
-	// so storing it again adds no information. Keep the device's liveness fresh
-	// (devices.last_seen + member_positions.updated_at + battery), announce a
-	// `presence` frame to the family, and acknowledge with 200 so clients can
-	// distinguish it from a stored point (201). Geofence evaluation still runs:
-	// dwell/pending transitions are time-driven and must advance even while the
-	// user stands still. No audit entry — this fires per reporting interval and
-	// would flood the audit log with non-events.
+	// Stationary dedup: the point is within GPS noise of the stored position
+	// AND the speed hasn't materially changed, so storing it again adds no
+	// information. A speed change inside the dedup radius (e.g. a stop: the
+	// stored speed is a highway 25 m/s and the new report is 0) IS new
+	// information (DECISIONS ruling 6: never fake data) and must fall through
+	// to the normal INSERT/upsert path below so the marker's speed reflects
+	// reality instead of freezing at the last stored value. Keep the device's
+	// liveness fresh (devices.last_seen + member_positions.updated_at +
+	// battery), announce a `presence` frame to the family, and acknowledge
+	// with 200 so clients can distinguish it from a stored point (201).
+	// Geofence evaluation still runs: dwell/pending transitions are
+	// time-driven and must advance even while the user stands still. No audit
+	// entry — this fires per reporting interval and would flood the audit log
+	// with non-events.
 	if mpLat != nil && mpLon != nil &&
-		haversineMeters(*mpLat, *mpLon, req.Lat, req.Lon) < stationaryDedupMeters {
+		haversineMeters(*mpLat, *mpLon, req.Lat, req.Lon) < stationaryDedupMeters &&
+		speedUnchanged(mpSpeed, req.SpeedMPS) {
 		if _, err := tx.Exec(r.Context(), `
 			UPDATE devices SET last_seen = now() WHERE id = $1`, req.DeviceID); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to update device")
