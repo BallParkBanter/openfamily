@@ -42,6 +42,7 @@ import '../widgets/focus_trail_layer.dart';
 import '../widgets/following_pill.dart';
 import '../widgets/home_chip.dart';
 import '../widgets/map_bottom_bar.dart';
+import '../widgets/marker_extents.dart';
 import '../widgets/member_avatar_bubble.dart';
 import '../widgets/people_sheet.dart';
 import '../widgets/place_text.dart' show placeTypeForPoiKind;
@@ -530,15 +531,24 @@ class _MapScreenState extends State<MapScreen>
       _animateTo(target, 16);
       return;
     }
-    final LatLngBounds bounds = LatLngBounds.fromPoints(members.map((Member m) => m.position!).toList());
-    final MapCamera fitted = CameraFit.bounds(
-      bounds: bounds,
-      padding: EdgeInsets.fromLTRB(80, 80, 80, 80 + _currentSheetHeight()),   // OPEN: chosen - theirs: 80 is their _fitToMembers padding, plus the sheet (J:235 pads sheet + 90)
-      maxZoom: 16,                                                              // J:235 maxZoom:16
-    ).fit(cam);
+    final MapCamera fitted = _fitFor(members, maxZoom: 16);                     // J:235 maxZoom:16
     final p0 = cam.latLngToScreenPoint(cam.center), p1 = cam.latLngToScreenPoint(fitted.center);
     if ((fitted.zoom - cam.zoom).abs() < 0.05 && (p0.x - p1.x).abs() < 4 && (p0.y - p1.y).abs() < 4) return;   // OPEN: chosen - "unchanged" threshold
     _animateTo(fitted.center, fitted.zoom);
+  }
+
+  /// 5b (Bo: "nothing cut off, ever"): the fit that lands every badge on
+  /// screen - marker_extents.dart fitPaddingFor: the header / bottom-bar
+  /// chrome (their 80s) plus the widest name badge, top badge, battery badge
+  /// and beam over everyone, plus air - capped at [maxZoom]. Shared by the
+  /// launch fit and the overview auto-fit. Measured 2026-09-16 on the tablet:
+  /// their flat 80 left Charlie's "updated" badge running off the right edge.
+  MapCamera _fitFor(List<Member> members, {required double maxZoom}) {
+    return CameraFit.bounds(
+      bounds: LatLngBounds.fromPoints(members.map((Member m) => m.position!).toList()),
+      padding: fitPaddingFor(members, labelFor: _labelFor, now: DateTime.now(), inDriveFor: _inDriveFor, sheetHeight: _currentSheetHeight()),
+      maxZoom: maxZoom,
+    ).fit(_mapController.camera);
   }
 
   void _onUserId(String userId) {
@@ -892,18 +902,10 @@ class _MapScreenState extends State<MapScreen>
       _mapController.move(_centreAbove(members.first.position!, 16), 16);   // J:229-231
       return;
     }
-    final LatLngBounds bounds = LatLngBounds.fromPoints(
-      members.map((Member m) => m.position!).toList(),
-    );
     // Piece 3: the sheet covers the bottom of the map, so the first fit pads
-    // for it too (their 80 kept, plus the sheet - same rule as _animatedFit).
-    _mapController.fitCamera(
-      CameraFit.bounds(
-        bounds: bounds,
-        padding: EdgeInsets.fromLTRB(80, 80, 80, 80 + _currentSheetHeight()),
-        maxZoom: 16,                                                            // J:235 maxZoom:16
-      ),
-    );
+    // for it too; 5b: and for every badge (_fitFor - same rule as _animatedFit).
+    final MapCamera fitted = _fitFor(members, maxZoom: 16);                     // J:235 maxZoom:16
+    _mapController.move(fitted.center, fitted.zoom);
   }
 
   void _openMemberDetails(Member member) {
@@ -1688,12 +1690,23 @@ class _MemberMarkerLayer extends StatelessWidget {
                 label: labelFor(p.member!),
                 now: now,
                 inDrive: inDriveFor(p.member!),
+                mirrored: _mirrored(camera, p, now),
                 onTap: () => onMemberTap(p.member!),
                 onLongPress: () => onMemberHold(p.member!),
               ),
             ),
       ],
     );
+  }
+
+  /// 5b (Bo: "nothing cut off, ever"): a marker within its badges' width of
+  /// a screen edge - after any pan - mirrors them to the side that is cut
+  /// less (marker_extents.dart mirrorMarker; the extents come from the
+  /// marker's constants and the measured name / badge text).
+  bool _mirrored(MapCamera camera, BubblePlacement p, DateTime now) {
+    final Member m = p.member!;
+    final MarkerExtents e = soloExtents(m, label: labelFor(m), now: now, inDrive: inDriveFor(m));
+    return mirrorMarker(x: camera.latLngToScreenPoint(p.position).x, screenWidth: camera.nonRotatedSize.x, extents: e);
   }
 }
 
