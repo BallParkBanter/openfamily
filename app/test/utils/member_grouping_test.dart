@@ -293,37 +293,4 @@ void main() {
       expect(groupBadgeFor([mk('a'), mk('b')], now: t0, inDriveFor: driving), isNull);
     });
   });
-
-  // 5b: the visual capsule's ONE badge.
-  group('overlapBadgeFor', () {
-    test('everyone driving: the red car and the fastest speed', () {
-      final b = overlapBadgeFor([mk('bo', mph: 40), mk('charlie', mph: 65)], now: t0, inDriveFor: driving)!;
-      expect(b.kind, SlotBadgeKind.speed);
-      expect(b.value, '65 mph');
-      expect(b.glyphColor, BrayTokens.groupCar);
-    });
-    test('not everyone driving: the lead\'s (latest lastSeen) own badge in the group colours', () {
-      final bo = mk('bo', since: t0.subtract(const Duration(hours: 3, minutes: 47))).copyWith(place: MemberPlace(atHome: true, placeName: 'Home', since: t0.subtract(const Duration(hours: 3, minutes: 47))));
-      final charlie = mk('charlie', ago: const Duration(hours: 4));
-      final b = overlapBadgeFor([charlie, bo], now: t0, inDriveFor: driving)!;
-      expect(b.kind, SlotBadgeKind.homeFor);
-      expect(b.value, '3 hr, 47 min');
-      expect(b.glyphColor, BrayTokens.groupPin);
-    });
-    test('a stale lead says updated, never a speed (ruling 6)', () {
-      final b = overlapBadgeFor([mk('charlie', ago: const Duration(hours: 4), mph: 56)], now: t0, inDriveFor: (_) => false)!;
-      expect(b.kind, SlotBadgeKind.updated);
-      expect(b.value, '4 hr ago');
-      expect(b.glyphColor, BrayTokens.staleGrey);
-    });
-    test('a driving lead next to a parked member: the lead\'s speed with the group car', () {
-      final b = overlapBadgeFor([mk('bo', mph: 45), mk('charlie', ago: const Duration(seconds: 30))], now: t0, inDriveFor: driving)!;
-      expect(b.kind, SlotBadgeKind.speed);
-      expect(b.value, '45 mph');
-      expect(b.glyphColor, BrayTokens.groupCar);
-    });
-    test('nobody dated, nobody driving: no badge', () {
-      expect(overlapBadgeFor([mk('a'), mk('b')], now: t0, inDriveFor: driving), isNull);
-    });
-  });
 }

@@ -7,7 +7,6 @@ import 'dart:ui' show Offset;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:openfamily/models/member.dart';
-import 'package:openfamily/models/member_place.dart';
 import 'package:openfamily/theme/bray_tokens.dart';
 import 'package:openfamily/utils/member_clustering.dart';
 
@@ -48,7 +47,7 @@ void main() {
   });
   test('upstream on-screen rule kept: 1 km apart but overlapping bubbles at a low zoom cluster', () {
     final clusters = clusterMembers([at('Bo Bray', home), at('Charlie', north(1000))],
-        toScreenOffset: camera(0.01)); // 10 px apart, under kRingOverlapPx
+        toScreenOffset: camera(0.01)); // 10 px apart, under kClusterRadiusPx
     expect(clusters.length, 1);
   });
   test('placeBubbles gives 100 m neighbours one capsule placement', () {
@@ -58,9 +57,8 @@ void main() {
     expect(placements.single.isCluster, isTrue);
     expect(placements.single.clusterCount, 2);
   });
-  test('canGroup vetoes the ground rule: two people 100 m apart (150 px, rings clear) do not cluster when it says no', () {
-    // 5b: the veto never touches the ring-overlap rule, so the pair must be far enough apart on screen (was 10 m = 15 px)
-    final clusters = clusterMembers([at('Bo Bray', home), at('Charlie', north(100))],
+  test('canGroup vetoes a join (both rules): two people 10 m apart do not cluster when it says no', () {
+    final clusters = clusterMembers([at('Bo Bray', home), at('Charlie', north(10))],
         toScreenOffset: camera(1.5), canGroup: (a, b) => false);
     expect(clusters.length, 2);
   });
@@ -85,11 +83,11 @@ void main() {
       expect(placements.single.isCluster, isTrue);
       expect(placements.single.position, charlie.position);
     });
-    test('(e) mustGroup never overrides a canGroup veto (100 m apart, rings clear - 5b keeps the overlap rule veto-free)', () {
-      final clusters = clusterMembers([at('Bo Bray', home, seen: t0), at('Charlie', north(100), seen: t0)],
+    test('(e) mustGroup never overrides a canGroup veto', () {
+      final clusters = clusterMembers([at('Bo Bray', home, seen: t0), at('Charlie', north(10), seen: t0)],
           toScreenOffset: camera(1.5), canGroup: (a, b) => false, mustGroup: (a, b) => true);
       expect(clusters.length, 2);
-      final placements = placeBubbles([at('Bo Bray', home, seen: t0), at('Charlie', north(100), seen: t0)],
+      final placements = placeBubbles([at('Bo Bray', home, seen: t0), at('Charlie', north(10), seen: t0)],
           toScreenOffset: camera(1.5), toLatLng: (_) => home, canGroup: (a, b) => false, mustGroup: (a, b) => true);
       expect(placements.length, 2);
     });
@@ -100,44 +98,6 @@ void main() {
       expect(clusters.single.centroid.latitude, closeTo(north(50).latitude, 1e-9));
       expect(clusterMembers([at('Bo Bray', home, seen: t0), at('Charlie', north(500), seen: t0)],
           toScreenOffset: camera(1.5), mustGroup: (a, b) => false).length, 2);
-    });
-  });
-
-  // 5b (2026-09-16): rings that overlap on screen are one capsule whatever the
-  // ground distance or the tracker says - Bo at home and a STALE Charlie at
-  // school drew on top of each other at the continent fit (measured 13:25).
-  group('screen-overlap rule (5b)', () {
-    final DateTime t0 = DateTime(2026, 9, 16, 13, 25);
-    test('16 km apart, rings 3 px apart, canGroup says no (stale): one VISUAL cluster', () {
-      final clusters = clusterMembers([at('Bo Bray', home, seen: t0), at('Charlie', north(16000), seen: t0.subtract(const Duration(hours: 4)))],
-          toScreenOffset: camera(3 / 16000), canGroup: (a, b) => false);
-      expect(clusters.length, 1);
-      expect(clusters.single.visual, isTrue);
-      expect(clusters.single.members.length, 2);
-    });
-    test('the rule is the rings: centres 55 px apart cluster, 56 px apart do not (soloFace = 56)', () {
-      expect(kRingOverlapPx, BrayTokens.soloFace);
-      expect(clusterMembers([at('Bo Bray', home), at('Charlie', north(1000))], toScreenOffset: camera(0.055)).length, 1);
-      expect(clusterMembers([at('Bo Bray', home), at('Charlie', north(1000))], toScreenOffset: camera(0.056)).length, 2);
-    });
-    test('the at-home lift moves a ring up 9 px and decides an overlap either way', () {
-      const MemberPlace atHome = MemberPlace(atHome: true, placeName: 'Home', homeDistanceM: 5);
-      double lift(Member m) => m.place?.atHome == true ? 9 : 0;
-      // north is UP on screen; the points are 60 px apart, Charlie above Bo
-      LatLngToScreenOffset cam(double pxPerMetre) => (LatLng p) => Offset(0, -(p.latitude - home.latitude) * _mPerDegLat * pxPerMetre);
-      // Bo (below) at home: his ring rises 9 -> 51 apart: overlap
-      expect(clusterMembers([at('Bo Bray', home).copyWith(place: atHome), at('Charlie', north(1000))], toScreenOffset: cam(0.06), ringLift: lift).length, 1);
-      // Charlie (above) at home instead: 69 apart: no overlap
-      expect(clusterMembers([at('Bo Bray', home), at('Charlie', north(1000)).copyWith(place: atHome)], toScreenOffset: cam(0.06), ringLift: lift).length, 2);
-    });
-    test('a physical join is not visual; the veto still binds the ground rule', () {
-      expect(clusterMembers([at('Bo Bray', home), at('Charlie', north(100))], toScreenOffset: camera(1.5)).single.visual, isFalse);
-      expect(clusterMembers([at('Bo Bray', home), at('Charlie', north(100))], toScreenOffset: camera(1.5), canGroup: (a, b) => false).length, 2);
-    });
-    test('placeBubbles carries visual to the placement', () {
-      final placements = placeBubbles([at('Bo Bray', home), at('Charlie', north(16000))], toScreenOffset: camera(3 / 16000), toLatLng: (_) => home);
-      expect(placements.single.isCluster, isTrue);
-      expect(placements.single.visual, isTrue);
     });
   });
 }

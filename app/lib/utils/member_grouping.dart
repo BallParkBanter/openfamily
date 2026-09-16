@@ -37,7 +37,6 @@
 // clusterMembers as its canGroup predicate and `ridingTogether` as its
 // mustGroup predicate (one capsule even when the fixes are a post apart).
 import 'dart:math' as math;
-import 'dart:ui' show Color;
 
 import '../models/member.dart';
 import '../theme/bray_tokens.dart';
@@ -235,33 +234,4 @@ SlotBadgeSpec? groupBadgeFor(List<Member> members, {required DateTime now, requi
     return SlotBadgeSpec(kind: SlotBadgeKind.arrived, label: '$who arrived', value: arrivedAgo(now.difference(newestSince)), glyphColor: BrayTokens.groupPin);
   }
   return SlotBadgeSpec(kind: SlotBadgeKind.hereFor, label: 'here for', value: hereFor(now.difference(newestSince)), glyphColor: BrayTokens.groupPin);
-}
-
-/// The ONE badge on a VISUAL capsule (5b, 2026-09-16 - rings overlapping on
-/// screen, no clock, no proof; Bo: "same rules as physical groups: red car
-/// + one speed if all driving, else 'here for'/updated of the lead"):
-/// everyone in a drive -> the red car and the fastest speed; else the
-/// lead's own badge (the freshest phone: latest lastSeen; null counts
-/// oldest; ties keep the earlier-listed) in the group colours - the red car
-/// for a speed, the stale grey for "updated" (ruling 6: a stale phone never
-/// shows a speed), the dark pin otherwise.
-SlotBadgeSpec? overlapBadgeFor(List<Member> members, {required DateTime now, required bool Function(Member) inDriveFor}) {
-  if (members.isEmpty) return null;
-  if (members.every(inDriveFor)) {
-    final int mph = members.map((m) => m.speedMph ?? 0).reduce(math.max);
-    return SlotBadgeSpec(kind: SlotBadgeKind.speed, value: '$mph mph', glyphColor: BrayTokens.groupCar);
-  }
-  Member lead = members.first;
-  for (final Member m in members.skip(1)) {
-    final DateTime? seen = m.lastSeen;
-    if (seen != null && (lead.lastSeen == null || seen.isAfter(lead.lastSeen!))) lead = m;
-  }
-  final SlotBadgeSpec? own = slotBadgeFor(lead, now: now, inDrive: inDriveFor(lead));
-  if (own == null) return null;
-  final Color glyph = switch (own.kind) {
-    SlotBadgeKind.speed => BrayTokens.groupCar,
-    SlotBadgeKind.updated => BrayTokens.staleGrey,
-    _ => BrayTokens.groupPin,
-  };
-  return SlotBadgeSpec(kind: own.kind, label: own.label, value: own.value, glyphColor: glyph, valueColor: own.valueColor);
 }

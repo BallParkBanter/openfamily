@@ -201,13 +201,6 @@ class _MapScreenState extends State<MapScreen>
   /// geofence is not a drive, for the marker, the capsule and the card alike.
   bool _inDriveFor(Member m) => inDriveVerdict(_drives.inDrive(m.id), m);
 
-  /// The clustering predicates, shared by the marker layer and
-  /// _pruneExpandedClusters so both see the same groups (the prune used to
-  /// run with the distance rules alone).
-  bool _canGroup(Member a, Member b) => _groups.together(a, b, inDriveFor: _inDriveFor);
-  bool _mustGroup(Member a, Member b) => _groups.ridingTogether(a, b, inDriveFor: _inDriveFor);   // rig run 1028: one capsule even a post apart
-  double _ringLiftFor(Member m) => m.place?.atHome == true ? MemberAvatarBubble.atHomeLift : 0;   // 5b: the ring sits 9 up on the house chip
-
   /// Task 8: the ~1 min matching-speed-and-heading clock per pair
   /// (utils/member_grouping.dart), fed alongside [_drives] so a group forms
   /// and drops a stale member the same two beats a drive does.
@@ -854,20 +847,10 @@ class _MapScreenState extends State<MapScreen>
     _animateTo(pos, 15);
   }
 
-  /// Expands a tapped cluster: fits ITS members (5b - a continent-zoom
-  /// visual capsule opens onto both people; a 120 m physical group hits the
-  /// zoom-16 cap where it always did) and fans them out while they still
-  /// overlap there.
-  void _expandCluster(String clusterId, List<Member> members) {
-    // A capsule tap is a gesture: the overview auto-fit waits its 12 s
-    // (autoFitDue) as after a pan - measured live 2026-09-16 (build
-    // 29826387): the fit landed and the next members frame pulled the map
-    // straight back to everyone.
-    _lastGesture = DateTime.now();
-    _touch();
+  /// Expands a tapped cluster so its members fan out and become tappable.
+  void _expandCluster(String clusterId, LatLng centroid) {
     setState(() => _expandedClusters.add(clusterId));
-    final MapCamera fitted = _fitFor(members, maxZoom: _expandZoom);
-    _animateTo(fitted.center, fitted.zoom);
+    _animateTo(centroid, _expandZoom);
   }
 
   /// Called on every camera change. Re-collapses expanded clusters when the
@@ -901,9 +884,6 @@ class _MapScreenState extends State<MapScreen>
         final p = _camera!.latLngToScreenPoint(latLng);
         return Offset(p.x, p.y);
       },
-      canGroup: _canGroup,
-      mustGroup: _mustGroup,
-      ringLift: _ringLiftFor,
     );
     final Set<String> validIds =
         clusters.where((c) => c.members.length > 1).map((c) => c.id).toSet();
@@ -1245,9 +1225,8 @@ class _MapScreenState extends State<MapScreen>
                   selectedId: _followId,                    // J:101: the ringed face inside a capsule
                   labelFor: _labelFor,                      // every pill: You / contact name / first name (was the focused one only)
                   inDriveFor: _inDriveFor,
-                  canGroup: _canGroup,
-                  mustGroup: _mustGroup,
-                  ringLiftFor: _ringLiftFor,
+                  canGroup: (Member a, Member b) => _groups.together(a, b, inDriveFor: _inDriveFor),
+                  mustGroup: (Member a, Member b) => _groups.ridingTogether(a, b, inDriveFor: _inDriveFor),   // rig run 1028: one capsule even a post apart
                   viewerId: _userId,
                   contactFor: (Member m) => ContactLinkStore.instance.linkFor(m.id),
                   onMemberTap: _focusMember,
@@ -1617,7 +1596,6 @@ class _MemberMarkerLayer extends StatelessWidget {
     required this.inDriveFor,
     required this.canGroup,
     required this.mustGroup,
-    required this.ringLiftFor,
     this.selectedId,
     this.viewerId,
     this.contactFor,
@@ -1641,10 +1619,6 @@ class _MemberMarkerLayer extends StatelessWidget {
   /// both of clusterMembers' distance rules), centred on the lead phone.
   final bool Function(Member, Member) mustGroup;
 
-  /// 5b: how far above its point a member's ring sits (the at-home lift) -
-  /// the ring-overlap rule measures ring centres.
-  final double Function(Member) ringLiftFor;
-
   /// For the capsule's "<name> arrived" callout - the same viewer / contact
   /// link the sheet gets (PeopleSheet.viewerId / contactFor).
   final String? viewerId;
@@ -1662,7 +1636,7 @@ class _MemberMarkerLayer extends StatelessWidget {
   /// rule as the cards. (Until 2026-09-14 only the focused pill got it; the
   /// rest printed "Heidi Bray".)
   final String Function(Member) labelFor;
-  final void Function(String clusterId, List<Member> members) onClusterTap;
+  final void Function(String clusterId, LatLng centroid) onClusterTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1680,7 +1654,6 @@ class _MemberMarkerLayer extends StatelessWidget {
       expandedClusterIds: expandedClusters,
       canGroup: canGroup,
       mustGroup: mustGroup,
-      ringLift: ringLiftFor,
     );
 
     return MarkerLayer(
@@ -1703,8 +1676,7 @@ class _MemberMarkerLayer extends StatelessWidget {
                 contactFor: contactFor,
                 now: now,
                 inDriveFor: inDriveFor,
-                visual: p.visual,
-                onTap: () => onClusterTap(p.clusterId!, p.clusterMembers),
+                onTap: () => onClusterTap(p.clusterId!, p.position),
               ),
             )
           else
