@@ -13,6 +13,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:openfamily/models/member.dart';
 import 'package:openfamily/models/member_place.dart';
 import 'package:openfamily/services/member_mapper.dart' as mapper show kStaleAfter;
+import 'package:openfamily/theme/bray_tokens.dart';
 import 'package:openfamily/widgets/capsule_bubble.dart';
 import 'package:openfamily/widgets/heading_cone.dart';
 import 'package:openfamily/widgets/member_avatar_bubble.dart';
@@ -61,25 +62,13 @@ void main() {
     });
   });
 
-  testWidgets('solo marker: a stale driver has no speed pill and no cone - the age pill instead', (t) async {
-    final Member stale = m('Heidi Bray', ago: const Duration(hours: 3));
-    await t.pumpWidget(host(MemberAvatarBubble(member: stale, now: now, onTap: () {})));
-    expect(find.byKey(const Key('bray-speed-pill')), findsNothing);
-    expect(find.byKey(const Key('bray-heading-cone')), findsNothing);
+  testWidgets('solo marker: a stale driver shows "updated" / "3 hr ago", never a speed badge', (t) async {
+    final Member who = m('Heidi Bray', ago: const Duration(hours: 3));      // the file's own helper: car, 65 mph, headingDeg
+    await t.pumpWidget(host(MemberAvatarBubble(member: who, now: now, inDrive: true, onTap: () {})));
     expect(find.textContaining('mph'), findsNothing);
-    expect(find.byKey(const Key('bray-age-pill')), findsOneWidget);
-    expect(find.text('updated 3h ago'), findsOneWidget);
-    expect(MemberAvatarBubble.markerSizeFor(stale, now: now), MemberAvatarBubble.markerSizeFor(m('Heidi Bray', mph: null), now: now));
-    // The same member ten minutes after her fix: pill and cone.
-    final Member fresh = m('Heidi Bray', ago: const Duration(minutes: 10));
-    await t.pumpWidget(host(MemberAvatarBubble(member: fresh, now: now, onTap: () {})));
-    expect(find.byKey(const Key('bray-speed-pill')), findsOneWidget);
-    expect(find.textContaining('65'), findsOneWidget);
-    expect(find.byKey(const Key('bray-heading-cone')), findsOneWidget);
-    expect(find.byKey(const Key('bray-age-pill')), findsNothing);
-    // The Bray pill overlays the face (speedGap / speedCaptionH are 0), so the
-    // box is the same either way - the dot stays on the point.
-    expect(MemberAvatarBubble.markerSizeFor(fresh, now: now), MemberAvatarBubble.markerSizeFor(stale, now: now));
+    expect(find.byKey(const Key('glyph-car')), findsNothing);
+    expect(find.text('updated'), findsOneWidget);
+    expect(find.text('3 hr ago'), findsOneWidget);
   });
 
   testWidgets('solo marker a11y: a stale driver is not "Driving 65 mph"', (t) async {
@@ -96,43 +85,42 @@ void main() {
     await t.pumpWidget(host(CapsuleBubble(members: [m('Heidi Bray', ago: const Duration(hours: 3)), m('Charlie', mph: 40, ago: const Duration(hours: 2))], now: now)));
     expect(find.textContaining('mph'), findsNothing);
     expect(find.text('65'), findsNothing);
-    expect(find.byKey(const Key('bray-heading-cone')), findsNothing);
+    expect(find.byKey(const Key('bray-heading-beam')), findsNothing);
     expect(t.getSemantics(sem(CapsuleBubble)).label, isNot(contains('mph')));
     expect(capsuleHeading([m('Heidi Bray', ago: const Duration(hours: 3)), m('Charlie', ago: const Duration(hours: 3))], now: now), isNull);
     h.dispose();
     await t.pumpWidget(host(CapsuleBubble(members: [m('Heidi Bray', ago: const Duration(hours: 3)), m('Charlie', mph: 40)], now: now)));
-    expect(find.text('40'), findsOneWidget);   // the fresh mover's speed, not the stale 65
+    // Task 8: the capsule's one badge is the same SlotBadge format as the
+    // solo marker ("40 mph"), not the retired bare-number pill.
+    expect(find.text('40 mph'), findsOneWidget);   // the fresh mover's speed, not the stale 65
     expect(find.text('65'), findsNothing);
   });
 
-  testWidgets('card: a stale driver says "updated 3h ago" in the facts, keeps the last place, and never "Driving"', (t) async {
+  testWidgets('card: a stale driver says "🕒 Updated 3h ago" in the chips, keeps the last place, and never "Driving"', (t) async {
     final Member stale = m('Heidi Bray', ago: const Duration(hours: 3));
-    // The Everyone row: no state line; the facts carry "updated 3h ago".
+    // Stale: the place line is the last known place (non-driving wording,
+    // the full street), the chips say "Updated 3h ago" and "last seen N mi
+    // away" where the speed and the live distance would be (card state 6).
     await t.pumpWidget(host(PersonCard(member: stale, label: 'Heidi', charging: false, now: now, place: hwy)));
     expect(find.textContaining('Driving'), findsNothing);
     expect(find.textContaining('mph'), findsNothing);
-    expect(find.byKey(const Key('card-stat')), findsNothing);
-    expect(t.widget<Text>(find.byKey(const Key('card-facts'))).data, 'updated 3h ago · 80%');
-    // Focused: the state line is the last known place (non-driving wording),
-    // the street shows (J:287 hides it only while driving) with the city on
-    // the detail line, and the facts say "updated 3h ago" where the speed would be.
-    await t.pumpWidget(host(PersonCard(member: stale, label: 'Heidi', charging: false, now: now, place: hwy, focused: true)));
-    expect(t.widget<Text>(find.byKey(const Key('card-stat'))).data, '12 mi away');
-    expect(t.widget<Text>(find.byKey(const Key('card-details'))).data, '🌆 Loganville · Loganville Highway');
-    expect(t.widget<Text>(find.byKey(const Key('card-facts'))).data, '80% · updated 3h ago');
-    expect(find.textContaining('Driving'), findsNothing);
-    // Fresh again: the driving state line, the speed in the facts, no street.
-    await t.pumpWidget(host(PersonCard(member: m('Heidi Bray', ago: const Duration(minutes: 10)), label: 'Heidi', charging: false, now: now, place: hwy, focused: true)));
-    expect(t.widget<Text>(find.byKey(const Key('card-stat'))).data, '🚗 Driving');
-    expect(t.widget<Text>(find.byKey(const Key('card-facts'))).data, '65 mph · 80% · 10m ago');
-    expect(t.widget<Text>(find.byKey(const Key('card-details'))).data, '🌆 Loganville');
-    expect(find.text('Loganville Highway'), findsNothing);
+    expect(t.widget<Text>(find.byKey(const Key('card-place'))).data, '📍 Near Loganville Highway');
+    expect(find.text('🕒 Updated 3h ago'), findsOneWidget);
+    expect(find.text('📏 last seen 12 mi away'), findsOneWidget);
+    // Fresh again: the driving place line (the map abbreviation), the speed
+    // as a chip, no full street.
+    await t.pumpWidget(host(PersonCard(member: m('Heidi Bray', ago: const Duration(minutes: 10)), label: 'Heidi', charging: false, now: now, place: hwy)));
+    expect(t.widget<Text>(find.byKey(const Key('card-place'))).data, '🚗 Driving · Loganville Hwy');
+    expect(find.text('🚗 65 mph'), findsOneWidget);
+    expect(find.text('📏 12 mi away'), findsOneWidget);
+    expect(find.textContaining('Loganville Highway'), findsNothing);
   });
 
   testWidgets('card: the mapper\'s stopped status alone is stale too', (t) async {
     await t.pumpWidget(host(PersonCard(member: m('Heidi Bray', st: MemberStatus.stopped), label: 'Heidi', charging: false, now: now, place: hwy)));
     expect(find.textContaining('Driving'), findsNothing);
-    expect(find.text('updated 2m ago · 80%'), findsOneWidget);
-    expect(find.byKey(const Key('card-dot')), findsNothing);
+    expect(find.text('🕒 Updated 2m ago'), findsOneWidget);
+    // The dot stays but goes grey (states.html .dot.grey).
+    expect((t.widget<Container>(find.byKey(const Key('card-dot'))).decoration as BoxDecoration).color, BrayTokens.cardDotStale);
   });
 }

@@ -55,13 +55,8 @@ class FocusRules {
     return currentZoom > floor ? currentZoom : floor;
   }
 
-  /// Focused → focus. Leaving focus → hidden (Bo, 2026-09-14: "back" is the
-  /// map alone, whether the focus came from a face or from the all-cards
-  /// sheet). Otherwise the level is whatever the Everyone chip set.
-  SheetLevel levelFor(SheetLevel current) {
-    if (_focusedId != null) return SheetLevel.focus;
-    return current == SheetLevel.focus ? SheetLevel.hidden : current;
-  }
+  /// Focused → focus; otherwise hidden. There is no other level (Round 4).
+  SheetLevel levelFor(SheetLevel current) => _focusedId != null ? SheetLevel.focus : SheetLevel.hidden;
 
   /// J:204 lift = round(sheetHeight / 2).
   static double liftFor(double sheetHeight) => (sheetHeight / 2).roundToDouble();

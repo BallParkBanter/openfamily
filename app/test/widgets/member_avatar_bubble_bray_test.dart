@@ -3,91 +3,139 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:openfamily/models/member.dart';
+import 'package:openfamily/models/member_place.dart';
 import 'package:openfamily/theme/bray_tokens.dart';
+import 'package:openfamily/widgets/marker_pointer.dart';
 import 'package:openfamily/widgets/member_avatar_bubble.dart';
 import 'package:openfamily/screens/map_screen.dart' show showRange;
 
 // batteryPercent/address are required by Member's constructor (member.dart:85-90).
-Member m(String name, {MemberStatus st = MemberStatus.normal, int? mph, double? acc, bool? charging}) => Member(
+Member m(String name, {MemberStatus st = MemberStatus.normal, int? mph, double? acc, bool? charging, int batt = 0}) => Member(
     id: name, name: name, status: st, position: const LatLng(33.9, -84.4),
     movement: mph == null ? MovementType.none : MovementType.car, speedMph: mph, accuracyMeters: acc,
-    batteryPercent: 0, address: '', charging: charging);
+    batteryPercent: batt, address: '', charging: charging);
 Widget host(Widget w) => MaterialApp(home: Scaffold(body: Center(child: w)));
 
 void main() {
-  testWidgets('solo bubble: 56px face, 3px accent ring, name pill above with the accent outline', (t) async {
-    await t.pumpWidget(host(MemberAvatarBubble(member: m('Heidi Bray'), onTap: () {})));
-    final ring = t.widget<Container>(find.byKey(const Key('bray-ring')));
-    final b = (ring.decoration as BoxDecoration).border as Border;
+  testWidgets('solo marker: 56 face in a 3 accent ring; name badge underlay top-left, its bottom-right corner under the ring, no text covered', (t) async {
+    final Member who = m('Heidi Bray');
+    final Size s = MemberAvatarBubble.markerSizeFor(who);
+    await t.pumpWidget(host(SizedBox(width: s.width, height: s.height, child: MemberAvatarBubble(member: who, onTap: () {}))));
+    final Container ring = t.widget<Container>(find.byKey(const Key('bray-ring')));
+    final Border b = (ring.decoration as BoxDecoration).border as Border;
     expect(b.top.width, BrayTokens.ringSolo);
     expect(b.top.color, BrayTokens.accentHeidi);
-    expect(t.getSize(find.byKey(const Key('bray-ring'))).width, BrayTokens.soloFace);
-    expect(find.text('Heidi'), findsOneWidget);          // labelFor: the first name, never "Heidi Bray" (2026-09-14)
+    expect((ring.decoration as BoxDecoration).boxShadow, isNull);          // the shadow is on the disc, not the ring
+    expect(t.getSize(find.byKey(const Key('bray-ring'))), const Size(BrayTokens.soloFace, BrayTokens.soloFace));
+    expect(find.text('Heidi'), findsOneWidget);
     expect(find.text('Heidi Bray'), findsNothing);
-    final tag = t.widget<Container>(find.byKey(const Key('bray-name-tag')));
-    expect(((tag.decoration as BoxDecoration).border as Border).top.color, BrayTokens.accentHeidi);
-    // The pill sits above the ring.
-    expect(t.getRect(find.byKey(const Key('bray-name-tag'))).bottom,
-        lessThanOrEqualTo(t.getRect(find.byKey(const Key('bray-ring'))).top));
-    // OPEN: Bo, 2026-09-13 "too small on tablet screen" - 14px, not S:25's 10.5.
-    final Text name = t.widget<Text>(find.text('Heidi'));
-    expect(name.style!.fontSize, BrayTokens.nameTagFont);
-    expect(BrayTokens.nameTagFont, 14);
-    // The taller pill still fits its zone above the ring. (No width check: the
-    // test font is Ahem, 1em per glyph, three times wider than the real one.)
-    await t.pumpWidget(host(MemberAvatarBubble(member: m('Test Charlie'), onTap: () {})));
-    final Size pill = t.getSize(find.byKey(const Key('bray-name-tag')));
-    expect(pill.height, lessThanOrEqualTo(MemberAvatarBubble.nameTagZone));
-  });
-  testWidgets('accent tail under the ring, dot with a white ring at the bottom centre of the marker box', (t) async {
-    final Member who = m('Bo Bray');
-    final Size s = MemberAvatarBubble.markerSizeFor(who);
-    await t.pumpWidget(host(SizedBox(width: s.width, height: s.height,
-        child: MemberAvatarBubble(member: who, onTap: () {}))));
-    final box = t.getRect(find.byType(MemberAvatarBubble));
-    final ring = t.getRect(find.byKey(const Key('bray-ring')));
-    final tail = t.getRect(find.byKey(const Key('bray-tail')));
-    final dot = t.getRect(find.byKey(const Key('bray-dot')));
-    expect(tail.size, const Size(BrayTokens.tailW, BrayTokens.tailHSolo));
-    // Design list: "Solid accent tail under the ring, a gap, then a dark dot" -
-    // the tail touches the ring; the gap is between the tail tip and the dot.
-    expect(tail.top, closeTo(ring.bottom, 0.01));
-    expect(dot.top, closeTo(tail.bottom + MemberAvatarBubble.tailDotGap, 0.01));
-    expect(MemberAvatarBubble.tailDotGap, 4);
-    expect(dot.size, const Size(BrayTokens.dotSize, BrayTokens.dotSize));
-    final dotBox = t.widget<Container>(find.byKey(const Key('bray-dot')));
-    final d = dotBox.decoration as BoxDecoration;
-    expect(d.color, BrayTokens.dotFill);
-    expect((d.border as Border).top, const BorderSide(color: Colors.white, width: BrayTokens.dotRing));
-    expect(dot.center.dx, closeTo(box.center.dx, 1));
-    expect(dot.center.dy, closeTo(box.bottom - BrayTokens.dotSize / 2, 1));
-    expect(dot.center.dy, closeTo(box.top + MemberAvatarBubble.pointFromTop, 1));
+    final Rect ringR = t.getRect(find.byKey(const Key('bray-ring')));
+    final Rect tag = t.getRect(find.byKey(const Key('bray-name-tag')));
+    // markers-13.html .nm right:38px; bottom:44px - measured from the ring's box.
+    expect(tag.right, closeTo(ringR.right - BrayTokens.nameBadgeRight, 0.5));
+    expect(tag.bottom, closeTo(ringR.bottom - BrayTokens.nameBadgeBottom, 0.5));
+    // The corner (right, bottom) is inside the ring's circle -> tucked under it ...
+    expect((tag.bottomRight - ringR.center).distance, lessThan(BrayTokens.soloFace / 2));
+    // ... and the badge is painted before the ring (under it).
+    final Iterable<Element> order = find.byWidgetPredicate((w) => w.key == const Key('bray-name-tag') || w.key == const Key('bray-ring')).evaluate();
+    expect(order.first.widget.key, const Key('bray-name-tag'));
+    // "no text covered": only the pill's padding tucks under - the TEXT's
+    // bottom-right corner stays outside the ring's circle.
+    final Rect text = t.getRect(find.text('Heidi'));
+    expect((text.bottomRight - ringR.center).distance, greaterThanOrEqualTo(BrayTokens.soloFace / 2));
     expect(t.takeException(), isNull);
   });
-  testWidgets('bolt (S:72-74) bottom-left of the ring only while charging; null means no bolt', (t) async {
-    await t.pumpWidget(host(MemberAvatarBubble(member: m('Bo Bray', charging: true), onTap: () {})));
-    expect(find.byKey(const Key('bray-bolt')), findsOneWidget);
-    final bolt = t.getRect(find.byKey(const Key('bray-bolt')));
-    final ring = t.getRect(find.byKey(const Key('bray-ring')));
-    expect(bolt.size, const Size(BrayTokens.boltWhite, BrayTokens.boltWhite));
-    expect(bolt.left, closeTo(ring.left - 3, 0.5)); // S:72 left:-3px
-    expect(bolt.bottom, closeTo(ring.bottom + 1, 0.5)); // S:72 bottom:-1px
-    await t.pumpWidget(host(MemberAvatarBubble(member: m('Bo Bray', charging: false), onTap: () {})));
-    expect(find.byKey(const Key('bray-bolt')), findsNothing);
-    await t.pumpWidget(host(MemberAvatarBubble(member: m('Bo Bray'), onTap: () {})));
-    expect(find.byKey(const Key('bray-bolt')), findsNothing);
+  testWidgets('pointer BEHIND the ring in its colour, top at 50; shadow disc under everything; dot 10 at top 74 on the marker point', (t) async {
+    final Member who = m('Bo Bray');
+    final Size s = MemberAvatarBubble.markerSizeFor(who);
+    await t.pumpWidget(host(SizedBox(width: s.width, height: s.height, child: MemberAvatarBubble(member: who, onTap: () {}))));
+    final Rect box = t.getRect(find.byType(MemberAvatarBubble));
+    final Rect ring = t.getRect(find.byKey(const Key('bray-ring')));
+    final Rect tail = t.getRect(find.byKey(const Key('bray-tail')));
+    final Rect dot = t.getRect(find.byKey(const Key('bray-dot')));
+    final Rect disc = t.getRect(find.byKey(const Key('bray-ring-shadow')));
+    expect(ring.top, closeTo(box.top + MemberAvatarBubble.topZone, 0.01));
+    expect(tail.size, const Size(BrayTokens.pointerW, BrayTokens.pointerH));
+    expect(tail.top, closeTo(ring.top + BrayTokens.pointerTop, 0.01));          // overlaps the ring's bottom 6 px: no gap
+    expect(tail.center.dx, closeTo(ring.center.dx, 0.01));
+    expect((t.widget<CustomPaint>(find.byKey(const Key('bray-tail'))).painter as MarkerPointerPainter).color, BrayTokens.accentBo);
+    expect(disc.topLeft, ring.topLeft);
+    // Paint order: disc, tail, ring (the ring covers the pointer's top; the disc's shadow is under the pointer).
+    final List<Key?> keys = find.byWidgetPredicate((w) => w.key == const Key('bray-ring-shadow') || w.key == const Key('bray-tail') || w.key == const Key('bray-ring'))
+        .evaluate().map((e) => e.widget.key).toList();
+    expect(keys, const [Key('bray-ring-shadow'), Key('bray-tail'), Key('bray-ring')]);
+    expect(dot.size, const Size(BrayTokens.dotSize, BrayTokens.dotSize));
+    expect(dot.top, closeTo(ring.top + BrayTokens.dotTop, 0.01));
+    expect(dot.center.dx, closeTo(box.center.dx, 0.5));
+    expect(dot.center.dy, closeTo(box.bottom - BrayTokens.dotSize / 2, 0.5));
+    expect(dot.center.dy, closeTo(box.top + MemberAvatarBubble.pointFromTop, 0.5));
+    expect(MemberAvatarBubble.avatarBox, 100);
+    expect(MemberAvatarBubble.pointFromTop, 95);
+    expect(MemberAvatarBubble.atHomeLift, 9);
+    expect(t.takeException(), isNull);
   });
-  testWidgets('speed pill only while driving', (t) async {
-    await t.pumpWidget(host(MemberAvatarBubble(member: m('Bo Bray', mph: 61), onTap: () {})));
-    // The pill is one Text.rich ('61' + ' mph', S:76-80), so match its plain text.
-    expect(find.textContaining('61'), findsOneWidget);
-    // OPEN: Bo, 2026-09-13 "too small on tablet screen" - the number is 11px, not S:78's 9.
-    final Text pill = t.widget<Text>(find.textContaining('61'));
-    final TextSpan span = pill.textSpan as TextSpan;
-    expect((span.children!.first as TextSpan).style!.fontSize, BrayTokens.speedPillFont);
-    expect(BrayTokens.speedPillFont, 11);
-    await t.pumpWidget(host(MemberAvatarBubble(member: m('Bo Bray'), onTap: () {})));
+  testWidgets('stale: grey ring, grey pointer, grey badge outline, desaturated photo', (t) async {
+    final DateTime now = DateTime(2026, 9, 15, 12);
+    final Member who = Member(id: 'h', name: 'Heidi Bray', status: MemberStatus.normal, position: const LatLng(33.9, -84.4),
+        batteryPercent: 50, address: '', lastSeen: now.subtract(const Duration(hours: 4)));
+    await t.pumpWidget(host(MemberAvatarBubble(member: who, now: now, onTap: () {})));
+    expect(((t.widget<Container>(find.byKey(const Key('bray-ring'))).decoration as BoxDecoration).border as Border).top.color, BrayTokens.staleGrey);
+    expect((t.widget<CustomPaint>(find.byKey(const Key('bray-tail'))).painter as MarkerPointerPainter).color, BrayTokens.staleGrey);
+    expect(((t.widget<Container>(find.byKey(const Key('bray-name-tag'))).decoration as BoxDecoration).border as Border).top.color, BrayTokens.staleGrey);
+    expect(t.widget<StatusAvatar>(find.byType(StatusAvatar)).desaturate, isTrue);
+    expect(find.byType(ColorFiltered), findsOneWidget);
+  });
+  testWidgets('battery badge bottom-left of the ring (left -5, bottom -4) while charging or low; none when fine; null charging = not charging', (t) async {
+    await t.pumpWidget(host(MemberAvatarBubble(member: m('Bo Bray', charging: true, batt: 96), onTap: () {})));
+    expect(find.byKey(const Key('battery-badge')), findsOneWidget);
+    final Rect badge = t.getRect(find.byKey(const Key('battery-badge')));
+    final Rect ring = t.getRect(find.byKey(const Key('bray-ring')));
+    expect(badge.left, closeTo(ring.left + BrayTokens.battBadgeLeft, 0.5));      // .chg left:-5px
+    expect(badge.bottom, closeTo(ring.bottom - BrayTokens.battBadgeBottom, 0.5)); // .chg bottom:-4px
+    expect(find.byKey(const Key('glyph-bolt')), findsOneWidget);
+    expect(find.byKey(const Key('bray-bolt')), findsNothing);                     // the old white bolt pill is gone
+    await t.pumpWidget(host(MemberAvatarBubble(member: m('Bo Bray', charging: false, batt: 96), onTap: () {})));
+    expect(find.byKey(const Key('battery-badge')), findsNothing);
+    await t.pumpWidget(host(MemberAvatarBubble(member: m('Bo Bray', batt: 12), onTap: () {})));
+    expect(find.byKey(const Key('battery-badge')), findsOneWidget);
+    expect(find.byKey(const Key('glyph-bolt')), findsNothing);
+  });
+  testWidgets('one badge top-right at left 44 / top -10 of the ring; no pill under the ring any more', (t) async {
+    final DateTime now = DateTime(2026, 9, 15, 12);
+    final Member who = Member(id: 'c', name: 'Charlie', status: MemberStatus.normal, position: const LatLng(33.9, -84.4),
+        batteryPercent: 80, address: '', lastSeen: now.subtract(const Duration(minutes: 2)),
+        place: MemberPlace(since: now.subtract(const Duration(hours: 4, minutes: 12))));
+    final Size s = MemberAvatarBubble.markerSizeFor(who);
+    await t.pumpWidget(host(SizedBox(width: s.width, height: s.height, child: MemberAvatarBubble(member: who, now: now, onTap: () {}))));
+    final Rect ring = t.getRect(find.byKey(const Key('bray-ring')));
+    final Rect badge = t.getRect(find.byKey(const Key('slot-badge')));
+    expect(badge.left, closeTo(ring.left + BrayTokens.badgeLeft, 0.5));   // .age left:44px
+    expect(badge.top, closeTo(ring.top + BrayTokens.badgeTop, 0.5));      // .age top:-10px
+    expect(find.text('here for'), findsOneWidget);
+    expect(find.text('4 hr, 12 min'), findsOneWidget);
+    // Driving with no tracker: the badge is the speed (upstream's "42 mph" test reads the same Text).
+    await t.pumpWidget(host(MemberAvatarBubble(member: who.copyWith(movement: MovementType.car, speedMph: 42), now: now, onTap: () {})));
+    expect(find.text('42 mph'), findsOneWidget);
+    expect(find.byKey(const Key('glyph-car')), findsOneWidget);
+    expect(find.text('here for'), findsNothing);
+    // Badge painted after the ring (over it).
+    final List<Key?> keys = find.byWidgetPredicate((w) => w.key == const Key('bray-ring') || w.key == const Key('slot-badge')).evaluate().map((e) => e.widget.key).toList();
+    expect(keys, const [Key('bray-ring'), Key('slot-badge')]);
+  });
+  testWidgets('parked at Home with inDrive: false (map_screen._inDriveFor / inDriveVerdict): the badge is "home for", never "0 mph"', (t) async {
+    // DECISIONS state 1 + ruling 6 - parked inside the home geofence is not a
+    // drive, for the marker, the capsule and the card alike. The map decides
+    // once and hands the bubble `inDrive: false`; the bubble draws the stay.
+    final DateTime now = DateTime(2026, 9, 15, 12);
+    final Member who = Member(id: 'h', name: 'Heidi', status: MemberStatus.normal, position: const LatLng(33.9, -84.4),
+        batteryPercent: 80, address: '', lastSeen: now.subtract(const Duration(minutes: 1)),
+        movement: MovementType.car, speedMph: 0,
+        place: MemberPlace(atHome: true, placeName: 'Home', since: now.subtract(const Duration(minutes: 3))));
+    final Size s = MemberAvatarBubble.markerSizeFor(who);
+    await t.pumpWidget(host(SizedBox(width: s.width, height: s.height, child: MemberAvatarBubble(member: who, now: now, inDrive: false, onTap: () {}))));
+    expect(find.text('home for'), findsOneWidget);
     expect(find.textContaining('mph'), findsNothing);
+    expect(find.byKey(const Key('glyph-car')), findsNothing);
   });
   test('marker alignment puts the map point on the dot centre', () {
     // flutter_map 7 MarkerLayer (marker_layer.dart:52-55, 75-76): left = w/2*(x+1),
@@ -101,10 +149,11 @@ void main() {
       expect(s.width - left, closeTo(s.width / 2, 0.001));
       expect(s.height - top, closeTo(s.height - BrayTokens.dotSize / 2, 0.001));
     }
-    // The box is recomputed for the 14px pill and the moved gap: tag zone + face
-    // + tail (touching the ring) + gap + dot.
-    expect(MemberAvatarBubble.avatarBox,
-        MemberAvatarBubble.nameTagZone + BrayTokens.soloFace + BrayTokens.tailHSolo + MemberAvatarBubble.tailDotGap + BrayTokens.dotSize);
+    // bray-redesign (Task 2): avatarBox is now topZone + dotTop + dotSize
+    // (markers-13.html), not nameTagZone/tailHSolo/tailDotGap - the old
+    // formula's expect line was deleted per the task brief's Step 5 grep
+    // check (MemberAvatarBubble.nameTagZone / .tailDotGap are retired,
+    // kept only for marker_gallery_screen.dart).
     expect(MemberAvatarBubble.pointFromTop, MemberAvatarBubble.avatarBox - BrayTokens.dotSize / 2);
   });
   test('accuracy circle only for a GPS problem', () {

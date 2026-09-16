@@ -7,26 +7,26 @@ import '../models/member.dart';
 import '../services/member_avatar_cache.dart';
 import '../theme/app_theme.dart';
 import '../theme/bray_tokens.dart';
-import 'heading_cone.dart';
+import 'battery_badge.dart';
+import 'heading_beam.dart';
+import 'home_chip.dart' show HomeChip;
+import 'marker_pointer.dart';
 import 'movement_icon.dart';
-import 'place_text.dart' show pillStreet;
+import 'name_badge.dart';
+import 'slot_badge.dart';
 
 /// A circular avatar bubble pinned to a member's location on the map.
 ///
-/// Bray look - the design list (Joplin "🎨 Life360 Replacement — Design Spec",
-/// id 41a4e11794924c8d9cc1921f07fc2ab1, "Map and Icons") drawn with the Family
-/// Viewer's selected-person marker (style.css 88-91 .fc-solo: "NO gray capsule
-/// — the ring is their own colour"): a name pill above with the person's accent
-/// outline, a 56px face inside a 3px accent ring, a solid accent tail under the
-/// ring, a gap, then the dark dot with a white ring ON the exact spot. A white bolt
-/// pill sits bottom-left of the ring while charging; the viewer's small speed
-/// pill overlays the face's bottom edge while driving. Tapping opens details.
+/// Bo's 2026-09-15 mockup (markers-13.html): the ring's shadow on its own
+/// disc, the name badge tucked under the ring's top-left, the pointer in the
+/// ring's colour behind the ring with no gap, the dot 6 px under the
+/// pointer's tip, a battery badge bottom-left and ONE badge top-right.
 ///
-/// Every visual constant is a BrayTokens value or a bare number with its source:
-///   S = family-viewer2/static/style.css   J = family-viewer2/static/app.js
-/// (line numbers verified 2026-09-12 against the live viewer on BrayNextcloudServer);
-/// "measured" numbers were read off rig/goldens/focus_dad.png (1600x2560, DPR 2,
-/// so CSS px = device px / 2) along the marker's centre column x=799.
+/// Every visual constant is a BrayTokens value citing mock2 markers-13.html
+/// (the redesign's marker mockup - .face .shadow .tail .dot .nm .age .chg),
+/// or a bare number with its source. The older S = style.css / J = app.js
+/// citations and the focus_dad.png measurements that remain in this file
+/// describe the pre-redesign viewer and apply only where they are quoted.
 class MemberAvatarBubble extends StatelessWidget {
   const MemberAvatarBubble({
     super.key,
@@ -36,10 +36,14 @@ class MemberAvatarBubble extends StatelessWidget {
     this.onLongPress,
     this.radius = 22,
     this.now,
+    this.inDrive,
   });
 
   final Member member;
   final VoidCallback? onTap;
+
+  /// The DriveTracker's verdict for this member (Task 5); null = no tracker.
+  final bool? inDrive;
 
   /// The clock the speed pill / cone / age pill are judged against
   /// (Member.isStaleAt); null reads DateTime.now() at build. Tests pass a
@@ -63,126 +67,82 @@ class MemberAvatarBubble extends StatelessWidget {
   /// no longer sizes it.
   final double radius;
 
-  /// Marker width. The name pill is nowrap (S:25) and wider than the face;
-  /// OPEN: measured - "Test Charlie" (the rig's longest name) was ~95px with
-  /// its padding at 10.5px bold; at 14px (nameTagFont) that scales to ~127,
-  /// so 160 leaves room and clears the shadows.
-  static const double markerWidth = 160;
+  /// Marker box width. OPEN: chosen - 200 holds the ring (56, centred), the
+  /// name badge to its top-left ("Charlie" ends 18 px in from the ring's
+  /// left edge; markers-13.html .nm right:38px) and most of the top-right
+  /// badge; anything wider paints past the box (the Stack is Clip.none) and
+  /// is simply not tappable, which no badge needs to be.
+  static const double markerWidth = 200;
 
-  /// The zone above the face. S:24 .tagname top:-19px put the 10.5px pill's
-  /// top edge 19px above the face - the pill (10.5 x 1.15 line + 2 x 2px pad
-  /// + 2 x 1px border = 18.1) plus ~1px of clearance. The 14px pill is
-  /// 14 x 1.15 + 2 x 3 + 2 = 24.1, so the zone is 25 with the same clearance.
-  /// OPEN: computed from nameTagFont (Bo, 2026-09-13 "too small on tablet screen").
-  static const double nameTagZone = 25;
+  /// The zone above the ring. The name badge's top is nameBadgeH - (soloFace
+  /// - nameBadgeBottom) = 25.1 - 12 = 13.1 above the ring's top; the slot
+  /// badge's is 10 (BrayTokens.badgeTop). OPEN: computed - 16 clears both.
+  static const double topZone = 16;
 
-  /// Ring bottom edge to tail top edge: 0 - the tail sits ON the ring. Design
-  /// list (Joplin "Life360 Replacement" Map and Icons): "Solid accent tail
-  /// under the ring, a gap, then a dark dot with a white ring" - the gap is
-  /// below the tail, not above it. (S:88 lifts .fc-solo 15px above the point
-  /// and S:81 starts the tail 17px above it: touching, within 2px.)
-  static const double _ringTailGap = 0;
+  /// Height of the whole pin: zone + the dot's bottom edge (markers-13.html
+  /// .dot top:74px + 10) = 100. (Upstream name kept - its "marker grows"
+  /// test reads it.)
+  static const double avatarBox = topZone + BrayTokens.dotTop + BrayTokens.dotSize;
 
-  /// The tail: S:82 10px + 10px wide, S:91 .fc-tail.solo 13px tall.
-  static const double _tailH = BrayTokens.tailHSolo;
-
-  /// Tail tip to dot - the design list's "gap". OPEN: measured - the 4 CSS px
-  /// of clear space in focus_dad.png (ring bottom y=1122, tail top y=1130 at
-  /// DPR 2) is the marker's one gap; Bo's list puts it between the tail tip
-  /// and the dot, so it moved there (2026-09-13), keeping the measured size.
-  static const double tailDotGap = 4;
-
-  /// Height of the whole pin: tag zone + face + tail + gap + dot = 108.
-  /// (Upstream name kept - its "marker grows" test reads it.)
-  static const double avatarBox =
-      nameTagZone + BrayTokens.soloFace + _ringTailGap + _tailH + tailDotGap + BrayTokens.dotSize;
-
-  /// S:75 .fc-pill bottom:-3px - the speed pill overlays the face's bottom
-  /// edge and pokes 3px below the ring; it adds nothing under the marker (the
-  /// tail and dot are there), so the marker box does not grow while driving -
-  /// the two-line pill (street under the speed) is bottom-anchored too and
-  /// grows UP over the face, so it adds nothing under the marker either.
-  /// Upstream's names kept, honestly zero.
-  static const double _speedPillDrop = 3;
+  /// Upstream's speed-caption growth, honestly zero: the speed lives in the
+  /// top-right badge (Task 3), which overhangs the ring and adds nothing
+  /// under the marker.
   static const double speedGap = 0;
   static const double speedCaptionH = 0;
 
-  /// How far the speed pill's slot reaches past the ring on each side, so the
-  /// pill stays centred on the ring but can grow to the whole [markerWidth]
-  /// (160) instead of the ring's 56: "Peachtree Ind." needs ~64px at 7px.
-  /// Design list line 41 ("Street under the speed") - the street has to be
-  /// readable, not ellipsized. The Stack is Clip.none, so nothing is cut.
-  static const double _pillReach = (markerWidth - BrayTokens.soloFace) / 2;
+  static Size markerSizeFor(Member member, {DateTime? now}) => const Size(markerWidth, avatarBox + speedGap + speedCaptionH);
 
-  /// [now] as for the widget: the pill's slot exists only while there is a
-  /// speed to show (Member.displaySpeedAt - a stale fix has none).
-  static Size markerSizeFor(Member member, {DateTime? now}) {
-    return Size(
-      markerWidth,
-      member.displaySpeedAt(now ?? DateTime.now()) != null
-          ? avatarBox + speedGap + speedCaptionH
-          : avatarBox,
-    );
-  }
+  /// The dot's centre from the top of the box: 16 + 74 + 5 = 95.
+  static const double pointFromTop = topZone + BrayTokens.dotTop + BrayTokens.dotSize / 2;
 
-  /// The dot's centre, measured from the top of the marker box: everything
-  /// above it plus half the dot = 103.
-  static const double pointFromTop = avatarBox - BrayTokens.dotSize / 2;
+  /// The ring's centre from the top of the box: 16 + 28 = 44 (the beam's origin, Task 6).
+  static const double ringCentreFromTop = topZone + BrayTokens.soloFace / 2;
 
-  /// The ring's centre, measured from the top of the marker box: the tag zone
-  /// plus half the face = 53. The direction cone's origin.
-  static const double ringCentreFromTop = nameTagZone + BrayTokens.soloFace / 2;
+  /// The ring's left edge in the box: (200 - 56) / 2 = 72.
+  static const double ringLeft = (markerWidth - BrayTokens.soloFace) / 2;
 
-  /// The direction cone's reach from the ring centre: 1.6 x the face = 89.6.
-  /// It paints past the marker box (the Stack is Clip.none) - the box, the
-  /// point and the tap area do not change while moving.
-  static const double coneLength = BrayTokens.coneLengthFactor * BrayTokens.soloFace;
+  /// The pointer's tip from the ring's top: 50 + 18 = 68 (the dot starts at 74: a 6 px gap).
+  static const double pointerTip = BrayTokens.pointerTop + BrayTokens.pointerH;
 
-  /// Where the map point sits inside the marker box: horizontally centred and
-  /// dotSize/2 above the bottom edge - the dot's centre (same as
-  /// CapsuleBubble.markerAlignment).
-  ///
-  /// flutter_map 7 (marker_layer.dart:52-55, 75-76) resolves the anchor from
-  /// the box's top-left as left = w/2 * (x + 1), top = h/2 * (y + 1) and places
-  /// the box at (pos.x - (w - left), pos.y - (h - top)), so the point sits
-  /// (w - left, h - top) from the box's top-left corner - the inverse of
-  /// Marker.computePixelAlignment (marker.dart:66-76). For the point d px from
-  /// the top: h - top = d, so y = 1 - 2d/h. (Upstream's 2d/h - 1 is the mirror
-  /// image; it was only right while the avatar sat at the top of the box.)
-  /// At home the dot is hidden and the 🏠 chip (40px, centred on the spot)
-  /// takes its place; the whole pin lifts by half the chip so the tail tip
-  /// rests on the chip's top edge instead of stabbing through it.
-  /// OPEN: Bo, 2026-09-14 "my icon overlaps the home icon and it should not".
-  static const double atHomeLift = 6; // HomeChip.size/2 (20) - the hidden dot (10) - tailDotGap (4): tail tip on the chip edge
+  /// At home the dot is hidden and the 🏠 chip (40, centred on the spot) is
+  /// the mark; the pin lifts so the pointer's tip rests on the chip's top
+  /// edge (markers-24.html: .home top:310 = the tip at 290 + 20). Lift =
+  /// chip/2 - (dot centre - tip) = 20 - (79 - 68) = 9.
+  static const double atHomeLift = HomeChip.size / 2 - (BrayTokens.dotTop + BrayTokens.dotSize / 2 - pointerTip);
 
+  /// Where the map point sits inside the marker box (flutter_map 7
+  /// marker_layer.dart:52-55: for the point d px from the top, y = 1 - 2d/h).
   static Alignment markerAlignmentFor(Member member, {DateTime? now}) {
     final double h = markerSizeFor(member, now: now).height;
     final double lift = member.place?.atHome == true ? atHomeLift : 0;
     return Alignment(0, 1 - 2 * (pointFromTop + lift) / h);
   }
 
-  /// The bolt shows only on an explicit `charging: true` from the backend
-  /// (bray-charging: migration 000025 + `charging` on the ingest body and
-  /// member JSON, fed by the receiver on BrayNextcloudServer from OwnTracks
-  /// bs 2/3). Null means the client never said - no bolt, same as false.
-  static bool _isCharging(Member member) => member.charging == true;
+  /// Stale = Member.isStaleAt with a known last fix (so there is an age to
+  /// print). `warning` / `gpsIssue` on a fresh fix are live people with a
+  /// problem, not stale ones.
+  static bool isStale(Member m, DateTime now) => m.isStaleAt(now) && m.lastSeen != null;
 
-  /// Stale = Member.isStaleAt (FamilyService's timer flipped the status to
-  /// `stopped`, member_mapper.dart refreshStaleness, OR the last fix is
-  /// simply older than kStaleAfter and the timer has not caught up) and the
-  /// last fix time is known, so the pill has an age to print. `warning` (low
-  /// battery) and `gpsIssue` (poor accuracy) on a fresh fix are live members
-  /// with a problem, not stale ones (design list: "updated 2m ago on stale
-  /// icons").
-  static bool _isStale(Member m, DateTime now) => m.isStaleAt(now) && m.lastSeen != null;
+  /// The ring's, pointer's and name badge's colour: the person's accent, or
+  /// the stale grey (markers-24.html .face.stale / .tail.stale / .nm.stale).
+  static Color ringColourFor(Member m, DateTime now) => isStale(m, now) ? BrayTokens.staleGrey : BrayTokens.accentFor(m);
+
+  /// Retired 2026-09-15 by the mock2 layout below - kept only because
+  /// lib/screens/marker_gallery_screen.dart (Bo's picker history) still
+  /// reads them.
+  static const double nameTagZone = 25;
+  static const double tailDotGap = 4;
+  static const double coneLength = BrayTokens.coneLengthFactor * BrayTokens.soloFace;
 
   @override
   Widget build(BuildContext context) {
     final DateTime now = this.now ?? DateTime.now();
-    final int? mph = member.displaySpeedAt(now);
     final String tooltip = _tooltip(now);
     final Size size = markerSizeFor(member, now: now);
-    final Color accent = BrayTokens.accentFor(member);
+    final bool stale = isStale(member, now);
+    final Color colour = ringColourFor(member, now);
+    final SlotBadgeSpec? badge = slotBadgeFor(member, now: now, inDrive: inDrive);
+    final BatteryBadgeSpec? batt = batteryBadgeFor(percent: member.batteryPercent, charging: member.charging == true);
 
     return Tooltip(
       message: tooltip,
@@ -195,174 +155,81 @@ class MemberAvatarBubble extends StatelessWidget {
           child: SizedBox(
             width: size.width,
             height: size.height,
-            // The direction cone (Life360, piece 5) sits UNDER the whole
-            // marker - name tag, ring, tail and dot - so it never tints the
-            // pill; it is centred on the ring and paints past the box.
+            // Paint order = the mock's z-index: beam (Task 6, under all) ->
+            // shadow disc (.shadow z0) -> name badge (.nm z1) -> pointer
+            // (.tail z1) -> ring (.face z2) -> battery badge (.chg z2, Task 4)
+            // -> slot badge (.age z2, Task 3) -> dot.
             child: Stack(
               clipBehavior: Clip.none,
               fit: StackFit.expand,
               children: [
-                if (member.showsConeAt(now))
+                if (member.showsBeamAt(now))
                   Positioned(
-                    left: markerWidth / 2 - coneLength,
-                    top: ringCentreFromTop - coneLength,
-                    width: 2 * coneLength,
-                    height: 2 * coneLength,
-                    child: HeadingCone(
-                      headingDeg: member.headingDeg!,
-                      accent: accent,
-                      length: coneLength,
+                    left: markerWidth / 2 - BrayTokens.beamDisc / 2,                                   // .beam left:50%; translate(-50%,-50%)
+                    top: ringCentreFromTop - BrayTokens.beamDisc / 2,                                  // centred on the ring
+                    child: HeadingBeam(headingDeg: member.headingDeg!, accent: BrayTokens.accentFor(member)),
+                  ),
+                const Positioned(left: ringLeft, top: topZone, child: RingShadowDisc()),
+                Positioned(
+                  right: markerWidth - (ringLeft + BrayTokens.soloFace - BrayTokens.nameBadgeRight),   // .nm right:38px
+                  bottom: avatarBox - (topZone + BrayTokens.soloFace - BrayTokens.nameBadgeBottom),      // .nm bottom:44px
+                  child: NameBadge(text: pillText, accent: colour),
+                ),
+                Positioned(
+                  left: markerWidth / 2 - BrayTokens.pointerW / 2,                                       // .tail left:50%; translateX(-50%)
+                  top: topZone + BrayTokens.pointerTop,                                                  // .tail top:50px
+                  child: MarkerPointer(color: colour),
+                ),
+                Positioned(
+                  left: ringLeft,
+                  top: topZone,
+                  child: Container(
+                    key: const Key('bray-ring'),
+                    width: BrayTokens.soloFace,                                                          // .face 56px
+                    height: BrayTokens.soloFace,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: colour, width: BrayTokens.ringSolo),                    // .face border:3px solid var(--pc)
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: ClipOval(
+                      child: StatusAvatar(
+                        member: member,
+                        size: BrayTokens.soloFace - 2 * BrayTokens.ringSolo,
+                        ringWidth: 0,
+                        desaturate: stale,                                                               // .face.stale filter:saturate(.35)
+                      ),
                     ),
                   ),
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Name pill (S:24-27 metrics scaled 4/3 for the tablet, see
-                    // BrayTokens.nameTagFont; design list: "dark, accent outline,
-                    // soft shadow"), top-aligned in its zone so the pill clears the
-                    // ring by the same ~1px S:24's top:-19px gave the 10.5px pill.
-                    SizedBox(
-                      height: nameTagZone,
-                      child: Align(
-                        alignment: Alignment.topCenter,
-                        child: Container(
-                          key: const Key('bray-name-tag'),
-                          // S:26 padding:2px 8px, scaled with the font (nameTagPadV/H)
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: BrayTokens.nameTagPadH, vertical: BrayTokens.nameTagPadV),
-                          decoration: BoxDecoration(
-                            color: const Color(0xDB0A0E16), // S:26 rgba(10,14,22,.86)
-                            borderRadius: BorderRadius.circular(999), // S:26
-                            // S:27 is 1px solid --line; the design list makes the
-                            // outline the person's accent ("ring, pill outline,
-                            // tail ... all the same colour").
-                            border: Border.all(color: accent),
-                            boxShadow: const [
-                              // OPEN: chosen - "soft shadow" (design list); the
-                              // viewer gives .fc-solo drop-shadow(0 6px 16px
-                              // rgba(0,0,0,.55)) at S:90, halved here for a 18px pill.
-                              BoxShadow(color: Color(0x8C000000), blurRadius: 8, offset: Offset(0, 3)),
-                            ],
-                          ),
-                          child: Text(
-                            pillText,
-                            maxLines: 1, // S:25 white-space:nowrap
-                            softWrap: false,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: BrayTokens.nameTagFont, // OPEN: Bo, 2026-09-13 "too small on tablet screen" (S:25 was 10.5)
-                              fontWeight: FontWeight.w700, // S:25
-                              letterSpacing: 0.02 * BrayTokens.nameTagFont, // S:25 .02em
-                              height: BrayTokens.nameTagLineHeight,
-                              color: BrayTokens.text, // S:27
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    // The face in its accent ring (S:22-23 ring, S:88 "the ring is
-                    // their own colour"; 56px per the design list), the bolt
-                    // bottom-left (S:72-74 .fc-chg), the speed pill overlaying the
-                    // bottom edge (S:75-80).
-                    Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        Container(
-                          key: const Key('bray-ring'),
-                          width: BrayTokens.soloFace,
-                          height: BrayTokens.soloFace,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(color: accent, width: BrayTokens.ringSolo), // S:22 3px solid var(--a)
-                            boxShadow: const [
-                              // S:23 box-shadow:0 4px 14px rgba(0,0,0,.5)
-                              BoxShadow(color: Color(0x80000000), blurRadius: 14, offset: Offset(0, 4)),
-                            ],
-                          ),
-                          clipBehavior: Clip.antiAlias,
-                          // ringWidth 0 = no status ring inside the accent ring (and
-                          // no ringColor, so this Container is the only 'bray-ring').
-                          // ClipOval keeps StatusAvatar's status-tinted shadow off
-                          // the accent ring (the capsule needed the same, Task 10);
-                          // the photo fills the ring edge-to-edge (design list).
-                          child: ClipOval(
-                            child: StatusAvatar(
-                              member: member,
-                              size: BrayTokens.soloFace - 2 * BrayTokens.ringSolo,
-                              ringWidth: 0,
-                            ),
-                          ),
-                        ),
-                        if (_isCharging(member))
-                          const Positioned(
-                            left: -3, // S:72 left:-3px
-                            bottom: -1, // S:72 bottom:-1px
-                            child: BrayChargingBolt(),
-                          ),
-                        if (mph != null)
-                          Positioned(
-                            // design list line 41: the slot spans the marker
-                            // width (symmetric, so the pill stays centred on the
-                            // ring) - a 56px slot ellipsized "Peachtree Ind.".
-                            left: -_pillReach,
-                            right: -_pillReach,
-                            bottom: -_speedPillDrop,
-                            child: Center(
-                              child: _BraySpeedPill(
-                                key: const Key('bray-speed-pill'),
-                                mph: mph,
-                                street: pillStreet(member.place?.street),
-                              ),
-                            ),
-                          )
-                        else if (_isStale(member, now))
-                          // Design list: "updated 2m ago on stale icons" - same slot and
-                          // metrics as the speed pill (S:75-80; the slot spans the
-                          // marker width so "updated 12m ago" fits on one line),
-                          // wording J:57-64.
-                          Positioned(
-                            left: -_pillReach,
-                            right: -_pillReach,
-                            bottom: -_speedPillDrop,
-                            child: Center(
-                              child: _BrayAgePill(
-                                key: const Key('bray-age-pill'),
-                                text: 'updated ${BrayTokens.agoText(member.lastSeen, now)}',
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: _ringTailGap), // 0: the tail touches the ring
-                    // Solid accent tail (S:81-83 shape, S:91 solo height, design
-                    // list colour) on the ring, the gap, then the dot ON the
-                    // location (S:84-86).
-                    CustomPaint(
-                      key: const Key('bray-tail'),
-                      size: const Size(BrayTokens.tailW, _tailH),
-                      painter: _BrayTailPainter(accent),
-                    ),
-                    const SizedBox(height: tailDotGap),
-                    // C:167-176 (family-cluster.js): at home the house chip IS the
-                    // location mark - drop the redundant dot. The tail and the gap
-                    // stay, so the marker box and the point do not move.
-                    if (member.place?.nearHome != true)
-                      Container(
-                        key: const Key('bray-dot'),
-                        width: BrayTokens.dotSize,
-                        height: BrayTokens.dotSize,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: BrayTokens.dotFill,
-                          border: Border.all(color: Colors.white, width: BrayTokens.dotRing),
-                          boxShadow: const [
-                            // S:86 box-shadow:0 1px 4px rgba(0,0,0,.4)
-                            BoxShadow(color: Color(0x66000000), blurRadius: 4, offset: Offset(0, 1)),
-                          ],
-                        ),
-                      ),
-                  ],
                 ),
+                if (batt != null)
+                  Positioned(
+                    left: ringLeft + BrayTokens.battBadgeLeft,                                              // .chg left:-5px
+                    top: topZone + BrayTokens.soloFace - BrayTokens.battBadgeBottom - BrayTokens.battBadgeH,  // .chg bottom:-4px
+                    child: BatteryBadge(spec: batt),
+                  ),
+                if (badge != null)
+                  Positioned(
+                    left: ringLeft + BrayTokens.badgeLeft,                                              // .age left:44px
+                    top: topZone + BrayTokens.badgeTop,                                                  // .age top:-10px
+                    child: SlotBadge(spec: badge),
+                  ),
+                // C:167-176 (family-cluster.js): at home the house chip IS the mark - no dot.
+                if (member.place?.nearHome != true)
+                  Positioned(
+                    left: markerWidth / 2 - BrayTokens.dotSize / 2,                                     // .dot left:50%; translateX(-50%)
+                    top: topZone + BrayTokens.dotTop,                                                    // .dot top:74px
+                    child: Container(
+                      key: const Key('bray-dot'),
+                      width: BrayTokens.dotSize,
+                      height: BrayTokens.dotSize,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: BrayTokens.dotFill,                                                       // .dot background:#141b36
+                        border: Border.all(color: Colors.white, width: BrayTokens.dotRing),             // .dot border:2px solid #fff
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -376,16 +243,11 @@ class MemberAvatarBubble extends StatelessWidget {
   String _tooltip(DateTime now) {
     final StringBuffer sb = StringBuffer(member.name);
     sb.write(' — ${member.status.description}');
-    final int? mph = member.displaySpeedAt(now);
-    if (member.movement != MovementType.none && !member.isStaleAt(now)) {
-      sb.write(' · ${member.isSpeeding ? 'Speeding' : member.movement.label}');
-      if (mph != null) {
-        sb.write(' $mph mph');
-        // The pill's second line, so a screen reader (and the rig) hears the
-        // same street the map shows.
-        final String? street = pillStreet(member.place?.street);
-        if (street != null) sb.write(' · $street');
-      }
+    final SlotBadgeSpec? badge = slotBadgeFor(member, now: now, inDrive: inDrive);
+    if (badge?.kind == SlotBadgeKind.speed) {
+      sb.write(' · ${member.isSpeeding ? 'Speeding' : MovementType.car.label} ${badge!.value}');
+    } else if (badge != null) {
+      sb.write(' · ${badge.a11y}');
     }
     if (member.place?.atHome == true) sb.write(' at Home');
     return sb.toString();
@@ -393,8 +255,10 @@ class MemberAvatarBubble extends StatelessWidget {
 }
 
 /// The Family Viewer's charging bolt (S:72-74 .fc-chg): a white 19px pill
-/// with the colour-emoji bolt, pinned bottom-left of a face. Shared by the
-/// solo marker and each charging face in the capsule (capsule_bubble.dart).
+/// with the colour-emoji bolt, pinned bottom-left of a face. Retired
+/// 2026-09-15 from the live markers (no battery badges/bolts on the solo
+/// marker or inside a group capsule, ruling 1) - kept only because
+/// lib/screens/marker_gallery_screen.dart (Bo's picker history) still reads it.
 class BrayChargingBolt extends StatelessWidget {
   const BrayChargingBolt({super.key});
 
@@ -437,6 +301,7 @@ class StatusAvatar extends StatefulWidget {
     this.size = 44,
     this.ringColor,
     this.ringWidth,
+    this.desaturate = false,
   });
 
   final Member member;
@@ -447,8 +312,25 @@ class StatusAvatar extends StatefulWidget {
   final Color? ringColor;
   final double? ringWidth;
 
+  /// markers-24.html .face.stale filter:saturate(.35) - true greys the photo
+  /// for a stale marker.
+  final bool desaturate;
+
   @override
   State<StatusAvatar> createState() => _StatusAvatarState();
+}
+
+/// A colour matrix scaling saturation to [s] (1 = unchanged, 0 = grey) - the
+/// CSS filter:saturate(s) (markers-24.html .face.stale saturate(.35)), with
+/// the Rec. 601 luma weights the CSS filter spec uses (0.213, 0.715, 0.072).
+List<double> saturationMatrix(double s) {
+  const double r = 0.213, g = 0.715, b = 0.072;
+  return <double>[
+    r + (1 - r) * s, g - g * s, b - b * s, 0, 0,
+    r - r * s, g + (1 - g) * s, b - b * s, 0, 0,
+    r - r * s, g - g * s, b + (1 - b) * s, 0, 0,
+    0, 0, 0, 1, 0,
+  ];
 }
 
 class _StatusAvatarState extends State<StatusAvatar> {
@@ -509,7 +391,9 @@ class _StatusAvatarState extends State<StatusAvatar> {
               ],
             ),
             child: ClipOval(
-              child: _avatarOrInitials(),
+              child: widget.desaturate
+                  ? ColorFiltered(colorFilter: ColorFilter.matrix(saturationMatrix(BrayTokens.staleSaturation)), child: _avatarOrInitials())
+                  : _avatarOrInitials(),
             ),
           ),
           // Status ring drawn on top, around the avatar (never behind it).
@@ -852,136 +736,4 @@ class _SpeedCaption extends StatelessWidget {
       ),
     );
   }
-}
-
-/// S:75-80 .fc-pill chrome: white, 1px 5px padding, hairline border, soft
-/// shadow. The one pill box under the face - the speed pill ("61 mph", with
-/// the street under it) and the age pill ("updated 3h ago") put their own
-/// text inside it.
-/// The capsule's _SpeedPill (capsule_bubble.dart) is the two-widget form;
-/// private classes are not shared across files, so this is its sibling.
-class _BrayPill extends StatelessWidget {
-  const _BrayPill({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.fromLTRB(5, 1, 5, 1), // S:76 padding:1px 5px
-        decoration: BoxDecoration(
-          color: Colors.white, // S:76
-          borderRadius: BorderRadius.circular(99), // S:77
-          border: Border.all(color: const Color(0x26141B36)), // S:77 rgba(20,27,54,.15)
-          boxShadow: const [
-            // S:79 box-shadow:0 1px 4px rgba(0,0,0,.3)
-            BoxShadow(color: Color(0x4D000000), blurRadius: 4, offset: Offset(0, 1)),
-          ],
-        ),
-        child: child,
-      );
-}
-
-/// S:75-80 .fc-pill: "61" in 700 ink (S:78 9px, raised to
-/// BrayTokens.speedPillFont for the tablet) with a 7px "mph" beside it (the
-/// CSS is `${speed}<i>mph</i>`), in the shared [_BrayPill] chrome. One
-/// Text.rich so the pill reads "61 mph" as a single text, like upstream's
-/// _SpeedCaption does - upstream's tests find the caption by its whole string
-/// and stay untouched.
-///
-/// With a [street] (design list line 41: "Street under the speed") a second
-/// line sits under the speed in the "mph" unit style (S:80 7px, .7 opacity),
-/// so the pill reuses its own tokens; null draws the one-line pill.
-class _BraySpeedPill extends StatelessWidget {
-  const _BraySpeedPill({super.key, required this.mph, this.street});
-
-  final int mph;
-
-  /// Already abbreviated by [pillStreet] ("Peachtree Ind.").
-  final String? street;
-
-  @override
-  Widget build(BuildContext context) => _BrayPill(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text.rich(
-              TextSpan(
-                children: [
-                  TextSpan(
-                    text: '$mph',
-                    style: const TextStyle(
-                      fontSize: BrayTokens.speedPillFont, // OPEN: Bo, 2026-09-13 "too small on tablet screen" (S:78 was 9)
-                      height: 1.2, // S:78 font:700 9px/1.2
-                      fontWeight: FontWeight.w700,
-                      color: BrayTokens.speedPillText,
-                    ),
-                  ),
-                  const TextSpan(
-                    // S:76 gap:1px is the space; S:80 .fc-pill i: 7px, opacity .7
-                    // (0xB3 of the ink)
-                    text: ' mph',
-                    style: TextStyle(fontSize: 7, height: 1.2, color: Color(0xB3141B36)),
-                  ),
-                ],
-              ),
-            ),
-            if (street != null)
-              Text(
-                street!,
-                key: const Key('bray-pill-street'),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                // S:80 .fc-pill i: 7px, opacity .7 (0xB3 of the ink) - the
-                // unit style, reused for the street line.
-                style: const TextStyle(fontSize: 7, height: 1.2, color: Color(0xB3141B36)),
-              ),
-          ],
-        ),
-      );
-}
-
-/// Design list "updated 2m ago on stale icons": the J:57-64 ago() wording in
-/// the shared [_BrayPill] chrome, set like the speed number (S:78).
-class _BrayAgePill extends StatelessWidget {
-  const _BrayAgePill({super.key, required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) => _BrayPill(
-        child: Text(
-          text,
-          style: const TextStyle(
-            fontSize: BrayTokens.agePillFont, // OPEN: Bo, 2026-09-14 (was speedPillFont)
-            height: 1.2, // S:78 font:700 9px/1.2
-            fontWeight: FontWeight.w700,
-            color: BrayTokens.speedPillText,
-          ),
-        ),
-      );
-}
-
-/// S:81-83 .fc-tail: a 20-wide downward triangle (S:91 solo: 13 tall) with a
-/// soft drop shadow (S:83 drop-shadow(0 3px 3px rgba(0,0,0,.25))), in the
-/// person's accent (design list; S:88 "the ring is their own colour"). Sibling
-/// of the capsule's grey _TailPainter (capsule_bubble.dart) - private classes
-/// are not shared across files.
-class _BrayTailPainter extends CustomPainter {
-  const _BrayTailPainter(this.color);
-
-  final Color color;
-
-  @override
-  void paint(Canvas c, Size s) {
-    final Path p = Path()
-      ..moveTo(0, 0)
-      ..lineTo(s.width, 0)
-      ..lineTo(s.width / 2, s.height)
-      ..close();
-    c.drawShadow(p, Colors.black, 3, false);
-    c.drawPath(p, Paint()..color = color);
-  }
-
-  @override
-  bool shouldRepaint(_BrayTailPainter old) => old.color != color;
 }

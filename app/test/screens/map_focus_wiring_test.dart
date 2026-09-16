@@ -1,20 +1,16 @@
 // app/test/screens/map_focus_wiring_test.dart
 import 'package:flutter_test/flutter_test.dart';
-import 'package:openfamily/screens/map_screen.dart' show everyoneChipTarget, fabLiftFor, sheetMaxHeight;
-import 'package:openfamily/widgets/people_sheet.dart';
+import 'package:openfamily/screens/map_screen.dart' show fabClearOfColumn, fabLiftFor, sheetMaxHeight;
 
 void main() {
-  test('Everyone chip toggles the all-cards sheet: hidden ↔ cards; from focus it shows everyone (Bo, 2026-09-14)', () {
-    expect(everyoneChipTarget(SheetLevel.hidden), SheetLevel.cards);
-    expect(everyoneChipTarget(SheetLevel.cards), SheetLevel.hidden);
-    expect(everyoneChipTarget(SheetLevel.focus), SheetLevel.cards);
-  });
-  test('the + FAB rides the sheet edge, or sits 12 above the bar when there is no sheet', () {
+  test('the + FAB rides the card edge on a phone, or sits 12 above the bar when the card is clear of it', () {
     expect(fabLiftFor(0), 12);
-    expect(fabLiftFor(206), 186);
+    expect(fabLiftFor(286.8, clear: true), 12);
+    expect(fabLiftFor(286.8), 266.8);
+    expect(fabClearOfColumn(800), isTrue);     // 12 + 457.6 + 8 <= 748
+    expect(fabClearOfColumn(412), isFalse);
   });
   test('the sheet may cover the map area above the fixed bar, never the bar', () {
-    // 2560-tall logical screen, 40 top inset, bar 88 + 20 safe bottom
     expect(sheetMaxHeight(screenHeight: 1280, topInset: 40, controlBarReserved: 108), 1132);
   });
 }

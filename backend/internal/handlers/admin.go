@@ -83,7 +83,7 @@ func (s *Server) AdminListFamilyMembers(w http.ResponseWriter, r *http.Request) 
 	rows, err := s.Pool.Query(r.Context(), `
 		SELECT u.id, u.email, u.name, u.role, u.totp_enabled, u.created_at, u.updated_at,
 		       u.avatar_data IS NOT NULL, u.avatar_version, u.avatar_updated_at,
-		       mp.lat, mp.lon, mp.ts, mp.battery_pct, mp.charging, mp.speed_mps, mp.motion_state, mp.accuracy_meters,
+		       mp.lat, mp.lon, mp.ts, mp.battery_pct, mp.charging, mp.speed_mps, mp.motion_state, mp.accuracy_meters, mp.heading_deg,
 		       d.last_seen
 		FROM users u
 		LEFT JOIN member_positions mp ON mp.user_id = u.id
@@ -104,7 +104,7 @@ func (s *Server) AdminListFamilyMembers(w http.ResponseWriter, r *http.Request) 
 		var m models.MemberWithLocation
 		if err := rows.Scan(&m.ID, &m.Email, &m.Name, &m.Role, &m.TOTPEnabled, &m.CreatedAt, &m.UpdatedAt,
 			&m.HasAvatar, &m.AvatarVersion, &m.AvatarUpdatedAt,
-			&m.Lat, &m.Lon, &m.TS, &m.BatteryPct, &m.Charging, &m.SpeedMPS, &m.MotionState, &m.AccuracyMeters,
+			&m.Lat, &m.Lon, &m.TS, &m.BatteryPct, &m.Charging, &m.SpeedMPS, &m.MotionState, &m.AccuracyMeters, &m.HeadingDeg,
 			&m.LastSeenAt); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to scan member")
 			return
@@ -154,7 +154,7 @@ func (s *Server) AdminListMembers(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.Pool.Query(r.Context(), `
 		SELECT u.id, u.email, u.name, u.role, u.totp_enabled, u.created_at, u.updated_at,
 		       u.avatar_data IS NOT NULL, u.avatar_version, u.avatar_updated_at,
-		       mp.lat, mp.lon, mp.ts, mp.battery_pct, mp.charging, mp.speed_mps, mp.motion_state, mp.accuracy_meters,
+		       mp.lat, mp.lon, mp.ts, mp.battery_pct, mp.charging, mp.speed_mps, mp.motion_state, mp.accuracy_meters, mp.heading_deg,
 		       d.last_seen,
 		       u.family_id, f.name
 		FROM users u
@@ -177,7 +177,7 @@ func (s *Server) AdminListMembers(w http.ResponseWriter, r *http.Request) {
 		var familyName *string
 		if err := rows.Scan(&m.ID, &m.Email, &m.Name, &m.Role, &m.TOTPEnabled, &m.CreatedAt, &m.UpdatedAt,
 			&m.HasAvatar, &m.AvatarVersion, &m.AvatarUpdatedAt,
-			&m.Lat, &m.Lon, &m.TS, &m.BatteryPct, &m.Charging, &m.SpeedMPS, &m.MotionState, &m.AccuracyMeters,
+			&m.Lat, &m.Lon, &m.TS, &m.BatteryPct, &m.Charging, &m.SpeedMPS, &m.MotionState, &m.AccuracyMeters, &m.HeadingDeg,
 			&m.LastSeenAt,
 			&m.FamilyID, &familyName); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to scan member")

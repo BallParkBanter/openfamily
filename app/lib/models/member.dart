@@ -248,6 +248,11 @@ class Member {
   /// only while the person is on the move - and a stale fix is not moving.
   bool showsConeAt(DateTime now) => displaySpeedAt(now) != null && headingDeg != null;
 
+  /// Piece 5 redesign: the marker draws the beam whenever the phone reports
+  /// a heading (DECISIONS "Direction cone": "Life360 shows it standing still
+  /// too"), unless the fix is stale - a stale heading is a memory (ruling 6).
+  bool showsBeamAt(DateTime now) => headingDeg != null && !isStaleAt(now);
+
   /// Initials used while no avatar is available.
   String get initials {
     final List<String> parts = name.trim().split(RegExp(r'\s+'));

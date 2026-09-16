@@ -28,7 +28,7 @@ void main() {
     expect(BrayTokens.m2ShadeXAlphas.last, 0.10);         // ... right edge
   });
   test('card geometry: variant 8 standard (Bo, 2026-09-14) - the gallery\'s copy of the previous live card', () {
-    expect(BrayTokens.cardH, 128);          // gallery #12 "8 standard"
+    expect(BrayTokens.cardHRetired, 128);   // gallery #12 "8 standard"
     expect(BrayTokens.cardHViewer, 112);    // S:119 - the gallery's originals
     expect(BrayTokens.cardHFocus, 170);     // S:122
     expect(BrayTokens.cardNameSize, 28);    // #12: name 28, facts 16, battery 32

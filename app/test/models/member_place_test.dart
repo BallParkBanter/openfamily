@@ -26,4 +26,14 @@ void main() {
     expect(const MemberPlace(homeDistanceM: 1609.344).homeMiles, closeTo(1.0, 1e-9));
     expect(kHideDotNearHomeMeters, 60);
   });
+  test('copyWith replaces only what is passed', () {
+    final MemberPlace p = MemberPlace(street: 'A', city: 'B', since: DateTime(2026), atHome: true, homeDistanceM: 10, poiName: 'P', poiKind: 'shop');
+    final MemberPlace q = p.copyWith(street: 'Z', poiName: 'Q', poiKind: 'other');
+    expect(q.street, 'Z');
+    expect(q.poiName, 'Q');
+    expect(q.poiKind, 'other');
+    expect(q.city, 'B');
+    expect(q.atHome, isTrue);
+    expect(q.since, p.since);
+  });
 }

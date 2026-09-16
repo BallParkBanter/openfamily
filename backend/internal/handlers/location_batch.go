@@ -280,17 +280,9 @@ func (s *Server) storeBackfill(ctx context.Context, deviceID, ownerID string, po
 				p.AltitudeMeters, p.SpeedMPS, p.HeadingDeg, p.BatteryPct,
 				nullIfEmpty(p.MotionState), nullIfEmpty(p.Source), p.Charging,
 			)
-			b.Queue(`
-				INSERT INTO member_positions (user_id, lat, lon, ts, battery_pct, speed_mps, motion_state, accuracy_meters, device_id, updated_at, charging)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now(), $10)
-				ON CONFLICT (user_id) DO UPDATE SET
-					lat = EXCLUDED.lat, lon = EXCLUDED.lon, ts = EXCLUDED.ts,
-					battery_pct = EXCLUDED.battery_pct, speed_mps = EXCLUDED.speed_mps,
-					motion_state = EXCLUDED.motion_state, accuracy_meters = EXCLUDED.accuracy_meters,
-					device_id = EXCLUDED.device_id, updated_at = now(), charging = EXCLUDED.charging
-				WHERE member_positions.ts < EXCLUDED.ts`,
+			b.Queue(memberPositionUpsertSQL,
 				ownerID, p.Lat, p.Lon, *p.TS, p.BatteryPct, p.SpeedMPS,
-				nullIfEmpty(p.MotionState), p.AccuracyMeters, p.DeviceID, p.Charging,
+				nullIfEmpty(p.MotionState), p.AccuracyMeters, p.DeviceID, p.Charging, p.HeadingDeg,
 			)
 		}
 		br := tx.SendBatch(ctx, b)

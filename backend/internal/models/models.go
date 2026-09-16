@@ -75,6 +75,8 @@ type MemberWithLocation struct {
 	SpeedMPS        *float64   `json:"speed_mps,omitempty"`
 	MotionState     *string    `json:"motion_state,omitempty"`
 	AccuracyMeters  *float64   `json:"accuracy_meters,omitempty"`
+	// HeadingDeg: bray piece 5: latest heading (degrees clockwise from north); nil = the last fix had none
+	HeadingDeg *float64 `json:"heading_deg,omitempty"`
 	// LastSeenAt is the most recent device heartbeat/ingest time across all of
 	// the member's devices. It can be newer than TS (the last stored
 	// position's timestamp) when the member is stationary and only heartbeats

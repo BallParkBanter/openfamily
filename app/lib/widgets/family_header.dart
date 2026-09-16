@@ -4,7 +4,6 @@
 import 'package:flutter/material.dart';
 
 import '../models/member.dart';
-import '../theme/app_theme.dart' show AppColors;
 import '../theme/bray_tokens.dart';
 
 /// S:37 linear-gradient(180deg, rgba(10,14,22,.92), transparent) behind the
@@ -57,18 +56,18 @@ String everyoneChipText(String? summary) => summary ?? 'Everyone';
 /// "Everyone"), so the rig can find the button by its prefix.
 String everyoneChipLabel(String? summary) => summary == null ? 'Everyone' : 'Everyone: $summary';
 
-/// S:40-41 .summary chip - now the Everyone button. Bo, 2026-09-14: "only
-/// want to see all cards if i tap the everyone or all thing in the top right
-/// corner of the app". [onTap] toggles the sheet of all cards; [active] (the
-/// sheet is up) draws the border in lime, the action colour.
+/// S:40-41 .summary chip - the "N home · M out" summary. Round 4
+/// (2026-09-15): the Everyone view is gone, so the live map passes no
+/// [onTap] - the chip is a summary with a long press (the marker gallery);
+/// tests may still hand it an [onTap]. (The lime border toggle went with
+/// the Everyone view: the live map never set it.)
 class FamilySummaryChip extends StatelessWidget {
-  const FamilySummaryChip({super.key, required this.text, this.onTap, this.onLongPress, this.active = false, this.semanticsLabel});
+  const FamilySummaryChip({super.key, required this.text, this.onTap, this.onLongPress, this.semanticsLabel});
   final String text;
   final VoidCallback? onTap;
 
   /// bray: a long press opens the hidden marker gallery (map_screen).
   final VoidCallback? onLongPress;
-  final bool active;
   final String? semanticsLabel;
 
   @override
@@ -77,23 +76,22 @@ class FamilySummaryChip extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(9, 5, 11, 5),                              // S:41 padding:5px 11px (9 left: the icon has its own air)
       decoration: BoxDecoration(
         color: BrayTokens.summaryBg,                                                  // S:41 rgba(10,14,22,.7)
-        border: Border.all(color: active ? AppColors.accentBright : BrayTokens.line), // S:41 1px --line; lime while the cards are up
+        border: Border.all(color: BrayTokens.line),                                   // S:41 1px --line
         borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.groups_rounded, size: 15, color: active ? AppColors.accentBright : BrayTokens.muted),
+          const Icon(Icons.groups_rounded, size: 15, color: BrayTokens.muted),
           const SizedBox(width: 5),
-          Text(text, style: TextStyle(fontSize: BrayTokens.summarySize, fontWeight: FontWeight.w600, color: active ? BrayTokens.text : BrayTokens.muted)), // S:40
+          Text(text, style: const TextStyle(fontSize: BrayTokens.summarySize, fontWeight: FontWeight.w600, color: BrayTokens.muted)), // S:40
         ],
       ),
     );
-    if (onTap == null) return chip;
+    if (onTap == null && onLongPress == null) return chip;
     return Semantics(
       label: semanticsLabel ?? everyoneChipLabel(text == 'Everyone' ? null : text),
       button: true,
-      toggled: active,
       excludeSemantics: true,
       child: GestureDetector(key: const Key('everyone-chip'), behavior: HitTestBehavior.opaque, onTap: onTap, onLongPress: onLongPress, child: chip),
     );

@@ -106,11 +106,17 @@ class BubblePlacement {
 /// one capsule here as they are there. The viewer joins to a group's running
 /// centroid; this keeps upstream's member-to-member (single-link) join, which
 /// only ever groups more, never less.
+///
+/// Bray piece 5: [canGroup] (utils/member_grouping.dart
+/// GroupTracker.together) vetoes a join for a stale member, a driver next to
+/// a parked person, or two cars that have not matched speed and heading for
+/// a minute (DECISIONS ruling 3). Null keeps the two distance rules alone.
 List<MemberCluster> clusterMembers(
   List<Member> members, {
   required LatLngToScreenOffset toScreenOffset,
   double clusterRadiusPx = kClusterRadiusPx,
   double groupMetres = BrayTokens.groupMetres,
+  bool Function(Member a, Member b)? canGroup,
 }) {
   // Members without a reported location have no bubble and are skipped.
   final List<Member> positioned =
@@ -133,8 +139,9 @@ List<MemberCluster> clusterMembers(
         final Member m = remaining[i];
         final bool near = group.any(
           (Member g) =>
-              _distancePx(points[g.id]!, points[m.id]!) <= clusterRadiusPx ||
-              groundMetres(g.position!, m.position!) <= groupMetres,
+              (canGroup == null || canGroup(g, m)) &&
+              (_distancePx(points[g.id]!, points[m.id]!) <= clusterRadiusPx ||
+                  groundMetres(g.position!, m.position!) <= groupMetres),
         );
         if (near) {
           group.add(m);
@@ -170,12 +177,14 @@ List<BubblePlacement> placeBubbles(
   double groupMetres = BrayTokens.groupMetres,
   double fanOutRadiusPx = kFanOutRadiusPx,
   Set<String> expandedClusterIds = const {},
+  bool Function(Member a, Member b)? canGroup,
 }) {
   final List<MemberCluster> clusters = clusterMembers(
     members,
     toScreenOffset: toScreenOffset,
     clusterRadiusPx: clusterRadiusPx,
     groupMetres: groupMetres,
+    canGroup: canGroup,
   );
   final List<BubblePlacement> placements = <BubblePlacement>[];
 

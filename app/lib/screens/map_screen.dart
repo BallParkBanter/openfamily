@@ -15,6 +15,7 @@ import '../services/app_config.dart';
 import '../services/background_location_service.dart';
 import '../services/battery_optimization_service.dart';
 import '../services/contact_link_store.dart';
+import '../services/device_place_resolver.dart';
 import '../services/device_service.dart';
 import '../services/family_service.dart';
 import '../services/location_reporter.dart';
@@ -29,13 +30,16 @@ import '../services/tile_config.dart';
 import '../services/token_storage.dart';
 import '../theme/app_theme.dart';
 import '../theme/bray_tokens.dart';
+import '../utils/drive_state.dart';
 import '../utils/focus_rules.dart';
 import '../utils/member_clustering.dart';
+import '../utils/member_grouping.dart';
 import '../widgets/capsule_bubble.dart';
 import '../widgets/circle_switcher.dart';
 import '../widgets/contact_link_sheet.dart';
 import '../widgets/family_header.dart';
 import '../widgets/focus_trail_layer.dart';
+import '../widgets/following_pill.dart';
 import '../widgets/home_chip.dart';
 import '../widgets/map_bottom_bar.dart';
 import '../widgets/member_avatar_bubble.dart';
@@ -162,18 +166,60 @@ class _MapScreenState extends State<MapScreen>
   final Map<String, _Glide> _glides = <String, _Glide>{};
   Ticker? _glideTicker;
 
-  /// Piece 3: the levels of detail. FocusRules owns who is focused and the
-  /// idle clock; the sheet level is derived from it (FocusRules.levelFor).
-  /// Bo, 2026-09-14: the default is no sheet at all - the map, the top chips
-  /// and the bottom bar. The Everyone chip (top right) raises all the cards;
-  /// a face or a card shows one. (Replaces the plan's "peek" level.)
+  /// Piece 5 live words: the device geocode per member position and where
+  /// the server's place was last measured (the position at the frame that
+  /// carried it), so _placeFor can tell a current server place from one
+  /// that is a fix behind.
+  final DevicePlaceResolver _devicePlaces = DevicePlaceResolver();
+  final Map<String, LatLng> _serverPlaceAt = <String, LatLng>{};
+  final Map<String, MemberPlace?> _lastServerPlace = <String, MemberPlace?>{};
+
+  /// Round 4: hidden or focus; the Everyone chip is a summary. FocusRules
+  /// owns who is focused and the idle clock; the sheet level is derived from
+  /// it (FocusRules.levelFor). The default is no card at all - the map, the
+  /// top chips and the bottom bar; a face shows the one card.
   final FocusRules _focus = FocusRules();
   SheetLevel _sheetLevel = SheetLevel.hidden;
   Timer? _idleTimer;
 
+  /// Piece 5: the drive session per member (utils/drive_state.dart). Fed on
+  /// every members change and by [_driveTick] every 15 s, so a car that
+  /// stopped 2 min ago leaves its drive without waiting for the next fix.
+  final DriveTracker _drives = DriveTracker();
+  Timer? _driveTick;
+
+  /// OPEN: chosen - 15 s, 8 ticks per 2-minute drive end. Each tick
+  /// rebuilds the whole screen unconditionally (setState with no change
+  /// check), 4x a minute for as long as the map is open - accepted: the
+  /// rebuild is what moves a "here for" / drive-end without a new fix.
+  static const Duration _driveTickEvery = Duration(seconds: 15);
+
+  /// The ONE in-drive verdict for every consumer - the marker's badge, the
+  /// capsule's badge, the grouping tracker and the card (utils/drive_state.dart
+  /// inDriveVerdict). DECISIONS state 1 + ruling 6 - parked inside the home
+  /// geofence is not a drive, for the marker, the capsule and the card alike.
+  bool _inDriveFor(Member m) => inDriveVerdict(_drives.inDrive(m.id), m);
+
+  /// Task 8: the ~1 min matching-speed-and-heading clock per pair
+  /// (utils/member_grouping.dart), fed alongside [_drives] so a group forms
+  /// and drops a stale member the same two beats a drive does.
+  final GroupTracker _groups = GroupTracker();
+
   /// Piece 4's geocode feed rides on the member (Member.place); null still
-  /// draws no place chips.
-  MemberPlace? _placeFor(Member m) => m.place;
+  /// draws no place chips. Merged with the on-device geocode (task 11) so
+  /// the card's place words move the moment a fix lands, not only when the
+  /// server's geocoder catches up.
+  MemberPlace? _placeFor(Member m) {
+    if (m.position == null) return m.place;
+    return mergePlace(m.place, _serverPlaceAt[m.id], m.position, _devicePlaces.cached(m.position!), home: _homePosition());
+  }
+
+  LatLng? _homePosition() {
+    for (final Place p in _familyService.places) {
+      if (p.type == 'home') return p.position;
+    }
+    return null;
+  }
 
   /// Design list "3 home" chip (J:263-265), from Member.place.atHome. Both
   /// null - chip hidden - until at least one member carries a place, so the
@@ -192,6 +238,12 @@ class _MapScreenState extends State<MapScreen>
     WidgetsBinding.instance.addObserver(this);
     _familyService.onMembersChanged = _onMembersChanged;
     _familyService.onUserId = _onUserId;
+    _driveTick = Timer.periodic(_driveTickEvery, (_) {
+      if (!mounted) return;
+      _drives.updateAll(_members);
+      _groups.observe(_members, inDriveFor: _inDriveFor);
+      setState(() {});
+    });
     _connectivitySub =
         Connectivity().onConnectivityChanged.listen(_onConnectivityChanged);
     _load();
@@ -211,7 +263,23 @@ class _MapScreenState extends State<MapScreen>
   void _onMembersChanged(List<Member> members) {
     if (!mounted) return;
     final DateTime now = DateTime.now();
+    _drives.updateAll(members, now: now);
+    _groups.observe(members, inDriveFor: _inDriveFor, now: now);
     for (final Member m in members) {
+      // A VALUE test on the server's words, not identity: the backend sends
+      // `place` on EVERY stored fix (backend/internal/handlers/location.go
+      // loadMemberPlace -> Place: place in the broadcast) and member_mapper
+      // builds a fresh MemberPlace per frame, so identity changes every frame
+      // and the device geocoder (mergePlace's device branch) would never engage.
+      if (serverWordsChanged(_lastServerPlace[m.id], m.place)) {
+        _lastServerPlace[m.id] = m.place;
+        if (m.position != null) _serverPlaceAt[m.id] = m.position!;
+      }
+      if (m.position != null && _devicePlaces.cached(m.position!) == null) {
+        _devicePlaces.resolve(m.position!).then((DevicePlace? p) {
+          if (p != null && mounted) setState(() {});
+        });
+      }
       final LatLng? to = m.position;
       if (to == null) continue;
       final LatLng? from = _drawnPosition(m.id, now);
@@ -407,31 +475,16 @@ class _MapScreenState extends State<MapScreen>
 
   void _onSheetLevel(SheetLevel level) {
     _touch();
-    // Focus is "others hidden + one card" (J:175-181). Any other level while
-    // focused - hidden (swipe down) or cards (Everyone chip) - is a request
-    // for everyone, so it leaves focus first; a raised sheet of everyone is
-    // not focus and must not leave the map drawing one person.
-    if (_focus.focusedId != null && level != SheetLevel.focus) {
+    if (level == SheetLevel.hidden && _focus.focusedId != null) {
       _leaveFocus();
-      if (level == SheetLevel.hidden) return;
+      return;
     }
     setState(() => _sheetLevel = level);
   }
 
-  /// The Everyone chip (top right). Bo, 2026-09-14: "only want to see all
-  /// cards if i tap the everyone or all thing in the top right corner of the
-  /// app" - tap: the sheet rises with every card; tap again: gone.
-  void _onEveryonePressed() => _onSheetLevel(everyoneChipTarget(_sheetLevel));
-
-  /// A tap on the map: leave focus, or drop the all-cards sheet (Bo,
-  /// 2026-09-14: "tap again or tap the map → hidden"). Design list: tap the
-  /// map = back.
+  /// A tap on the map leaves focus (design list: tap the map = back).
   void _onMapTap() {
-    if (_focus.focusedId != null) {
-      _leaveFocus();
-    } else if (_sheetLevel != SheetLevel.hidden) {
-      _onSheetLevel(SheetLevel.hidden);
-    }
+    if (_focus.focusedId != null) _leaveFocus();
   }
 
   /// The bottom bar's People button keeps opening their PeopleScreen (Bo,
@@ -449,11 +502,17 @@ class _MapScreenState extends State<MapScreen>
     return cam.unproject(Point<double>(p.x, p.y + lift), zoom);
   }
 
-  double _currentSheetHeight() {
-    final MediaQueryData media = MediaQuery.of(context);
-    final double reserved = MapBottomBar.height + media.padding.bottom;
-    final double maxH = sheetMaxHeight(screenHeight: media.size.height, topInset: media.padding.top, controlBarReserved: reserved);
-    return PeopleSheet.heightFor(_sheetLevel, _members.length, maxH, 0);
+  double _currentSheetHeight() => PeopleSheet.heightFor(_sheetLevel, 0);
+
+  /// The family place type behind a member's saved place name (Place.type),
+  /// for the card's place-line icon; null when not a saved place.
+  String? _savedKindFor(Member m) {
+    final String? name = m.place?.placeName;
+    if (name == null) return null;
+    for (final Place p in _familyService.places) {
+      if (p.name == name) return p.type;
+    }
+    return null;
   }
 
   /// Overview auto-fit (design list; J:228-236) that pans instead of snapping
@@ -628,6 +687,7 @@ class _MapScreenState extends State<MapScreen>
   @override
   void dispose() {
     _idleTimer?.cancel();
+    _driveTick?.cancel();
     _glideTicker?.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _connectivitySub?.cancel();
@@ -862,28 +922,31 @@ class _MapScreenState extends State<MapScreen>
     showContactLinkSheet(context, member: member, label: _labelFor(member));
   }
 
-  /// bray piece 5: the focused card's "📍 Save place" chip - upstream's
-  /// PlacePickerScreen, prefilled through its `initial` argument with the POI
-  /// name, the member's position and street, then created exactly the way
+  /// Piece 5 states 3 and 5 (DECISIONS 'States'): Save place works near a
+  /// POI and stopped on a road; the picker opens on the member's spot with
+  /// the best name we have. Upstream's PlacePickerScreen, prefilled through
+  /// its `initial` argument with the POI name (else the street), the
+  /// member's position and street, then created exactly the way
   /// places_screen._addPlace does it. The backend labels the member with the
   /// new place on their next fix (updateMemberPlace runs on ingest).
   Future<void> _savePlace(Member member) async {
     _touch();
     final MemberPlace? place = member.place;
     final LatLng? at = member.position;
-    if (place?.poiName == null || at == null) return;
-    final String type = placeTypeForPoiKind(place!.poiKind);
+    if (at == null) return;
+    final String name = place?.poiName ?? place?.street ?? '';
+    final String type = placeTypeForPoiKind(place?.poiKind);   // null kind -> 'custom'
     final Place? picked = await Navigator.of(context).push<Place>(
       MaterialPageRoute<Place>(
         builder: (_) => PlacePickerScreen(
-          placeName: place.poiName!,
+          placeName: name,
           icon: Place.iconForType(type),
           type: type,
           initial: Place(
             id: 'poi-${DateTime.now().millisecondsSinceEpoch}',
-            name: place.poiName!,
+            name: name,
             icon: Place.iconForType(type),
-            address: place.street ?? '',
+            address: place?.street ?? '',
             position: at,
             radiusMeters: 152.4, // the picker's own default (~500 ft)
             type: type,
@@ -1159,6 +1222,8 @@ class _MapScreenState extends State<MapScreen>
                   expandedClusters: _expandedClusters,
                   selectedId: _followId,                    // J:101: the ringed face inside a capsule
                   labelFor: _labelFor,                      // every pill: You / contact name / first name (was the focused one only)
+                  inDriveFor: _inDriveFor,
+                  canGroup: (Member a, Member b) => _groups.together(a, b, inDriveFor: _inDriveFor),
                   viewerId: _userId,
                   contactFor: (Member m) => ContactLinkStore.instance.linkFor(m.id),
                   onMemberTap: _focusMember,
@@ -1239,8 +1304,9 @@ class _MapScreenState extends State<MapScreen>
                   child: Padding(
                     padding: const EdgeInsets.only(top: 8),
                     child: Center(
-                      child: _FollowingPill(
+                      child: FollowingPill(
                         label: _labelFor(_followedMember!),
+                        accent: BrayTokens.accentFor(_followedMember!),
                         paused: _followPaused,
                         onProfile: () => _openMemberDetails(_followedMember!),
                         // Piece 3: one focus/follow state - letting go of the
@@ -1263,10 +1329,9 @@ class _MapScreenState extends State<MapScreen>
                 bottom: false,
                 child: Column(
                   children: [
-                    // The Everyone chip: the "N home · M out" summary as a
-                    // button that raises the sheet of all cards (Bo,
-                    // 2026-09-14). Always shown - "Everyone" when there is
-                    // no count yet - so the cards are always one tap away.
+                    // The "N home · M out" summary - a summary only (Round 4:
+                    // no Everyone view); long press = the marker gallery.
+                    // Always shown - "Everyone" when there is no count yet.
                     Builder(builder: (BuildContext context) {
                       final Member? f = _followedMember;
                       final String? s = summaryText(
@@ -1279,8 +1344,6 @@ class _MapScreenState extends State<MapScreen>
                         child: FamilySummaryChip(
                           text: everyoneChipText(s),
                           semanticsLabel: everyoneChipLabel(s),
-                          active: _sheetLevel == SheetLevel.cards,
-                          onTap: _onEveryonePressed,
                           onLongPress: _openMarkerGallery,
                         ),
                       );
@@ -1313,24 +1376,26 @@ class _MapScreenState extends State<MapScreen>
                 builder: (BuildContext context, _) => PeopleSheet(
                   members: members,
                   level: _sheetLevel,
-                  maxHeight: sheetMaxHeight(screenHeight: media.size.height, topInset: media.padding.top, controlBarReserved: controlBarReserved),
                   viewerId: _userId,
                   focusedId: _focus.focusedId,
                   chargingFor: _chargingFor,
                   placeFor: _placeFor,
                   contactFor: (Member m) => ContactLinkStore.instance.linkFor(m.id),
+                  savedKindFor: _savedKindFor,
+                  inDriveFor: _inDriveFor,
                   onLinkContact: _linkContact,
                   onSavePlace: _savePlace,
+                  onCheckIn: (_) => _openCheckIn(),
                   onLevelChanged: _onSheetLevel,
                   onCardTap: _onCardTap,
                   onCardHold: _openMemberDetails,
                 ),
               ),
             ),
-            // The `+` FAB: 12 above the bar. The card column (Bo's mockup)
-            // is left-aligned and 528 wide, so on the tablet it never reaches
-            // the FAB and the FAB stays put (everyone-2.png); on a phone the
-            // column spans the width and the FAB rides its top edge instead.
+            // The `+` FAB: 12 above the bar. The card (focus-29) is
+            // left-aligned and 457.6 wide, so on the tablet it never reaches
+            // the FAB and the FAB stays put; on a phone the card spans the
+            // width and the FAB rides its top edge instead.
             AnimatedPositioned(
               duration: BrayTokens.sheetTransition,
               curve: Curves.ease,
@@ -1471,65 +1536,6 @@ class _LayerToggle extends StatelessWidget {
   }
 }
 
-/// The pill shown while the camera is following someone. Names who, opens
-/// their profile, and lets the user stop without having to drag the map.
-/// bray: [label] is the same BrayTokens.labelFor the cards and the summary
-/// chip use ("Following Heidi" / "Following Mom" / "Following You"), never
-/// the raw login name.
-class _FollowingPill extends StatelessWidget {
-  const _FollowingPill({
-    required this.label,
-    required this.onProfile,
-    required this.onStop,
-    this.paused = false,
-  });
-
-  final String label;
-
-  /// True while a gesture has the follow on hold; the camera resumes by itself.
-  final bool paused;
-  final VoidCallback onProfile;
-  final VoidCallback onStop;
-
-  @override
-  Widget build(BuildContext context) {
-    final BrandTheme theme = BrandTheme.of(context);
-    return Material(
-      color: theme.sheet,
-      shape: const StadiumBorder(),
-      elevation: 3,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 4, 4, 4),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(paused ? Icons.pause : Icons.navigation,
-                size: 16, color: theme.accentInk),
-            const SizedBox(width: 8),
-            Text(
-              followingText(label: label, paused: paused),
-              style: Theme.of(context).textTheme.labelLarge,
-            ),
-            const SizedBox(width: 4),
-            IconButton(
-              tooltip: 'Profile',
-              visualDensity: VisualDensity.compact,
-              onPressed: onProfile,
-              icon: const Icon(Icons.person_outline, size: 20),
-            ),
-            IconButton(
-              tooltip: 'Stop following',
-              visualDensity: VisualDensity.compact,
-              onPressed: onStop,
-              icon: const Icon(Icons.close, size: 20),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 /// A small circular "follow me" button. One tap keeps the map centred on the
 /// caller as they move; any gesture on the map releases it.
 class _LocateButton extends StatelessWidget {
@@ -1584,6 +1590,8 @@ class _MemberMarkerLayer extends StatelessWidget {
     required this.onMemberHold,
     required this.onClusterTap,
     required this.labelFor,
+    required this.inDriveFor,
+    required this.canGroup,
     this.selectedId,
     this.viewerId,
     this.contactFor,
@@ -1592,6 +1600,15 @@ class _MemberMarkerLayer extends StatelessWidget {
   final List<Member> members;
   final Set<String> expandedClusters;
   final ValueChanged<Member> onMemberTap;
+
+  /// Piece 5: whether this member is currently in a drive session
+  /// (DriveTracker.inDrive), so the badge shows the live speed instead of
+  /// "here for" / "updated Xh ago".
+  final bool Function(Member) inDriveFor;
+
+  /// Task 8: GroupTracker.together - the ~1 min matching-speed-and-heading
+  /// veto on top of clusterMembers' two distance rules.
+  final bool Function(Member, Member) canGroup;
 
   /// For the capsule's "<name> arrived" callout - the same viewer / contact
   /// link the sheet gets (PeopleSheet.viewerId / contactFor).
@@ -1626,6 +1643,7 @@ class _MemberMarkerLayer extends StatelessWidget {
       },
       toLatLng: camera.offsetToCrs,
       expandedClusterIds: expandedClusters,
+      canGroup: canGroup,
     );
 
     return MarkerLayer(
@@ -1647,6 +1665,7 @@ class _MemberMarkerLayer extends StatelessWidget {
                 viewerId: viewerId,
                 contactFor: contactFor,
                 now: now,
+                inDriveFor: inDriveFor,
                 onTap: () => onClusterTap(p.clusterId!, p.position),
               ),
             )
@@ -1660,6 +1679,7 @@ class _MemberMarkerLayer extends StatelessWidget {
                 member: p.member!,
                 label: labelFor(p.member!),
                 now: now,
+                inDrive: inDriveFor(p.member!),
                 onTap: () => onMemberTap(p.member!),
                 onLongPress: () => onMemberHold(p.member!),
               ),
@@ -1676,12 +1696,6 @@ class _MemberMarkerLayer extends StatelessWidget {
 /// widget test can import it.
 bool showRange(Member m) => m.position != null && m.status == MemberStatus.gpsIssue;
 
-/// The Everyone chip toggles the sheet of all cards (Bo, 2026-09-14): hidden
-/// → cards; cards → hidden; focus → cards (everyone, so focus is left first
-/// by _onSheetLevel). The bottom bar's People button no longer touches the
-/// sheet - it opens their PeopleScreen every time.
-SheetLevel everyoneChipTarget(SheetLevel current) => current == SheetLevel.cards ? SheetLevel.hidden : SheetLevel.cards;
-
 /// Where the `+` FAB sits above the bottom bar: 20 into the column's top
 /// edge when the cards are up and would run under it, 12 clear of the bar
 /// when there are no cards or the column is [clear] of the FAB's corner.
@@ -1689,12 +1703,14 @@ double fabLiftFor(double sheetHeight, {bool clear = false}) => sheetHeight > 0 &
 
 /// Whether the card column (PeopleSheet.columnLeftFor / columnWidthFor) ends
 /// left of the small `+` FAB (40 wide, 12 from the right) with 8 of air, so
-/// the FAB can stay by the bar (everyone-2.png). 800 wide tablet: 12 + 528 +
-/// 8 = 548 <= 748. 412 wide phone: 16 + 380 + 8 = 404 > 360.
+/// the FAB can stay by the bar (focus-29.png). 800 wide tablet: 12 + 457.6 +
+/// 8 = 477.6 <= 748. 412 wide phone: 16 + 380 + 8 = 404 > 360.
 bool fabClearOfColumn(double screenWidth) =>
     PeopleSheet.columnLeftFor(screenWidth) + PeopleSheet.columnWidthFor(screenWidth) + 8 <= screenWidth - 12 - 40;
 
-/// The map area the sheet may cover (S:49 caps it at 62 % of this).
+/// The map area the sheet may cover (S:49 caps it at 62 % of this). Kept
+/// for map_focus_wiring_test; no longer drives the sheet (Round 4: the
+/// PeopleSheet sizes its own card column).
 double sheetMaxHeight({required double screenHeight, required double topInset, required double controlBarReserved}) =>
     screenHeight - topInset - controlBarReserved;
 

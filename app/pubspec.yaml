@@ -43,6 +43,9 @@ dependencies:
   # Current device location (place picker + welcome hero), with graceful
   # fallback when permission is denied or services are off.
   geolocator: ^13.0.2
+  # bray piece 5: on-device reverse geocode for the card's place words the
+  # moment a fix lands (Android platform Geocoder; DECISIONS "Live updates").
+  geocoding: ^3.0.0
   # Reads the device battery level so location reports can carry battery_pct.
   battery_plus: ^6.0.0
   # Detects Google Play Services availability on Android so motion & fitness
