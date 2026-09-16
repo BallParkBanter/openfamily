@@ -155,3 +155,92 @@ func (s *Server) broadcastPlace(userID string) {
 	}
 	s.hub.broadcastAdmin(msg)
 }
+
+// rowsQuerier is the subset of pgx both pgx.Tx and *pgxpool.Pool satisfy;
+// the place re-check runs inside the place transaction.
+type rowsQuerier interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+}
+
+// reevaluateMemberPlaces re-checks every member of the family against the
+// family's places as they are NOW - a place was just created, moved,
+// resized or deleted - instead of waiting for each phone's next fix (Bo,
+// 2026-09-16: he saved "Heidi's Work" from her card and the card kept
+// saying "Near DIRECTV - LA5"). Same rule as updateMemberPlace on ingest:
+// the smallest place containing the last fix wins. place_since becomes
+// `now` when a member ENTERS a place; when a place goes away from under
+// them (deleted: the FK already cleared place_id; moved: this UPDATE clears
+// it) place_since is kept - they have been at that spot since then.
+// Returns the members whose row changed.
+func reevaluateMemberPlaces(ctx context.Context, q rowsQuerier, familyID string, now time.Time) ([]string, error) {
+	rows, err := q.Query(ctx, `
+		WITH here AS (
+			SELECT mp.user_id, (
+				SELECT p.id FROM places p
+				WHERE p.family_id = u.family_id AND p.geom IS NOT NULL AND p.radius_meters IS NOT NULL
+				  AND ST_DWithin(p.geom::geography, ST_SetSRID(ST_MakePoint(mp.lon, mp.lat), 4326)::geography, p.radius_meters)
+				ORDER BY p.radius_meters ASC
+				LIMIT 1) AS place_id
+			FROM member_positions mp
+			JOIN users u ON u.id = mp.user_id
+			WHERE u.family_id = $1 AND mp.lat IS NOT NULL AND mp.lon IS NOT NULL
+		)
+		UPDATE member_positions mp SET
+			place_id = here.place_id,
+			place_since = CASE WHEN here.place_id IS NULL THEN mp.place_since ELSE $2 END
+		FROM here
+		WHERE mp.user_id = here.user_id AND mp.place_id IS DISTINCT FROM here.place_id
+		RETURNING mp.user_id`, familyID, now)
+	if err != nil {
+		return nil, err
+	}
+	return scanIDs(rows)
+}
+
+// membersAtPlace lists the members whose last fix is assigned to the place -
+// read BEFORE a delete (the FK clears place_id) and on an update (a rename
+// changes their words) so they get a place frame too.
+func membersAtPlace(ctx context.Context, q rowsQuerier, placeID string) ([]string, error) {
+	rows, err := q.Query(ctx, `SELECT user_id FROM member_positions WHERE place_id = $1`, placeID)
+	if err != nil {
+		return nil, err
+	}
+	return scanIDs(rows)
+}
+
+func scanIDs(rows pgx.Rows) ([]string, error) {
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// unionIDs merges id lists in order, dropping repeats.
+func unionIDs(lists ...[]string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, l := range lists {
+		for _, id := range l {
+			if !seen[id] {
+				seen[id] = true
+				out = append(out, id)
+			}
+		}
+	}
+	return out
+}
+
+// broadcastPlaces fans out one place frame per member (broadcastPlace) in the
+// background: the app binds its cards and markers to that frame
+// (FamilyService._applyPlace), so an open card re-reads its words with no tap.
+func (s *Server) broadcastPlaces(userIDs []string) {
+	for _, id := range userIDs {
+		go s.broadcastPlace(id)
+	}
+}
