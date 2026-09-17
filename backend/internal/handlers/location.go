@@ -40,6 +40,39 @@ const (
 	dedupSpeedDeltaMPS = 0.5
 )
 
+// parkedSpeedMaxMPS / parkedMinElapsed / parkedMinRadius: bray 5b (2026-09-16,
+// Bo parked at home read 8 mph for a minute - GPS jitter, 5-10 mph with a
+// 12 m accuracy). A fix under 15 mph that did not move past its own
+// accuracy (at least 15 m) in 10 s or more is standing still: the member
+// row stores 0. Real motion always moves the position, so a genuine 8 mph
+// roll reads 8 again after one interval.
+const (
+	parkedSpeedMaxMPS = 6.7  // 15 mph
+	parkedMinElapsed  = 10.0 // seconds since the previous member_positions row
+	parkedMinRadius   = 15.0 // metres, the floor for the accuracy circle
+)
+
+// parkedSpeed returns the speed to store on member_positions for a new fix:
+// 0 when the fix is GPS jitter around the previous row, else the reported
+// speed as is (nil stays nil).
+func parkedSpeed(prevLat, prevLon *float64, prevTs *time.Time, lat, lon float64, ts time.Time, accuracy, speed *float64) *float64 {
+	if speed == nil || *speed >= parkedSpeedMaxMPS || prevLat == nil || prevLon == nil || prevTs == nil {
+		return speed
+	}
+	if ts.Sub(*prevTs).Seconds() < parkedMinElapsed {
+		return speed
+	}
+	radius := parkedMinRadius
+	if accuracy != nil && *accuracy > radius {
+		radius = *accuracy
+	}
+	if haversineMeters(*prevLat, *prevLon, lat, lon) <= radius {
+		zero := 0.0
+		return &zero
+	}
+	return speed
+}
+
 // speedUnchanged reports whether stored and reported speed represent the
 // same state closely enough that a report within the dedup radius is still
 // "not moved". Both nil (never reported a speed) counts as unchanged; one
@@ -160,13 +193,18 @@ func (s *Server) IngestLocation(w http.ResponseWriter, r *http.Request) {
 	// Load the stored last-known position (and speed) for stationary dedup
 	// (below).
 	var mpLat, mpLon, mpSpeed *float64
+	var mpTs *time.Time
 	err = tx.QueryRow(r.Context(), `
-		SELECT lat, lon, speed_mps FROM member_positions WHERE user_id = $1`, ownerID,
-	).Scan(&mpLat, &mpLon, &mpSpeed)
+		SELECT lat, lon, speed_mps, ts FROM member_positions WHERE user_id = $1`, ownerID,
+	).Scan(&mpLat, &mpLon, &mpSpeed, &mpTs)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, http.StatusInternalServerError, "failed to check last position")
 		return
 	}
+	// bray 5b (Bo parked at home, the badge read 8 mph for a minute): GPS
+	// jitter while stationary. The member row gets 0 when the fix did not
+	// really move (parkedSpeed); `locations` keeps the raw value for history.
+	storedSpeed := parkedSpeed(mpLat, mpLon, mpTs, req.Lat, req.Lon, ts, req.AccuracyMeters, req.SpeedMPS)
 
 	// Stationary dedup: the point is within GPS noise of the stored position
 	// AND the speed hasn't materially changed, so storing it again adds no
@@ -184,7 +222,7 @@ func (s *Server) IngestLocation(w http.ResponseWriter, r *http.Request) {
 	// with non-events.
 	if mpLat != nil && mpLon != nil &&
 		haversineMeters(*mpLat, *mpLon, req.Lat, req.Lon) < stationaryDedupMeters &&
-		speedUnchanged(mpSpeed, req.SpeedMPS) {
+		speedUnchanged(mpSpeed, storedSpeed) {
 		if _, err := tx.Exec(r.Context(), `
 			UPDATE devices SET last_seen = now() WHERE id = $1`, req.DeviceID); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to update device")
@@ -193,8 +231,9 @@ func (s *Server) IngestLocation(w http.ResponseWriter, r *http.Request) {
 		if _, err := tx.Exec(r.Context(), `
 			UPDATE member_positions
 			SET updated_at = now(), battery_pct = COALESCE($2, battery_pct),
-			    charging = COALESCE($3, charging)
-			WHERE user_id = $1`, ownerID, req.BatteryPct, req.Charging); err != nil {
+			    charging = COALESCE($3, charging),
+			    speed_mps = CASE WHEN $4 THEN 0 ELSE speed_mps END
+			WHERE user_id = $1`, ownerID, req.BatteryPct, req.Charging, storedSpeed != nil && *storedSpeed == 0 && req.SpeedMPS != nil); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to update member position")
 			return
 		}
@@ -245,7 +284,7 @@ func (s *Server) IngestLocation(w http.ResponseWriter, r *http.Request) {
 	// clause skips the update if the stored position is already newer, so an
 	// out-of-order point can never regress a member's last-known position.
 	if _, err := tx.Exec(r.Context(), memberPositionUpsertSQL,
-		ownerID, req.Lat, req.Lon, ts, req.BatteryPct, req.SpeedMPS,
+		ownerID, req.Lat, req.Lon, ts, req.BatteryPct, storedSpeed,
 		nullIfEmpty(req.MotionState), req.AccuracyMeters, req.DeviceID, req.Charging, req.HeadingDeg,
 	); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to store member position")
