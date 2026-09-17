@@ -104,6 +104,8 @@ type MemberDevice struct {
 	Lon        *float64   `json:"lon,omitempty"`
 	BatteryPct *float64   `json:"battery_pct,omitempty"`
 	Charging   *bool      `json:"charging,omitempty"`
+	// LastFixAt (bray 5b): the device's newest fix at any age (TS is only within the 24 h window).
+	LastFixAt *time.Time `json:"last_fix_at,omitempty"`
 }
 
 // MemberPlace is the agreed JSON shape read by the app's cards and map.
