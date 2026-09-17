@@ -15,6 +15,7 @@ import '../services/app_config.dart';
 import '../services/background_location_service.dart';
 import '../services/battery_optimization_service.dart';
 import '../services/map_visibility_store.dart';
+import '../services/tile_cache.dart';
 import '../services/contact_link_store.dart';
 import '../services/device_place_resolver.dart';
 import '../services/device_service.dart';
@@ -137,6 +138,9 @@ class _MapScreenState extends State<MapScreen>
 
   /// Whether the map has finished its first layout (so camera moves are safe).
   bool _mapReady = false;
+
+  /// bray: the cached tile provider, one per screen (its Dio client lives with it).
+  final TileProvider _tiles = TileCache.instance.provider();
 
   // Camera animation controller for smooth recentering.
   AnimationController? _cameraAnim;
@@ -1229,6 +1233,7 @@ class _MapScreenState extends State<MapScreen>
                 TileLayer(
                   urlTemplate: _satellite ? kSatelliteTileUrl : kTileUrl,
                   userAgentPackageName: 'app.openfamily',
+                  tileProvider: _tiles,   // bray: on-device cache, 30 days / ~300 MB (services/tile_cache.dart)
                 ),
                 // Blue "range" circle - Bray look: only for members in the
                 // approximate GPS-accuracy state (see showRange), never for a
