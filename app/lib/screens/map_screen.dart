@@ -15,6 +15,7 @@ import '../services/app_config.dart';
 import '../services/background_location_service.dart';
 import '../services/battery_optimization_service.dart';
 import '../services/map_visibility_store.dart';
+import '../services/tile_cache.dart';
 import '../services/contact_link_store.dart';
 import '../services/device_place_resolver.dart';
 import '../services/device_service.dart';
@@ -95,7 +96,6 @@ class MapScreen extends StatefulWidget {
 class _MapScreenState extends State<MapScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   // Zoom the camera animates to when a cluster is expanded.
-  static const double _expandZoom = 16.0;
 
   final MapController _mapController = MapController();
 
@@ -136,16 +136,11 @@ class _MapScreenState extends State<MapScreen>
   /// Non-null when the initial fetch failed; shown with a retry action.
   String? _error;
 
-  // Clusters the user has expanded (tapped) so their members fan out.
-  final Set<String> _expandedClusters = <String>{};
-
-  // The current camera, tracked so expanded clusters can be re-collapsed when
-  // members move apart (pruned on each movement tick) or the user zooms out.
-  MapCamera? _camera;
-  double? _lastZoom;
-
   /// Whether the map has finished its first layout (so camera moves are safe).
   bool _mapReady = false;
+
+  /// bray: the cached tile provider, one per screen (its Dio client lives with it).
+  final TileProvider _tiles = TileCache.instance.provider();
 
   // Camera animation controller for smooth recentering.
   AnimationController? _cameraAnim;
@@ -338,7 +333,6 @@ class _MapScreenState extends State<MapScreen>
       _members = members;
       _membersListenable.value = members;
       // Re-collapse expanded clusters whose members have moved apart.
-      _pruneExpandedClusters();
     });
     if (_motion.activeAt(now)) _startGlideTicker();
     _keepFollowing();
@@ -939,47 +933,12 @@ class _MapScreenState extends State<MapScreen>
     _animateTo(pos, 15);
   }
 
-  /// Expands a tapped cluster so its members fan out and become tappable.
-  void _expandCluster(String clusterId, LatLng centroid) {
-    setState(() => _expandedClusters.add(clusterId));
-    _animateTo(centroid, _expandZoom);
-  }
-
-  /// Called on every camera change. Re-collapses expanded clusters when the
-  /// user zooms out (a decrease in zoom, not the expand animation's zoom-in).
-  ///
-  /// Only re-collapses on a user-initiated gesture ([hasGesture]); the
-  /// programmatic expand animation (which zooms via the controller) must not
-  /// immediately re-collapse the cluster the user just opened.
+  /// Called on every camera change: remembers the gesture for the auto-fit
+  /// clock, pauses following, and touches the idle timer.
   void _onCameraChanged(MapCamera camera, bool hasGesture) {
-    final double? prev = _lastZoom;
-    _lastZoom = camera.zoom;
-    _camera = camera;
     if (hasGesture) _lastGesture = DateTime.now();
     if (hasGesture) _pauseFollowing();
     if (hasGesture) _touch();
-    if (hasGesture &&
-        _expandedClusters.isNotEmpty &&
-        prev != null &&
-        camera.zoom < prev - 0.5) {
-      setState(() => _expandedClusters.clear());
-    }
-  }
-
-  /// Drops expanded-cluster ids that no longer correspond to a multi-member
-  /// cluster at the current camera (i.e. the members have moved apart).
-  void _pruneExpandedClusters() {
-    if (_expandedClusters.isEmpty || _camera == null) return;
-    final List<MemberCluster> clusters = clusterMembers(
-      _liveMembers(),
-      toScreenOffset: (latLng) {
-        final p = _camera!.latLngToScreenPoint(latLng);
-        return Offset(p.x, p.y);
-      },
-    );
-    final Set<String> validIds =
-        clusters.where((c) => c.members.length > 1).map((c) => c.id).toSet();
-    _expandedClusters.retainAll(validIds);
   }
 
   /// Frames all members of the current family.
@@ -1263,8 +1222,6 @@ class _MapScreenState extends State<MapScreen>
                   flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
                 ),
                 onMapReady: () {
-                  _camera = _mapController.camera;
-                  _lastZoom = _mapController.camera.zoom;
                   _mapReady = true;
                   _fitToMembers();
                 },
@@ -1276,6 +1233,7 @@ class _MapScreenState extends State<MapScreen>
                 TileLayer(
                   urlTemplate: _satellite ? kSatelliteTileUrl : kTileUrl,
                   userAgentPackageName: 'app.openfamily',
+                  tileProvider: _tiles,   // bray: on-device cache, 30 days / ~300 MB (services/tile_cache.dart)
                 ),
                 // Blue "range" circle - Bray look: only for members in the
                 // approximate GPS-accuracy state (see showRange), never for a
@@ -1313,7 +1271,6 @@ class _MapScreenState extends State<MapScreen>
                 // the current zoom (rebuilds as the camera moves).
                 _MemberMarkerLayer(
                   members: _visible(onMap),                 // focus: others hidden (J:175-181), capsule-mates kept (5b); hidden people off (accordion)
-                  expandedClusters: _expandedClusters,
                   selectedId: _followId,                    // J:101: the ringed face inside a capsule
                   labelFor: _labelFor,                      // every pill: You / contact name / first name (was the focused one only)
                   inDriveFor: _inDriveFor,
@@ -1323,7 +1280,6 @@ class _MapScreenState extends State<MapScreen>
                   contactFor: (Member m) => ContactLinkStore.instance.linkFor(m.id),
                   onMemberTap: _focusMember,
                   onMemberHold: _openMemberDetails,         // design list: hold = full details
-                  onClusterTap: _expandCluster,
                   anchorFor: _capsuleAnchor,               // 5b: the capsule's own glide
                   onCapsulesDrawn: (Set<String> ids, DateTime now) => _capsules.prune(now, drawnIds: ids),
                 ),
@@ -1695,10 +1651,8 @@ class _LocateButton extends StatelessWidget {
 class _MemberMarkerLayer extends StatelessWidget {
   const _MemberMarkerLayer({
     required this.members,
-    required this.expandedClusters,
     required this.onMemberTap,
     required this.onMemberHold,
-    required this.onClusterTap,
     required this.labelFor,
     required this.inDriveFor,
     required this.canGroup,
@@ -1711,7 +1665,6 @@ class _MemberMarkerLayer extends StatelessWidget {
   });
 
   final List<Member> members;
-  final Set<String> expandedClusters;
   final ValueChanged<Member> onMemberTap;
 
   /// Piece 5: whether this member is currently in a drive session
@@ -1753,7 +1706,6 @@ class _MemberMarkerLayer extends StatelessWidget {
   /// rule as the cards. (Until 2026-09-14 only the focused pill got it; the
   /// rest printed "Heidi Bray".)
   final String Function(Member) labelFor;
-  final void Function(String clusterId, LatLng centroid) onClusterTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1768,10 +1720,10 @@ class _MemberMarkerLayer extends StatelessWidget {
         return Offset(p.x, p.y);
       },
       toLatLng: camera.offsetToCrs,
-      expandedClusterIds: expandedClusters,
       canGroup: canGroup,
       mustGroup: mustGroup,
       ringLift: (Member m) => m.place?.atHome == true ? MemberAvatarBubble.atHomeLift : 0,   // 5b step 3: the ring sits 9 up on the house chip
+      extentsFor: (Member m) => soloExtents(m, label: labelFor(m), now: now, inDrive: inDriveFor(m)),   // a fanned pair's gap fits their badges
       now: now,
     );
     LatLng capsuleAt(BubblePlacement p) => anchorFor == null ? p.position : anchorFor!(p.clusterId!, p.position, now);
@@ -1807,10 +1759,11 @@ class _MemberMarkerLayer extends StatelessWidget {
                 contactFor: contactFor,
                 now: now,
                 inDriveFor: inDriveFor,
-                // 5b (Bo live 17:50): a riding-together capsule never expands - its faces are the targets
-                onTap: () => onClusterTap(p.clusterId!, p.position),
-                onFaceTap: p.forced ? onMemberTap : null,
-                onFaceLongPress: p.forced ? onMemberHold : null,
+                // 5b (Bo live 17:50) and 2026-09-17 01:33 (Bo live: the at-home
+                // capsule split on a tap): NO capsule ever expands - its faces are
+                // the targets: tap = focus, hold = details.
+                onFaceTap: onMemberTap,
+                onFaceLongPress: onMemberHold,
               ),
             )
           else
@@ -1824,7 +1777,7 @@ class _MemberMarkerLayer extends StatelessWidget {
                 label: labelFor(p.member!),
                 now: now,
                 inDrive: inDriveFor(p.member!),
-                mirrored: _mirrored(camera, p, now),
+                mirrored: p.mirrored ?? _mirrored(camera, p, now),
                 onTap: () => onMemberTap(p.member!),
                 onLongPress: () => onMemberHold(p.member!),
               ),

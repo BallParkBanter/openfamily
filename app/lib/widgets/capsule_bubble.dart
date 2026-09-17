@@ -99,9 +99,9 @@ class CapsuleBubble extends StatelessWidget {
     final int circles = faces.length + (more > 0 ? 1 : 0);
     final double stackW = BrayTokens.capsuleAvatar + step * (circles - 1);
 
-    return Tooltip(
-      message: label,
-      child: Semantics(
+    // bray 2026-09-17 (Bo, live): no visual tooltip on a marker - the label is
+    // for TalkBack and the rig only; long-press = details.
+    return Semantics(
         label: label,
         button: true,
         child: GestureDetector(
@@ -230,7 +230,6 @@ class CapsuleBubble extends StatelessWidget {
             ),
           ),
         ),
-      ),
     );
   }
 }
