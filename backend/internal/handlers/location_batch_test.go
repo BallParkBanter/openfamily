@@ -108,3 +108,23 @@ func TestBatchTSKeysNilSafeInput(t *testing.T) {
 		t.Fatal("expected one key")
 	}
 }
+// bray 5b (2026-09-17): Charlie's phone has no data plan - OwnTracks queues a
+// school day's fixes and uploads them on home Wi-Fi with tst hours old. The
+// batch path keeps every point (they are history) and is what the .103 relay
+// uses for anything older than the live feed's 15 min.
+func TestFilterBatchPointsKeepsAThreeHourOldQueue(t *testing.T) {
+	now := time.Date(2026, 9, 17, 21, 0, 0, 0, time.UTC)
+	var pts []batchPoint
+	for i := 0; i < 6; i++ {
+		ts := now.Add(-3*time.Hour + time.Duration(i)*30*time.Minute)
+		pts = append(pts, batchPoint{DeviceID: "d", TS: &ts, Lat: 34.0 + float64(i)/1000, Lon: -84.0})
+	}
+	kept, dropped := filterBatchPoints(pts, now)
+	if len(kept) != 6 || dropped != 0 {
+		t.Fatalf("a 3 h old queue must be kept whole: kept %d dropped %d", len(kept), dropped)
+	}
+	// the newest is last: the member row's upsert guard (ts < EXCLUDED.ts) lets only it win
+	if !kept[len(kept)-1].TS.Equal(now.Add(-30 * time.Minute)) {
+		t.Fatalf("order lost: %v", kept[len(kept)-1].TS)
+	}
+}
