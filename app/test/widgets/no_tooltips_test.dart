@@ -32,7 +32,7 @@ void main() {
     final SemanticsHandle h = t.ensureSemantics();
     await t.pumpWidget(MaterialApp(home: Scaffold(body: Column(children: [
       MapTopChrome(
-        leading: FamilyChip(label: 'Bray Family', expanded: false, onTap: () {}),
+        center: FamilyChip(label: 'Bray Family', expanded: false, onTap: () {}),
         summary: const SizedBox(width: 80, height: 30),
         controls: const [SizedBox(width: 42, height: 42)],
       ),

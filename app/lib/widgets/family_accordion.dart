@@ -43,14 +43,14 @@ class FamilyChip extends StatelessWidget {
           borderRadius: BorderRadius.circular(22),
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
+            padding: const EdgeInsets.fromLTRB(22, 10, 16, 10),   // Bo 2026-09-17 17:20: a bit wider (~+20 %)
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(Icons.group_outlined, size: 19, color: brand.accentInk),
                 const SizedBox(width: 7),
                 ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 150),
+                  constraints: const BoxConstraints(maxWidth: 180),
                   child: Text(
                     label,
                     maxLines: 1,
@@ -95,7 +95,7 @@ class FamilyAccordionPanel extends StatelessWidget {
   final void Function(String id, bool shown) onToggle;
 
   static const Duration transition = Duration(milliseconds: 250);
-  static const double width = 300;      // OPEN: chosen - a face, "Grandmother" and a switch
+  static const double width = 320;      // OPEN: chosen - a face, "Grandmother" and a switch; at least the pill's width, centred under it
   static const double rowHeight = 52;   // OPEN: chosen - a 36 face with 8 of air
   static const double face = 36;
 
