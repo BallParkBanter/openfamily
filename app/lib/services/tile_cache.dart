@@ -13,9 +13,13 @@ import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
 import 'package:dio_cache_interceptor/dio_cache_interceptor.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_map_cache/flutter_map_cache.dart';
 import 'package:http_cache_file_store/http_cache_file_store.dart';
 import 'package:path_provider/path_provider.dart';
+
+import 'retry_tile_provider.dart';
+import 'tile_prefetch.dart';
 
 class TileCache {
   TileCache._(this.store);
@@ -56,20 +60,26 @@ class TileCache {
   /// up to [maxConnectionsPerHost] in flight, idle sockets kept 90 s.
   static const int maxConnectionsPerHost = 6;
   static Dio newDio() {
-    final Dio dio = Dio(BaseOptions(headers: <String, dynamic>{'Accept': accept, 'User-Agent': userAgent}, connectTimeout: const Duration(seconds: 10), receiveTimeout: const Duration(seconds: 20)));
+    final Dio dio = Dio(BaseOptions(headers: <String, dynamic>{'Accept': accept, 'User-Agent': userAgent}, connectTimeout: const Duration(seconds: 6), receiveTimeout: const Duration(seconds: 10)));   // a dead hotspot fails fast; the retry provider asks again
     dio.httpClientAdapter = IOHttpClientAdapter(createHttpClient: () => HttpClient()
       ..maxConnectionsPerHost = maxConnectionsPerHost
       ..idleTimeout = const Duration(seconds: 90)
-      ..connectionTimeout = const Duration(seconds: 10));
+      ..connectionTimeout = const Duration(seconds: 6));   // an errored socket is closed by dart:io, never reused
     return dio;
   }
 
-  CachedTileProvider? _provider;
+  CachedTileProvider? _cached;
+  RetryTileProvider? _provider;
 
   /// THE tile provider: one per cache (so one Dio, one connection pool, one
-  /// cache interceptor) shared by every TileLayer. Cache first, network when
-  /// missing, the cached tile again when the network fails.
-  CachedTileProvider provider() => _provider ??= CachedTileProvider(
+  /// cache interceptor) shared by every TileLayer, wrapped so a failed tile
+  /// is retried until shown (retry_tile_provider.dart). Cache first, network
+  /// when missing, the cached tile again when the network fails.
+  TileProvider provider() => _provider ??= RetryTileProvider(cachedProvider(),
+      onError: (_) => TilePrefetcher.instance.noteFailure(), onRecovered: TilePrefetcher.instance.noteSuccess);
+
+  /// The bare cached provider (the retry wrapper's inner; tests).
+  CachedTileProvider cachedProvider() => _cached ??= CachedTileProvider(
         store: store,
         maxStale: ttl,
         cachePolicy: CachePolicy.forceCache,
@@ -81,7 +91,7 @@ class TileCache {
       );
 
   /// The shared Dio client (tests exercise this one).
-  Dio dio() => provider().dio;
+  Dio dio() => cachedProvider().dio;
 
   /// Whether a tile URL is already in the cache (the prefetcher skips these).
   Future<bool> cached(String url) => store.exists(CacheOptions.defaultCacheKeyBuilder(url: Uri.parse(url)));

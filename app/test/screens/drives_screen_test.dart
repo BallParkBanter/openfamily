@@ -12,6 +12,9 @@ import 'package:openfamily/screens/drives_screen.dart';
 import 'package:openfamily/services/device_place_resolver.dart';
 import 'package:openfamily/services/trips_service.dart';
 import 'package:openfamily/theme/bray_tokens.dart';
+import 'package:openfamily/services/retry_tile_provider.dart';
+import 'dart:ui' as ui;
+import 'package:flutter/foundation.dart';
 
 final DateTime now = DateTime(2026, 9, 17, 13, 30);
 const LatLng home = LatLng(33.8922, -83.8033);
@@ -26,6 +29,23 @@ final Trip morning = Trip(
 final Trip yesterday = Trip(startedAt: DateTime(2026, 9, 16, 17, 2), endedAt: DateTime(2026, 9, 16, 17, 40), matched: true, distanceM: 30000, topSpeedMps: 30, fromPlace: 'Work', toPlace: 'Home', points: morning.points.reversed.toList());
 
 DevicePlaceResolver fakeResolver() => DevicePlaceResolver(lookup: (double lat, double lon) async => <Placemark>[const Placemark(street: 'Hog Mountain Rd', thoroughfare: 'Hog Mountain Rd', locality: 'Dacula')], clock: () => now);
+
+/// A tile source that never touches the network.
+class _BlankTiles extends TileProvider {
+  _BlankTiles(this.image);
+  final ui.Image image;
+  @override
+  ImageProvider<Object> getImage(TileCoordinates c, TileLayer options) => _Img(image);
+}
+
+class _Img extends ImageProvider<_Img> {
+  const _Img(this.image);
+  final ui.Image image;
+  @override
+  Future<_Img> obtainKey(ImageConfiguration c) => SynchronousFuture<_Img>(this);
+  @override
+  ImageStreamCompleter loadImage(_Img key, ImageDecoderCallback decode) => OneFrameImageStreamCompleter(Future<ImageInfo>.value(ImageInfo(image: image.clone())));
+}
 
 void main() {
   test('words: day headers, times, miles, duration, the title from places or streets', () {
@@ -56,7 +76,8 @@ void main() {
   });
 
   testWidgets('tap a drive: the map with the route (halo + accent in the person\'s colour), start and end pins, the stats card, Back', (t) async {
-    await t.pumpWidget(MaterialApp(home: DrivesScreen(member: bo, label: 'You', now: now, resolver: fakeResolver(), fetch: (_, __) async => [morning])));
+    final _BlankTiles tiles = _BlankTiles(await blankImage(4));
+    await t.pumpWidget(MaterialApp(home: DrivesScreen(member: bo, label: 'You', now: now, resolver: fakeResolver(), tileProvider: tiles, fetch: (_, __) async => [morning])));
     await t.pumpAndSettle();
     await t.tap(find.byKey(const Key('drive-0')));
     await t.pumpAndSettle();
