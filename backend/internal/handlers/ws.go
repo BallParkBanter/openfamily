@@ -45,6 +45,8 @@ type wsMember struct {
 	// bray 2026-09-17: the primary device and every device's newest fix (member_devices.go).
 	PrimaryDeviceID *string               `json:"primary_device_id,omitempty"`
 	Devices         []models.MemberDevice `json:"devices,omitempty"`
+	// SilentSince (bray 5b): the primary device's newest fix when it is over 2 h old; omitted while it reports.
+	SilentSince *time.Time `json:"silent_since,omitempty"`
 }
 
 // wsLocation is a live location update broadcast to a family.
@@ -323,6 +325,7 @@ func (s *Server) familyMembersSnapshot(ctx context.Context, familyID, callerID s
 		for i := range members {
 			members[i].Devices = devices[members[i].ID]
 			members[i].PrimaryDeviceID = primaryOf(members[i].Devices)
+			members[i].SilentSince = silentSince(members[i].Devices, time.Now())
 		}
 	}
 	return members, nil
