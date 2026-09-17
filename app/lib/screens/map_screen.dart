@@ -16,6 +16,7 @@ import '../services/background_location_service.dart';
 import '../services/battery_optimization_service.dart';
 import '../services/map_visibility_store.dart';
 import '../services/tile_cache.dart';
+import '../utils/stillness.dart';
 import '../services/contact_link_store.dart';
 import '../services/device_place_resolver.dart';
 import '../services/device_service.dart';
@@ -138,6 +139,9 @@ class _MapScreenState extends State<MapScreen>
 
   /// Whether the map has finished its first layout (so camera moves are safe).
   bool _mapReady = false;
+
+  /// bray 2026-09-17: phantom speed at rest reads 0 (utils/stillness.dart).
+  final StillnessTracker _stillness = StillnessTracker();
 
   /// bray: the cached tile provider, one per screen (its Dio client lives with it).
   final TileProvider _tiles = TileCache.instance.provider();
@@ -307,9 +311,10 @@ class _MapScreenState extends State<MapScreen>
     });
   }
 
-  void _onMembersChanged(List<Member> members) {
+  void _onMembersChanged(List<Member> rawMembers) {
     if (!mounted) return;
     final DateTime now = DateTime.now();
+    final List<Member> members = _stillness.apply(rawMembers, now);   // bray: a member that has not moved is at 0 mph, whatever the frame said
     _drives.updateAll(members, now: now);
     _groups.observe(members, inDriveFor: _inDriveFor, now: now);
     for (final Member m in members) {
