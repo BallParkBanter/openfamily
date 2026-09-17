@@ -273,7 +273,7 @@ func (s *Server) HeartbeatDevice(w http.ResponseWriter, r *http.Request) {
 
 	// Best-effort liveness fan-out: family members see the member stay fresh
 	// without any position change.
-	go s.broadcastPresence(claims.UserID, time.Now(), req.BatteryPct, req.Charging)
+	go s.broadcastPresence(claims.UserID, time.Now(), req.BatteryPct, req.Charging, req.DeviceID)
 
 	w.WriteHeader(http.StatusNoContent)
 }

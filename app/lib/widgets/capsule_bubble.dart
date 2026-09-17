@@ -58,10 +58,10 @@ class CapsuleBubble extends StatelessWidget {
   /// Under the pill: the lift (17) and the dot's lower half.
   static const double _underH = BrayTokens.capsuleLift + BrayTokens.dotSize / 2;
 
-  /// The zone above the pill for the badge's upper half. A two-line badge is
-  /// 2 x 4 pad + 10 x 1.1 + 12 x 1.1 + 2 border = 34.2 tall; centred 2 px
-  /// under the pill's top edge it rises 15.1 above it. OPEN: computed - 20.
-  static const double badgeZone = 20;
+  /// The zone above the pill for the badge. A two-line badge is
+  /// 2 x 4 pad + 10 x 1.1 + 12 x 1.1 + 2 border = 34.2 tall; with its bottom
+  /// 6 px under the pill's top edge it rises 28.2 above it. OPEN: computed - 30.
+  static const double badgeZone = 30;
 
   /// 20 + 66 + 22 = 108.
   static const double markerHeight = badgeZone + _pillH + _underH;
@@ -99,9 +99,9 @@ class CapsuleBubble extends StatelessWidget {
     final int circles = faces.length + (more > 0 ? 1 : 0);
     final double stackW = BrayTokens.capsuleAvatar + step * (circles - 1);
 
-    return Tooltip(
-      message: label,
-      child: Semantics(
+    // bray 2026-09-17 (Bo, live): no visual tooltip on a marker - the label is
+    // for TalkBack and the rig only; long-press = details.
+    return Semantics(
         label: label,
         button: true,
         child: GestureDetector(
@@ -209,20 +209,20 @@ class CapsuleBubble extends StatelessWidget {
                       ),
                     ),
                   ),
-                // The one badge, its centre 2 px under the pill's top edge, centred (.gspd / .gcall translate(-50%,-50%)).
+                // The one badge, centred, its bottom 6 px under the pill's top
+                // edge - over the pill's rim only, never the faces (Bo 2026-09-17).
                 if (badge != null)
                   Positioned(
-                    top: badgeZone + BrayTokens.groupBadgeCentreBelowTop,
+                    top: 0,
                     left: 0,
                     right: 0,
-                    child: Center(
-                      child: FractionalTranslation(
-                        translation: const Offset(0, -0.5),
-                        child: SlotBadge(
-                          spec: badge,
-                          padding: badge.kind == SlotBadgeKind.speed ? BrayTokens.groupSpeedPad : BrayTokens.groupBadgePad,   // .gspd padding:4px 10px / .gcall padding:4px 10px 4px 8px
-                          gap: badge.kind == SlotBadgeKind.speed ? BrayTokens.groupSpeedGap : BrayTokens.badgeGap,          // .gspd gap:6px / .gcall gap:5px
-                        ),
+                    height: badgeZone + BrayTokens.groupBadgeBottomBelowTop,
+                    child: Align(
+                      alignment: Alignment.bottomCenter,
+                      child: SlotBadge(
+                        spec: badge,
+                        padding: badge.kind == SlotBadgeKind.speed ? BrayTokens.groupSpeedPad : BrayTokens.groupBadgePad,   // .gspd padding:4px 10px / .gcall padding:4px 10px 4px 8px
+                        gap: badge.kind == SlotBadgeKind.speed ? BrayTokens.groupSpeedGap : BrayTokens.badgeGap,          // .gspd gap:6px / .gcall gap:5px
                       ),
                     ),
                   ),
@@ -230,7 +230,6 @@ class CapsuleBubble extends StatelessWidget {
             ),
           ),
         ),
-      ),
     );
   }
 }

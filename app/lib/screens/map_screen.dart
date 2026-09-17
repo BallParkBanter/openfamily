@@ -14,6 +14,9 @@ import '../services/api_client.dart';
 import '../services/app_config.dart';
 import '../services/background_location_service.dart';
 import '../services/battery_optimization_service.dart';
+import '../services/map_visibility_store.dart';
+import '../services/tile_cache.dart';
+import '../utils/stillness.dart';
 import '../services/contact_link_store.dart';
 import '../services/device_place_resolver.dart';
 import '../services/device_service.dart';
@@ -41,7 +44,9 @@ import '../widgets/capsule_bubble.dart';
 import '../widgets/circle_switcher.dart';
 import '../widgets/contact_link_sheet.dart';
 import '../widgets/edge_chip.dart';
+import '../widgets/family_accordion.dart';
 import '../widgets/family_header.dart';
+import '../widgets/map_top_chrome.dart';
 import '../widgets/focus_trail_layer.dart';
 import '../widgets/following_pill.dart';
 import '../widgets/home_chip.dart';
@@ -92,7 +97,6 @@ class MapScreen extends StatefulWidget {
 class _MapScreenState extends State<MapScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   // Zoom the camera animates to when a cluster is expanded.
-  static const double _expandZoom = 16.0;
 
   final MapController _mapController = MapController();
 
@@ -101,6 +105,11 @@ class _MapScreenState extends State<MapScreen>
   /// Whether location sharing is off (the user skipped it during onboarding).
   /// When true we show a gentle re-prompt banner so they can enable it.
   bool _locationOff = false;
+
+  /// bray (Bo's drive notes 2026-09-16 #1): the family chip's accordion -
+  /// open or closed. The per-person map show/hide it drives lives in
+  /// [MapVisibilityStore] (this device only, SharedPreferences).
+  bool _familyOpen = false;
 
   // Live family data from the backend.
   final FamilyService _familyService = FamilyService();
@@ -128,16 +137,14 @@ class _MapScreenState extends State<MapScreen>
   /// Non-null when the initial fetch failed; shown with a retry action.
   String? _error;
 
-  // Clusters the user has expanded (tapped) so their members fan out.
-  final Set<String> _expandedClusters = <String>{};
-
-  // The current camera, tracked so expanded clusters can be re-collapsed when
-  // members move apart (pruned on each movement tick) or the user zooms out.
-  MapCamera? _camera;
-  double? _lastZoom;
-
   /// Whether the map has finished its first layout (so camera moves are safe).
   bool _mapReady = false;
+
+  /// bray 2026-09-17: phantom speed at rest reads 0 (utils/stillness.dart).
+  final StillnessTracker _stillness = StillnessTracker();
+
+  /// bray: the cached tile provider, one per screen (its Dio client lives with it).
+  final TileProvider _tiles = TileCache.instance.provider();
 
   // Camera animation controller for smooth recentering.
   AnimationController? _cameraAnim;
@@ -294,6 +301,8 @@ class _MapScreenState extends State<MapScreen>
     PushService.sync();
     unawaited(_refreshServerFeatures());
     unawaited(ContactLinkStore.instance.load());   // bray: device-contact links for the cards' Call/Text
+    unawaited(MapVisibilityStore.instance.load());   // bray: who is hidden on the map (this device only)
+    MapVisibilityStore.instance.addListener(_onMapVisibilityChanged);
     // One-time Android battery-optimization guidance (keeps background
     // updates alive when the app is closed). No-op elsewhere. Runs after the
     // first frame so the activity is visible.
@@ -302,9 +311,10 @@ class _MapScreenState extends State<MapScreen>
     });
   }
 
-  void _onMembersChanged(List<Member> members) {
+  void _onMembersChanged(List<Member> rawMembers) {
     if (!mounted) return;
     final DateTime now = DateTime.now();
+    final List<Member> members = _stillness.apply(rawMembers, now);   // bray: a member that has not moved is at 0 mph, whatever the frame said
     _drives.updateAll(members, now: now);
     _groups.observe(members, inDriveFor: _inDriveFor, now: now);
     for (final Member m in members) {
@@ -328,7 +338,6 @@ class _MapScreenState extends State<MapScreen>
       _members = members;
       _membersListenable.value = members;
       // Re-collapse expanded clusters whose members have moved apart.
-      _pruneExpandedClusters();
     });
     if (_motion.activeAt(now)) _startGlideTicker();
     _keepFollowing();
@@ -376,7 +385,7 @@ class _MapScreenState extends State<MapScreen>
     if (!_mapReady || !_motion.activeAt(now)) return;
     if (_cameraAnim?.isAnimating ?? false) return;
     if (!autoFitDue(lastGesture: _lastGesture, now: now, focused: _focus.focusedId != null, following: _followId != null)) return;
-    final List<Member> members = nearMembers(_liveMembers(), viewerId: _userId);
+    final List<Member> members = nearMembers(_onMap(_liveMembers()), viewerId: _userId);
     if (members.length < 2) return;   // one person: the follow / launch centre, never re-fitted per frame
     final MapCamera fitted = _fitFor(members, maxZoom: 16);
     _mapController.move(fitted.center, fitted.zoom);
@@ -581,7 +590,7 @@ class _MapScreenState extends State<MapScreen>
     if (!_mapReady) return;
     // 5b step 2: frame the people near the signed-in seat (utils/near_fit.dart);
     // the far ones ride the screen edge as chips (EdgeChipLayer).
-    final List<Member> members = nearMembers(_liveMembers(), viewerId: _userId);
+    final List<Member> members = nearMembers(_onMap(_liveMembers()), viewerId: _userId);
     if (members.isEmpty) return;
     final MapCamera cam = _mapController.camera;
     if (members.length == 1) {
@@ -754,8 +763,32 @@ class _MapScreenState extends State<MapScreen>
     }
   }
 
+  /// A person hidden on the map can't stay focused or followed there.
+  void _onMapVisibilityChanged() {
+    if (!mounted) return;
+    final MapVisibilityStore v = MapVisibilityStore.instance;
+    if (_focus.focusedId != null && v.isHidden(_focus.focusedId!)) {
+      _leaveFocus();
+    } else if (_followId != null && v.isHidden(_followId!)) {
+      _stopFollowing();
+      setState(() {});
+    } else {
+      setState(() {});
+    }
+  }
+
+  /// The map's list: everyone not hidden on this device. Counts, cards and
+  /// the People screen keep the full list.
+  List<Member> _onMap(List<Member> members) => MapVisibilityStore.instance.shown(members);
+
+  void _toggleFamilyOpen() => setState(() => _familyOpen = !_familyOpen);
+  void _closeFamily() {
+    if (_familyOpen) setState(() => _familyOpen = false);
+  }
+
   @override
   void dispose() {
+    MapVisibilityStore.instance.removeListener(_onMapVisibilityChanged);
     _idleTimer?.cancel();
     _driveTick?.cancel();
     _glideTicker?.dispose();
@@ -905,53 +938,18 @@ class _MapScreenState extends State<MapScreen>
     _animateTo(pos, 15);
   }
 
-  /// Expands a tapped cluster so its members fan out and become tappable.
-  void _expandCluster(String clusterId, LatLng centroid) {
-    setState(() => _expandedClusters.add(clusterId));
-    _animateTo(centroid, _expandZoom);
-  }
-
-  /// Called on every camera change. Re-collapses expanded clusters when the
-  /// user zooms out (a decrease in zoom, not the expand animation's zoom-in).
-  ///
-  /// Only re-collapses on a user-initiated gesture ([hasGesture]); the
-  /// programmatic expand animation (which zooms via the controller) must not
-  /// immediately re-collapse the cluster the user just opened.
+  /// Called on every camera change: remembers the gesture for the auto-fit
+  /// clock, pauses following, and touches the idle timer.
   void _onCameraChanged(MapCamera camera, bool hasGesture) {
-    final double? prev = _lastZoom;
-    _lastZoom = camera.zoom;
-    _camera = camera;
     if (hasGesture) _lastGesture = DateTime.now();
     if (hasGesture) _pauseFollowing();
     if (hasGesture) _touch();
-    if (hasGesture &&
-        _expandedClusters.isNotEmpty &&
-        prev != null &&
-        camera.zoom < prev - 0.5) {
-      setState(() => _expandedClusters.clear());
-    }
-  }
-
-  /// Drops expanded-cluster ids that no longer correspond to a multi-member
-  /// cluster at the current camera (i.e. the members have moved apart).
-  void _pruneExpandedClusters() {
-    if (_expandedClusters.isEmpty || _camera == null) return;
-    final List<MemberCluster> clusters = clusterMembers(
-      _liveMembers(),
-      toScreenOffset: (latLng) {
-        final p = _camera!.latLngToScreenPoint(latLng);
-        return Offset(p.x, p.y);
-      },
-    );
-    final Set<String> validIds =
-        clusters.where((c) => c.members.length > 1).map((c) => c.id).toSet();
-    _expandedClusters.retainAll(validIds);
   }
 
   /// Frames all members of the current family.
   void _fitToMembers() {
     if (!mounted) return;   // _currentSheetHeight reads MediaQuery.of(context)
-    final List<Member> members = nearMembers(_liveMembers(), viewerId: _userId);   // 5b step 2: the near cluster
+    final List<Member> members = nearMembers(_onMap(_liveMembers()), viewerId: _userId);   // 5b step 2: the near cluster
     if (members.isEmpty) return;
     // Same target as _animatedFit, so the overview auto-fit that follows the
     // first members snapshot finds nothing to correct (no launch bounce).
@@ -1188,6 +1186,7 @@ class _MapScreenState extends State<MapScreen>
   @override
   Widget build(BuildContext context) {
     final List<Member> members = _liveMembers();
+    final List<Member> onMap = _onMap(members);   // bray: the map layers only; counts and cards see everyone
     // The focused member for FocusTrailLayer: independent of _followedMember
     // because the Following pill's ✕ can end following while focus stays
     // active (controller note 1) — look the id up in `members` directly.
@@ -1228,19 +1227,18 @@ class _MapScreenState extends State<MapScreen>
                   flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
                 ),
                 onMapReady: () {
-                  _camera = _mapController.camera;
-                  _lastZoom = _mapController.camera.zoom;
                   _mapReady = true;
                   _fitToMembers();
                 },
                 onPositionChanged: (camera, hasGesture) =>
                     _onCameraChanged(camera, hasGesture),
-                onTap: (_, __) => _onMapTap(),   // design list: tap the map = back; Bo 2026-09-14: also drops the all-cards sheet
+                onTap: (_, __) { _closeFamily(); _onMapTap(); },   // design list: tap the map = back; Bo 2026-09-14: also drops the all-cards sheet; a tap outside closes the family accordion
               ),
               children: [
                 TileLayer(
                   urlTemplate: _satellite ? kSatelliteTileUrl : kTileUrl,
                   userAgentPackageName: 'app.openfamily',
+                  tileProvider: _tiles,   // bray: on-device cache, 30 days / ~300 MB (services/tile_cache.dart)
                 ),
                 // Blue "range" circle - Bray look: only for members in the
                 // approximate GPS-accuracy state (see showRange), never for a
@@ -1248,7 +1246,7 @@ class _MapScreenState extends State<MapScreen>
                 // accuracy in meters when known, else the broader-zone fallback.
                 CircleLayer(
                   circles: [
-                    for (final Member m in _visible(members))
+                    for (final Member m in _visible(onMap))
                       if (showRange(m))
                         CircleMarker(
                           point: m.position!,
@@ -1270,15 +1268,14 @@ class _MapScreenState extends State<MapScreen>
                 // Piece 5: the POI chip (🏫 ✈️ 🛒 ...) under a person parked
                 // at a named feature for 5 min - one per member position,
                 // never for a mover, never at home (the house is there).
-                PoiChipLayer(members: _visible(members)),
+                PoiChipLayer(members: _visible(onMap)),
                 // Piece 3: the focused person's last 6 h under their marker
                 // (house under the trail under people).
                 FocusTrailLayer(member: focusedMember),
                 // Member bubbles, clustered by on-screen proximity at
                 // the current zoom (rebuilds as the camera moves).
                 _MemberMarkerLayer(
-                  members: _visible(members),               // focus: others hidden (J:175-181), capsule-mates kept (5b)
-                  expandedClusters: _expandedClusters,
+                  members: _visible(onMap),                 // focus: others hidden (J:175-181), capsule-mates kept (5b); hidden people off (accordion)
                   selectedId: _followId,                    // J:101: the ringed face inside a capsule
                   labelFor: _labelFor,                      // every pill: You / contact name / first name (was the focused one only)
                   inDriveFor: _inDriveFor,
@@ -1288,14 +1285,13 @@ class _MapScreenState extends State<MapScreen>
                   contactFor: (Member m) => ContactLinkStore.instance.linkFor(m.id),
                   onMemberTap: _focusMember,
                   onMemberHold: _openMemberDetails,         // design list: hold = full details
-                  onClusterTap: _expandCluster,
                   anchorFor: _capsuleAnchor,               // 5b: the capsule's own glide
                   onCapsulesDrawn: (Set<String> ids, DateTime now) => _capsules.prune(now, drawnIds: ids),
                 ),
                 // 5b step 2: far members (beyond kNearFitMetres of the
                 // viewer) as edge chips; a tap does what tapping their face does.
                 EdgeChipLayer(
-                  members: _liveMembers(),
+                  members: onMap,
                   viewerId: _userId,
                   labelFor: _labelFor,
                   onTap: _focusMember,
@@ -1321,43 +1317,64 @@ class _MapScreenState extends State<MapScreen>
 
             const Positioned(top: 0, left: 0, right: 0, child: FamilyHeaderScrim()),   // S:37
 
-            // Top: family name, with a location-off re-prompt banner below it
-            // when the user skipped location during onboarding.
+            // Top chrome, one column (bray 2026-09-16): family chip + summary
+            // chip on the first row; the location-off banner (when the user
+            // skipped location during onboarding) full width under it; the
+            // circle buttons under whatever is showing, so a banner is never
+            // under a button - they slide down as it appears (MapTopChrome).
             Positioned(
               top: 0,
               left: 0,
               right: 0,
               child: SafeArea(
                 bottom: false,
-                child: Column(
-                  children: [
-                    // OPEN: S:38 .brand 21px 800 - theirs shows the family name in a chip; left as is, remove nothing
-                    // bray: a long press on the family chip opens the hidden
-                    // card gallery (ten card designs for Bo to pick from).
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8, left: 12, right: 76),
-                      child: GestureDetector(
-                        key: const Key('family-chip-hold'),
-                        behavior: HitTestBehavior.opaque,
-                        onLongPress: _openCardGallery,
-                        child: CircleSwitcher(
-                          circles: [_familyName],
-                          selectedIndex: 0,
-                          onSelected: (_) {},
-                          onJoinCircle: _hasFamily ? null : _openJoinCircle,
-                          alignment: Alignment.centerLeft,
-                        ),
-                      ),
+                child: MapTopChrome(
+                  // OPEN: S:38 .brand 21px 800 - theirs shows the family name in a chip; left as is, remove nothing
+                  // bray: a long press on the family chip opens the hidden
+                  // card gallery (ten card designs for Bo to pick from).
+                  leading: Align(
+                    alignment: Alignment.centerLeft,
+                    child: GestureDetector(
+                      key: const Key('family-chip-hold'),
+                      onLongPress: _openCardGallery,
+                      child: _hasFamily
+                          // bray: the accordion chip (chevron down/up; the panel is drawn below, over the map)
+                          ? FamilyChip(label: _familyName, expanded: _familyOpen, onTap: _toggleFamilyOpen)
+                          : CircleSwitcher(
+                              circles: [_familyName],
+                              selectedIndex: 0,
+                              onSelected: (_) {},
+                              onJoinCircle: _openJoinCircle,
+                              alignment: Alignment.centerLeft,
+                            ),
                     ),
-                    if (_locationOff)
-                      Padding(
-                        padding: const EdgeInsets.only(
-                          top: 8,
-                          left: 12,
-                          right: 12,
-                        ),
-                        child: _LocationOffBanner(onEnable: _enableLocation),
-                      ),
+                  ),
+                  // The "N home · M out" summary - a summary only (Round 4:
+                  // no Everyone view); long press = the marker gallery.
+                  // Always shown - "Everyone" when there is no count yet.
+                  summary: Builder(builder: (BuildContext context) {
+                    final Member? f = _followedMember;
+                    final String? s = summaryText(
+                      following: f,
+                      followingLabel: f == null ? null : _labelFor(f),
+                      homeCount: _homeCountOf(members), outCount: _outCountOf(members),
+                    );
+                    return FamilySummaryChip(
+                      text: everyoneChipText(s),
+                      semanticsLabel: everyoneChipLabel(s),
+                      onLongPress: _openMarkerGallery,
+                    );
+                  }),
+                  notice: _locationOff ? _LocationOffBanner(onEnable: _enableLocation) : null,
+                  controls: [
+                    _LayerToggle(
+                      isSatellite: _satellite,
+                      onToggle: _toggleSatellite,
+                    ),
+                    _LocateButton(
+                      onTap: _centerOnUser,
+                      active: _followId != null && _followId == _userId,
+                    ),
                   ],
                 ),
               ),
@@ -1390,51 +1407,6 @@ class _MapScreenState extends State<MapScreen>
                   ),
                 ),
               ),
-
-            // Top-right: satellite / standard layer toggle, with a "center on
-            // me" button stacked beneath it.
-            Positioned(
-              top: 0,
-              right: 12,
-              child: SafeArea(
-                bottom: false,
-                child: Column(
-                  children: [
-                    // The "N home · M out" summary - a summary only (Round 4:
-                    // no Everyone view); long press = the marker gallery.
-                    // Always shown - "Everyone" when there is no count yet.
-                    Builder(builder: (BuildContext context) {
-                      final Member? f = _followedMember;
-                      final String? s = summaryText(
-                        following: f,
-                        followingLabel: f == null ? null : _labelFor(f),
-                        homeCount: _homeCountOf(members), outCount: _outCountOf(members),
-                      );
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: FamilySummaryChip(
-                          text: everyoneChipText(s),
-                          semanticsLabel: everyoneChipLabel(s),
-                          onLongPress: _openMarkerGallery,
-                        ),
-                      );
-                    }),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: _LayerToggle(
-                        isSatellite: _satellite,
-                        onToggle: _toggleSatellite,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    _LocateButton(
-                      onTap: _centerOnUser,
-                      active: _followId != null && _followId == _userId,
-                    ),
-                  ],
-                ),
-              ),
-            ),
 
             // The people sheet (piece 3) sits on the fixed bottom bar; their `+`
             // FAB now rides the sheet's top-right edge so the sheet never covers it.
@@ -1499,6 +1471,34 @@ class _MapScreenState extends State<MapScreen>
                 ),
               ),
             ),
+
+            // bray: a tap anywhere outside the open family panel closes it
+            // drawn last, so the tap lands here and nowhere else.
+            if (_familyOpen)
+              Positioned.fill(
+                child: GestureDetector(
+                  key: const Key('family-panel-barrier'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _closeFamily,
+                ),
+              ),
+            // bray: the family accordion panel, straight down from the chip,
+            // over the map; every family member with a map show/hide switch.
+            Positioned(
+              top: media.padding.top + MapTopChrome.gap + FamilyChip.height + 6,
+              left: MapTopChrome.edge,
+              child: ListenableBuilder(
+                listenable: MapVisibilityStore.instance,
+                builder: (BuildContext context, _) => FamilyAccordionPanel(
+                  expanded: _familyOpen,
+                  members: members,
+                  labelFor: _labelFor,
+                  hiddenIds: MapVisibilityStore.instance.hiddenIds,
+                  onToggle: (String id, bool shown) => MapVisibilityStore.instance.setHidden(id, !shown),
+                ),
+              ),
+            ),
+
           ],
         ),
       ),
@@ -1656,10 +1656,8 @@ class _LocateButton extends StatelessWidget {
 class _MemberMarkerLayer extends StatelessWidget {
   const _MemberMarkerLayer({
     required this.members,
-    required this.expandedClusters,
     required this.onMemberTap,
     required this.onMemberHold,
-    required this.onClusterTap,
     required this.labelFor,
     required this.inDriveFor,
     required this.canGroup,
@@ -1672,7 +1670,6 @@ class _MemberMarkerLayer extends StatelessWidget {
   });
 
   final List<Member> members;
-  final Set<String> expandedClusters;
   final ValueChanged<Member> onMemberTap;
 
   /// Piece 5: whether this member is currently in a drive session
@@ -1714,7 +1711,6 @@ class _MemberMarkerLayer extends StatelessWidget {
   /// rule as the cards. (Until 2026-09-14 only the focused pill got it; the
   /// rest printed "Heidi Bray".)
   final String Function(Member) labelFor;
-  final void Function(String clusterId, LatLng centroid) onClusterTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1729,10 +1725,10 @@ class _MemberMarkerLayer extends StatelessWidget {
         return Offset(p.x, p.y);
       },
       toLatLng: camera.offsetToCrs,
-      expandedClusterIds: expandedClusters,
       canGroup: canGroup,
       mustGroup: mustGroup,
       ringLift: (Member m) => m.place?.atHome == true ? MemberAvatarBubble.atHomeLift : 0,   // 5b step 3: the ring sits 9 up on the house chip
+      extentsFor: (Member m) => soloExtents(m, label: labelFor(m), now: now, inDrive: inDriveFor(m)),   // a fanned pair's gap fits their badges
       now: now,
     );
     LatLng capsuleAt(BubblePlacement p) => anchorFor == null ? p.position : anchorFor!(p.clusterId!, p.position, now);
@@ -1768,10 +1764,11 @@ class _MemberMarkerLayer extends StatelessWidget {
                 contactFor: contactFor,
                 now: now,
                 inDriveFor: inDriveFor,
-                // 5b (Bo live 17:50): a riding-together capsule never expands - its faces are the targets
-                onTap: () => onClusterTap(p.clusterId!, p.position),
-                onFaceTap: p.forced ? onMemberTap : null,
-                onFaceLongPress: p.forced ? onMemberHold : null,
+                // 5b (Bo live 17:50) and 2026-09-17 01:33 (Bo live: the at-home
+                // capsule split on a tap): NO capsule ever expands - its faces are
+                // the targets: tap = focus, hold = details.
+                onFaceTap: onMemberTap,
+                onFaceLongPress: onMemberHold,
               ),
             )
           else
@@ -1785,7 +1782,7 @@ class _MemberMarkerLayer extends StatelessWidget {
                 label: labelFor(p.member!),
                 now: now,
                 inDrive: inDriveFor(p.member!),
-                mirrored: _mirrored(camera, p, now),
+                mirrored: p.mirrored ?? _mirrored(camera, p, now),
                 onTap: () => onMemberTap(p.member!),
                 onLongPress: () => onMemberHold(p.member!),
               ),

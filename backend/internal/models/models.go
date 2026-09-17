@@ -87,6 +87,23 @@ type MemberWithLocation struct {
 	// reverse-geocode of their position plus the saved place they are in.
 	// Nil when the member has no position.
 	Place *MemberPlace `json:"place,omitempty"`
+	// PrimaryDeviceID (bray 2026-09-17): the member's primary device
+	// (devices.is_primary); the app prefers its fix while fresh (< 10 min).
+	PrimaryDeviceID *string `json:"primary_device_id,omitempty"`
+	// Devices: each of the member's devices with its own newest fix (last 24 h).
+	Devices []MemberDevice `json:"devices,omitempty"`
+}
+
+// MemberDevice is one device's newest fix, for the app's primary-device rule.
+type MemberDevice struct {
+	ID         string     `json:"id"`
+	Name       *string    `json:"name,omitempty"`
+	IsPrimary  bool       `json:"is_primary"`
+	TS         *time.Time `json:"ts,omitempty"`
+	Lat        *float64   `json:"lat,omitempty"`
+	Lon        *float64   `json:"lon,omitempty"`
+	BatteryPct *float64   `json:"battery_pct,omitempty"`
+	Charging   *bool      `json:"charging,omitempty"`
 }
 
 // MemberPlace is the agreed JSON shape read by the app's cards and map.

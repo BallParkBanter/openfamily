@@ -41,3 +41,28 @@ func TestParkedSpeedZeroesJitterAndKeepsRealMotion(t *testing.T) {
 		t.Fatal("nil stays nil")
 	}
 }
+
+// bray (2026-09-17 07:26 ET, a red light): the live frame carries the
+// cleaned speed - what the row stores - not the request's raw one.
+func TestLiveFrameCarriesCleanedSpeed(t *testing.T) {
+	lat, lon := 34.0064, -84.4600
+	t0 := time.Date(2026, 9, 17, 11, 25, 13, 0, time.UTC)
+	t26 := t0.Add(26 * time.Second)
+	raw := 10 * 0.44704 // the tablet's phantom 10 mph, 4 m from the stored row, 26 s later, accuracy 6
+	cleaned := parkedSpeed(f(lat), f(lon), &t0, lat+4/111194.93, lon, t26, f(6), f(raw))
+	if cleaned == nil || *cleaned != 0 {
+		t.Fatalf("the row stores 0 for that fix, got %v", cleaned)
+	}
+	frame := liveLocationFrame("bo", lat+4/111194.93, lon, t26, f(57), nil, cleaned, nil, f(6), f(180), "tablet")
+	if frame.SpeedMPS == nil || *frame.SpeedMPS != 0 {
+		t.Fatalf("the frame must carry the cleaned speed (0), got %v", frame.SpeedMPS)
+	}
+	if frame.Type != "location" || frame.UserID != "bo" || frame.DeviceID != "tablet" || *frame.HeadingDeg != 180 {
+		t.Fatal("the rest of the frame is as posted")
+	}
+	// a real roll: cleaned == raw, and so is the frame
+	moving := parkedSpeed(f(lat), f(lon), &t0, lat+60/111194.93, lon, t26, f(6), f(raw))
+	if got := liveLocationFrame("bo", lat, lon, t26, nil, nil, moving, nil, f(6), nil, "tablet"); *got.SpeedMPS != raw {
+		t.Fatal("a moving fix keeps its speed")
+	}
+}

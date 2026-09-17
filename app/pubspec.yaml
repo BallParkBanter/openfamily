@@ -25,6 +25,13 @@ dependencies:
   flutter_map: ^7.0.2
   # Geographic coordinate type used by flutter_map.
   latlong2: ^0.9.1
+  # bray 2026-09-17: on-device tile cache (~300 MB, 30 days) so squares the
+  # tablet has shown come back instantly and offline (services/tile_cache.dart).
+  flutter_map_cache: ^2.1.0
+  dio: ^5.4.0
+  dio_cache_interceptor: ^4.0.0
+  http_cache_file_store: ^2.0.2
+  path_provider: ^2.1.0
   # Native share sheet for the "Send Code" invite flow.
   share_plus: ^10.0.0
   # Permissions (location / notifications / motion) for onboarding.

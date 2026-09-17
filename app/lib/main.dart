@@ -13,6 +13,7 @@ import 'services/session_gate.dart';
 import 'services/theme_preference.dart';
 import 'services/tile_config.dart';
 import 'services/token_storage.dart';
+import 'services/tile_cache.dart';
 import 'theme/app_theme.dart';
 import 'widgets/biometric_app_lock.dart';
 import 'widgets/dot_grid.dart';
@@ -28,6 +29,7 @@ Future<void> main() async {
   // UnifiedPush/APNs token arriving at launch is not dropped.
   PushService.initialize();
   await ThemePreferenceService.load();
+  await TileCache.init();   // bray: open the on-disk tile cache before the first map paints
   runApp(const OpenFamilyApp());
 }
 

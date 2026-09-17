@@ -27,7 +27,7 @@ void main() {
     expect(b.dx - a.dx, BrayTokens.capsuleAvatar - BrayTokens.capsuleOverlap);
     expect(t.getSize(avatars.at(0)).width, BrayTokens.capsuleAvatar);
   });
-  testWidgets('one badge on top of the capsule: the red car + the fastest speed, centred, its centre 2 px under the pill top (markers-22.html .gspd)', (t) async {
+  testWidgets('one badge on top of the capsule: the red car + the fastest speed, centred, its bottom 6 px under the pill top - the faces stay clear (Bo 2026-09-17)', (t) async {
     await t.pumpWidget(host(CapsuleBubble(members: [m('Bo Bray', mph: 61), m('Charlie', mph: 65)], now: now, inDriveFor: (_) => true)));
     expect(find.text('65 mph'), findsOneWidget);
     expect(find.text('61 mph'), findsNothing);
@@ -36,7 +36,9 @@ void main() {
     final Rect badge = t.getRect(find.byKey(const Key('slot-badge')));
     final Rect pill = t.getRect(find.byKey(const Key('capsule-pill')));
     expect(badge.center.dx, closeTo(pill.center.dx, 0.5));
-    expect(badge.center.dy, closeTo(pill.top + BrayTokens.groupBadgeCentreBelowTop, 0.5));
+    expect(badge.bottom, closeTo(pill.top + BrayTokens.groupBadgeBottomBelowTop, 0.5));
+    // the faces start at the pill's top + 3 (pad) + 1 (border): the badge ends above them
+    expect(badge.bottom, lessThanOrEqualTo(pill.top + BrayTokens.capsulePad + 1 + 2));
     expect(find.byKey(const Key('capsule-callout')), findsNothing);
   });
   testWidgets('no battery badge and no bolt inside a group (ruling 1); no beam (ruling 5)', (t) async {

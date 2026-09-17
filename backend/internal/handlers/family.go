@@ -320,6 +320,17 @@ func (s *Server) ListMembers(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to read members")
 		return
 	}
+	// bray: each member's devices + primary (member_devices.go).
+	ids := make([]string, 0, len(members))
+	for _, m := range members {
+		ids = append(ids, m.ID)
+	}
+	if devices, err := s.memberDevices(r.Context(), ids); err == nil {
+		for i := range members {
+			members[i].Devices = devices[members[i].ID]
+			members[i].PrimaryDeviceID = primaryOf(members[i].Devices)
+		}
+	}
 	writeJSON(w, http.StatusOK, members)
 }
 

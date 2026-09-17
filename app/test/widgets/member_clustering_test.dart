@@ -109,7 +109,7 @@ void main() {
     const double k = _mPerDegLat * 0.01;
     Offset cam(LatLng p) => Offset((p.longitude - home.longitude) * k, -(p.latitude - home.latitude) * k);
     LatLng back(Offset o) => LatLng(home.latitude - o.dy / k, home.longitude + o.dx / k);
-    test('two solos 10 px apart: two placements, 64 px apart on screen, each anchored to its true spot, the first at 12 o\'clock', () {
+    test('two solos 10 px apart: two placements side by side (the first on the left, badges outward), 64 px apart without badge extents, each anchored to its true spot', () {
       final placements = placeBubbles([at('Bo Bray', home), at('Charlie', north(1000))], toScreenOffset: cam, toLatLng: back);
       expect(placements.length, 2);
       expect(placements.every((p) => !p.isCluster && p.anchor != null), isTrue);
@@ -117,7 +117,15 @@ void main() {
       expect(placements[1].anchor, north(1000));
       final Offset a = cam(placements[0].position), b = cam(placements[1].position);
       expect((a - b).distance, closeTo(kRingOverlapPx + kFanGapPx, 0.5));
-      expect(a.dy, lessThan(b.dy));   // Bo (first) is the upper one
+      expect(a.dx, lessThan(b.dx));   // Bo (first) is the left one
+      expect(a.dy, closeTo(b.dy, 0.01));
+      expect(placements[0].mirrored, isTrue);    // the left marker's badges go to its left...
+      expect(placements[1].mirrored, isFalse);   // ...the right one's stay right
+    });
+    test('a capsule never fans out: there is no expanded-cluster path any more (Bo live 2026-09-17: a tap split the at-home pair)', () {
+      final placements = placeBubbles([at('Bo Bray', home, seen: DateTime.now()), at('Charlie', north(30), seen: DateTime.now())], toScreenOffset: camera(0.5), toLatLng: back, canGroup: (a, b) => true);
+      expect(placements.single.isCluster, isTrue);
+      expect(placements.single.clusterMembers.length, 2);
     });
     test('three overlapping solos spread round their centroid with the gap between neighbours', () {
       final placements = placeBubbles([at('Bo Bray', home), at('Charlie', north(1000)), at('Heidi', north(2000))], toScreenOffset: cam, toLatLng: back);

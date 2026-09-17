@@ -20,6 +20,7 @@ import 'dart:math' as math;
 import 'package:latlong2/latlong.dart';
 
 import '../models/member.dart';
+import '../models/road_snap.dart';
 import '../theme/bray_tokens.dart';
 
 const double _mPerDegLat = 111194.93;   // app.js:67 R = 6371000: one degree of latitude
@@ -33,6 +34,11 @@ class MemberMotion {
 
   LatLng fix;
   DateTime fixAt;
+
+  /// bray 5b: the road under this fix (the server's snap) - when set and the
+  /// member is moving, [fix] IS the snapped point and the reckoning walks
+  /// along [RoadSnap.path] instead of a straight line.
+  RoadSnap? road;
 
   /// Metres per second, east and north (zero = still / stale / unknown).
   double vEast, vNorth;
@@ -85,13 +91,15 @@ class MotionTracker {
   void observe(List<Member> members, DateTime now) {
     final Set<String> seen = <String>{};
     for (final Member m in members) {
-      final LatLng? fix = m.position;
+      final RoadSnap? road = _roadFor(m, now);
+      final LatLng? fix = road?.point ?? m.position;   // bray 5b: a driving fix on a road sits ON the road
       if (fix == null) continue;
       seen.add(m.id);
       final DateTime fixAt = m.lastSeen ?? now;
       final MemberMotion? cur = _motions[m.id];
       if (cur == null) {
         final MemberMotion nm = MemberMotion(fix: fix, fixAt: fixAt, vEast: 0, vNorth: 0, drawn: fix, drawnAt: now);
+        nm.road = road;
         _setVelocity(nm, m, now, prevFix: null, prevAt: null);
         nm.drawn = _reckoned(nm, now);   // a fix that is already seconds old starts where the car is now
         _motions[m.id] = nm;
@@ -103,14 +111,14 @@ class MotionTracker {
       final LatLng prevFix = cur.fix;
       final DateTime prevAt = cur.fixAt;
       if (_distance.as(LengthUnit.Meter, cur.drawn, fix) > snapMetres) {
-        cur.fix = fix; cur.fixAt = fixAt; cur.drawn = fix; cur.drawnAt = now;
+        cur.fix = fix; cur.fixAt = fixAt; cur.road = road; cur.drawn = fix; cur.drawnAt = now;
         cur.oEast = cur.oNorth = cur.ovEast = cur.ovNorth = 0;
         _setVelocity(cur, m, now, prevFix: null, prevAt: null);
         continue;
       }
       // the drawn point stays put: the offset absorbs the difference between where the old and the new reckoning say it should be
       final LatLng oldReckoned = _reckoned(cur, now);
-      cur.fix = fix; cur.fixAt = fixAt;
+      cur.fix = fix; cur.fixAt = fixAt; cur.road = road;
       _setVelocity(cur, m, now, prevFix: prevFix, prevAt: prevAt);
       final LatLng newReckoned = _reckoned(cur, now);
       cur.oEast += _eastMetres(newReckoned, oldReckoned);
@@ -129,7 +137,7 @@ class MotionTracker {
       return;
     }
     final double mps = mph * _mphToMps;
-    final double? heading = m.headingDeg;
+    final double? heading = cur.road?.headingDeg ?? m.headingDeg;   // bray 5b: the road's direction beats the phone's compass
     if (heading != null) {
       final double rad = heading * math.pi / 180;
       cur.vEast = mps * math.sin(rad);
@@ -156,11 +164,44 @@ class MotionTracker {
   static double _eastMetres(LatLng from, LatLng to) => (to.longitude - from.longitude) * _mPerDegLat * math.cos(from.latitude * math.pi / 180);
   static double _northMetres(LatLng from, LatLng to) => (to.latitude - from.latitude) * _mPerDegLat;
 
+  /// The road to reckon along: the server's snap, only while the member is
+  /// moving and fresh (a stopped or stale member sits on its raw fix).
+  RoadSnap? _roadFor(Member m, DateTime now) {
+    final RoadSnap? road = m.road;
+    if (road == null || (m.speedMph ?? 0) < stillMph || m.isStaleAt(now)) return null;
+    return road;
+  }
+
   /// Where the newest fix says the member is at [now]: the fix advanced at
-  /// its velocity for the time since, capped at [maxExtrapolation].
+  /// its speed for the time since (capped at [maxExtrapolation]) - ALONG
+  /// the road ahead when the server snapped it (bray 5b: the point rides
+  /// the curve, not the chord), straight along the heading otherwise.
   LatLng _reckoned(MemberMotion m, DateTime now) {
     final double dt = math.min(math.max(0, now.difference(m.fixAt).inMilliseconds / 1000), maxExtrapolation.inMilliseconds / 1000);
+    final RoadSnap? road = m.road;
+    if (road != null && m.moving) {
+      return alongPath(road.walk, math.sqrt(m.vEast * m.vEast + m.vNorth * m.vNorth) * dt);
+    }
     return _offset(m.fix, m.vEast * dt, m.vNorth * dt);
+  }
+
+  /// The point [metres] along [path] from its first point; past the end the
+  /// last segment's bearing continues straight.
+  static LatLng alongPath(List<LatLng> path, double metres) {
+    if (path.isEmpty) throw ArgumentError('empty path');
+    if (path.length == 1 || metres <= 0) return path.first;
+    double left = metres;
+    for (int i = 0; i + 1 < path.length; i++) {
+      final double seg = _distance.as(LengthUnit.Meter, path[i], path[i + 1]);
+      if (seg <= 0) continue;
+      if (left <= seg) {
+        final double bearing = _distance.bearing(path[i], path[i + 1]);
+        return _distance.offset(path[i], left, bearing);
+      }
+      left -= seg;
+    }
+    final LatLng a = path[path.length - 2], b = path.last;
+    return _distance.offset(b, left, _distance.bearing(a, b));
   }
 
   static LatLng _offset(LatLng p, double east, double north) => LatLng(
