@@ -23,6 +23,7 @@ import '../utils/stillness.dart';
 import '../utils/view_history.dart';
 import '../utils/visibility_change.dart';
 import '../widgets/back_pill.dart';
+import '../widgets/place_icon.dart';
 import '../services/contact_link_store.dart';
 import '../services/device_place_resolver.dart';
 import '../services/device_service.dart';
@@ -616,11 +617,14 @@ class _MapScreenState extends State<MapScreen>
 
   /// The family place type behind a member's saved place name (Place.type),
   /// for the card's place-line icon; null when not a saved place.
-  String? _savedKindFor(Member m) {
+  String? _savedKindFor(Member m) => _savedPlaceFor(m)?.type;
+
+  /// The family's saved place the member is at (by the server's place name), for its type and icon.
+  Place? _savedPlaceFor(Member m) {
     final String? name = m.place?.placeName;
     if (name == null) return null;
     for (final Place p in _familyService.places) {
-      if (p.name == name) return p.type;
+      if (p.name == name) return p;
     }
     return null;
   }
@@ -1440,6 +1444,7 @@ class _MapScreenState extends State<MapScreen>
                 // people"; C:183-186). Places come from the same FamilyService
                 // that labels members with them.
                 HomeChipLayer(places: _familyService.places),
+                PlaceIconChipLayer(places: _familyService.places),   // bray: a place's own emoji / picture under the people
                 // Piece 5: the POI chip (🏫 ✈️ 🛒 ...) under a person parked
                 // at a named feature for 5 min - one per member position,
                 // never for a mover, never at home (the house is there).
@@ -1621,6 +1626,7 @@ class _MapScreenState extends State<MapScreen>
                   placeFor: _placeFor,
                   contactFor: (Member m) => ContactLinkStore.instance.linkFor(m.id),
                   savedKindFor: _savedKindFor,
+                  savedPlaceFor: _savedPlaceFor,
                   inDriveFor: _inDriveFor,
                   onLinkContact: _linkContact,
                   onSavePlace: _savePlace,

@@ -23,6 +23,8 @@ class Place {
     this.type = 'custom',
     this.alertsOn = false,
     this.geofenceId,
+    this.iconEmoji,
+    this.iconVersion = 0,
   });
 
   final String id;
@@ -39,6 +41,14 @@ class Place {
   /// The id of the geofence backing [alertsOn], when one exists. Client-side
   /// only — never serialized to the backend.
   final String? geofenceId;
+
+  /// bray 2026-09-17: the place's own icon - an emoji, or null with
+  /// [iconVersion] > 0 when a picture is stored (GET /family/places/{id}/icon.png).
+  final String? iconEmoji;
+  final int iconVersion;
+
+  /// A picture is stored for this place (the server's icon = "img").
+  bool get hasImage => iconEmoji == null && iconVersion > 0;
 
   /// Sentinel passed to [copyWith] to explicitly clear [geofenceId].
   static const Object clearGeofence = Object();
@@ -87,6 +97,9 @@ class Place {
     String? type,
     bool? alertsOn,
     Object? geofenceId,
+    String? iconEmoji,
+    int? iconVersion,
+    bool clearIcon = false,
   }) {
     return Place(
       id: id,
@@ -100,6 +113,8 @@ class Place {
       geofenceId: identical(geofenceId, clearGeofence)
           ? null
           : (geofenceId as String? ?? this.geofenceId),
+      iconEmoji: clearIcon ? null : (iconEmoji ?? this.iconEmoji),
+      iconVersion: clearIcon ? 0 : (iconVersion ?? this.iconVersion),
     );
   }
 }

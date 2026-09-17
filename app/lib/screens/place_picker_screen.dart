@@ -5,6 +5,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../models/place.dart';
+import '../widgets/place_icon_sheet.dart';
 import '../services/app_config.dart';
 import '../services/geocoding_service.dart';
 import '../services/location_service.dart';
@@ -52,6 +53,7 @@ class _PlacePickerScreenState extends State<PlacePickerScreen> {
   late LatLng _position;
   late final TextEditingController _name;
   late final TextEditingController _address;
+  String? _iconEmoji;
   late double _radiusMeters;
 
   /// Neutral fallback (0,0) shown at world zoom when the user's location can't
@@ -78,6 +80,7 @@ class _PlacePickerScreenState extends State<PlacePickerScreen> {
     _name = TextEditingController(text: widget.placeName);
     _address = TextEditingController(text: widget.initial?.address ?? '');
     _radiusMeters = widget.initial?.radiusMeters ?? 152.4; // ~500 ft
+    _iconEmoji = widget.initial?.iconEmoji;
     // Only auto-locate for a brand-new place; editing keeps the saved pin.
     if (widget.initial == null) {
       _locateUser();
@@ -195,6 +198,7 @@ class _PlacePickerScreenState extends State<PlacePickerScreen> {
       radiusMeters: _radiusMeters,
       type: widget.initial?.type ?? widget.type,
       alertsOn: widget.initial?.alertsOn ?? false,
+      iconEmoji: _iconEmoji,
     );
     Navigator.of(context).pop(place);
   }
@@ -341,6 +345,21 @@ class _PlacePickerScreenState extends State<PlacePickerScreen> {
                     ),
                   ),
                   const SizedBox(height: 8),
+                  // bray 2026-09-17: the place's own icon (an emoji here; a picture from the Places list).
+                  ListTile(
+                    key: const Key('place-icon-row'),
+                    contentPadding: EdgeInsets.zero,
+                    leading: Text(_iconEmoji ?? '📍', style: const TextStyle(fontSize: 24)),
+                    title: const Text('Icon'),
+                    subtitle: Text(_iconEmoji == null ? 'Pick an emoji for this place' : 'Tap to change'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () async {
+                      final PlaceIconChoice? c = await showPlaceIconSheet(context, current: _iconEmoji);
+                      if (c == null || !mounted) return;
+                      setState(() => _iconEmoji = c.clear ? null : (c.emoji ?? _iconEmoji));
+                    },
+                  ),
+                  const SizedBox(height: 4),
                   TextField(
                     controller: _address,
                     textCapitalization: TextCapitalization.words,
