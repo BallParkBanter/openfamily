@@ -430,7 +430,7 @@ Member refreshStaleness(Member member) {
   final DateTime? lastSeen = member.lastSeen;
   if (member.position == null || lastSeen == null) return member;
   final Duration age = DateTime.now().toUtc().difference(lastSeen);
-  if (age <= kStaleAfter) return member;
+  if (age <= (member.staleAfter ?? kStaleAfter)) return member;   // bray: the member's own cadence-based threshold when known
   final String label = 'Position from ${_formatAgo(age)} ago';
   // Already stopped with the current label and no movement badge — no change,
   // so the staleness timer does not fire a spurious `onMembersChanged`. The

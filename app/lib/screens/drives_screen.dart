@@ -54,7 +54,7 @@ String driveTitle(Trip t, {String? fromStreet, String? toStreet}) {
 }
 
 class DrivesScreen extends StatefulWidget {
-  const DrivesScreen({super.key, required this.member, required this.label, this.fetch, this.resolver, this.now});
+  const DrivesScreen({super.key, required this.member, required this.label, this.fetch, this.resolver, this.now, this.tileProvider});
 
   final Member member;
   final String label;
@@ -63,6 +63,9 @@ class DrivesScreen extends StatefulWidget {
   final Future<List<Trip>> Function(String memberId, DateTime since)? fetch;
   final DevicePlaceResolver? resolver;
   final DateTime? now;
+
+  /// Tests inject a tile source; default = the app's cached, retrying provider.
+  final TileProvider? tileProvider;
 
   static const Duration lookback = Duration(days: 30);
 
@@ -147,7 +150,7 @@ class _DrivesScreenState extends State<DrivesScreen> {
                               clipBehavior: Clip.antiAlias,
                               child: InkWell(
                                 onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                                    builder: (_) => DriveMapScreen(member: widget.member, label: widget.label, trip: t, title: title))),
+                                    builder: (_) => DriveMapScreen(member: widget.member, label: widget.label, trip: t, title: title, tileProvider: widget.tileProvider))),
                                 child: Padding(
                                   padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
                                   child: Row(children: [
@@ -204,7 +207,7 @@ class DriveMapScreen extends StatelessWidget {
             initialZoom: 14,
           ),
           children: [
-            TileLayer(urlTemplate: kTileUrl, userAgentPackageName: 'app.openfamily', tileProvider: tileProvider ?? TileCache.instance.provider()),
+            TileLayer(urlTemplate: kTileUrl, userAgentPackageName: 'app.openfamily', tileProvider: tileProvider ?? TileCache.instance.provider(), tileUpdateTransformer: TileUpdateTransformers.throttle(const Duration(milliseconds: 300)), keepBuffer: 3),
             if (pts.length >= 2)
               PolylineLayer(polylines: [
                 Polyline(points: pts, color: BrayTokens.ink.withValues(alpha: 0.35), strokeWidth: 7),

@@ -13,6 +13,11 @@
 // clears when it closes. Nothing is drawn for a stationary period. An
 // unmatched open drive falls back to its raw fixes, thinned so no segment
 // joins two fixes within max(accuracy, 25 m).
+//
+// Bo driving 15:40 ("the line is dragging behind the pointer"): the matched
+// polyline only arrives every minute, so a LIVE TAIL runs from its head to
+// the marker's drawn position every frame - the trail always ends exactly
+// at the marker's dot; a newer polyline replaces the tail up to its head.
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -50,6 +55,15 @@ class FocusTrailLayer extends StatefulWidget {
       if (pts.length >= 2) out.add(pts);
     }
     return out;
+  }
+
+  /// [lines] with a live tail on the newest line from its head to [marker]
+  /// (the member's drawn position). Nothing to extend = unchanged.
+  static List<List<LatLng>> withLiveTail(List<List<LatLng>> lines, LatLng? marker) {
+    if (marker == null || lines.isEmpty) return lines;
+    final List<LatLng> last = lines.last;
+    if (last.isNotEmpty && last.last == marker) return lines;
+    return <List<LatLng>>[...lines.take(lines.length - 1), <LatLng>[...last, marker]];
   }
 
   /// The raw fallback: drop a point within [minStepMeters] of the last kept one.
@@ -118,16 +132,17 @@ class _FocusTrailLayerState extends State<FocusTrailLayer> {
     final Member? m = widget.member;
     if (m == null || _forId != m.id || _lines.isEmpty) return const SizedBox.shrink();   // J:163
     final Color accent = BrayTokens.accentFor(m);
+    final List<List<LatLng>> lines = FocusTrailLayer.withLiveTail(_lines, m.position);   // ends at the marker every frame
     return Stack(children: [
       PolylineLayer(polylines: [
         // OPEN: chosen - BrayTokens.ink (#0A0E16) for J:166's #0a0e1a, 4 units of blue apart; one near-black, not two
-        for (final List<LatLng> line in _lines)
+        for (final List<LatLng> line in lines)
           Polyline(points: line, color: BrayTokens.ink.withValues(alpha: 0.35), strokeWidth: 7),   // J:166 halo #0a0e1a w7 .35
-        for (final List<LatLng> line in _lines)
+        for (final List<LatLng> line in lines)
           Polyline(points: line, color: accent.withValues(alpha: 0.95), strokeWidth: 3.5),         // J:167 accent w3.5 .95
       ]),
       CircleLayer(circles: [
-        CircleMarker(point: _lines.first.first, radius: 4, color: BrayTokens.ink, borderColor: accent, borderStrokeWidth: 2), // J:168 the start of the oldest trip
+        CircleMarker(point: lines.first.first, radius: 4, color: BrayTokens.ink, borderColor: accent, borderStrokeWidth: 2), // J:168 the start of the oldest trip
       ]),
     ]);
   }
