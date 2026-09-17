@@ -29,9 +29,11 @@ enum EdgeSide { left, right }
 /// life360-reference-offscreen-avatar-crop.png; v5 2026-09-17 01:00): the
 /// person's round photo with its colour ring and a uniform white border,
 /// ENTIRELY on screen (its edge-side rim 6 px in from the screen edge), and
-/// ONE flat tail from the circle's edge side straight into the screen edge -
-/// the circle's height at the circle, tapering toward the edge, nothing
-/// above/below the circle, nothing on the map side. The white silhouette
+/// ONE flare from the circle's edge side into the screen edge - no taller
+/// than the circle where it leaves it (concave sides, the Life360 crop),
+/// widening to ~1.5 x the circle at the edge, cut flat by the edge; nothing
+/// above/below the circle on the map side (v6, Bo 01:05: "it should get
+/// WIDER the closer it gets to the edge"). The white silhouette
 /// (circle + tail) carries the marker's drop shadow and a 1.5 px hairline in
 /// the person's colour so it reads on a white/beige map. Nothing else - no
 /// name, no distance, no dark surface. The spoken label still says who, how
@@ -55,14 +57,14 @@ class EdgeChip extends StatelessWidget {
   final VoidCallback? onTap;
 
   static const double width = 72;         // the box, flush to the edge: rim air (6) + the circle (48) + shadow air
-  static const double height = 72;        // the circle (48) + the shadow's air
+  static const double height = 84;        // the flare at the edge (72) + the shadow's air
   static const double face = 48;          // the whole circle: hairline + white border + colour ring + photo
   static const double hairline = 1.5;     // the person's colour round the white silhouette (circle + tail)
   static const double whiteBorder = BrayTokens.ringSolo;   // the uniform white border = the marker ring's width (3)
   static const double faceRing = 2;       // the ring in the person's colour, inside the white
   static const double rimIn = 6;          // the circle's edge-side rim this far inside the screen edge: nothing of it is ever clipped
   static const double faceCentreIn = rimIn + face / 2;   // 30
-  static const double tailEdgeHalf = 17;  // the tail's half-height where it meets the screen edge (~0.7 of the circle: a tail, not a flare)
+  static const double flareEdgeHalf = 36; // the flare's half-height at the screen edge: 1.5 x the circle (Bo: 1.4-1.6 x)
   static const double margin = 8;         // OPEN: chosen - air between the avatar and the header / bottom bar (= BrayTokens.fitAir)
 
   /// The inner disc (colour ring + photo) inside the white border and the hairline.
@@ -96,7 +98,7 @@ class EdgeChip extends StatelessWidget {
               Positioned.fill(
                 child: CustomPaint(
                   key: const Key('edge-chip-flare'),
-                  painter: EdgeFlarePainter(edge: edge, faceCentre: fc, faceRadius: face / 2, edgeHalf: tailEdgeHalf, accent: accent),
+                  painter: EdgeFlarePainter(edge: edge, faceCentre: fc, faceRadius: face / 2, edgeHalf: flareEdgeHalf, accent: accent),
                 ),
               ),
               Positioned(
@@ -120,11 +122,11 @@ class EdgeChip extends StatelessWidget {
 }
 
 /// The white silhouette: the circle ([faceRadius] round [faceCentre]) plus
-/// one flat tail from the circle's edge side into the screen edge (the
-/// circle's height at the circle, 2 x [edgeHalf] at the edge). Drawn with
-/// the marker's drop shadow, filled with the badge white, outlined with a
-/// 1.5 px hairline in [accent]. Nothing above/below the circle, nothing on
-/// the map side.
+/// one flare from the circle's edge side into the screen edge - it leaves
+/// the circle at the circle's own height with concave sides and widens to
+/// 2 x [edgeHalf] at the edge. Drawn with the marker's drop shadow, filled
+/// with the badge white, outlined with a 1.5 px hairline in [accent].
+/// Nothing above/below the circle on the map side.
 class EdgeFlarePainter extends CustomPainter {
   const EdgeFlarePainter({required this.edge, required this.faceCentre, required this.faceRadius, required this.edgeHalf, required this.accent});
   final EdgeSide edge;
@@ -139,11 +141,16 @@ class EdgeFlarePainter extends CustomPainter {
     final double r = faceRadius - inset;
     // Drawn for the LEFT edge (x = 0 is the screen edge), mirrored for the right.
     final Path circle = Path()..addOval(Rect.fromCircle(center: Offset(cx, cy), radius: r));
+    // The flare leaves the circle's top/bottom points heading toward the edge
+    // (tangent-ish: no taller than the circle there), bends outward (concave
+    // sides) and meets the edge 2 x edgeHalf tall, 4 px past it so the screen
+    // cuts it flat and its outline never closes on screen.
+    const double past = 4;
     final Path tail = Path()
       ..moveTo(cx, cy - r)
-      ..lineTo(-inset - 4, cy - edgeHalf)   // past the edge: the screen clips the tail, its outline never closes on screen
-      ..lineTo(-inset - 4, cy + edgeHalf)
-      ..lineTo(cx, cy + r)
+      ..cubicTo(cx - r * 0.6, cy - r + 2, r * 0.35, cy - edgeHalf + 2, -inset - past, cy - edgeHalf)
+      ..lineTo(-inset - past, cy + edgeHalf)
+      ..cubicTo(r * 0.35, cy + edgeHalf - 2, cx - r * 0.6, cy + r - 2, cx, cy + r)
       ..close();
     final Path p = Path.combine(PathOperation.union, circle, tail);
     if (edge == EdgeSide.right) {

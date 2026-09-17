@@ -2,6 +2,8 @@
 // 5b step 2: a far member is an edge chip on a real FlutterMap - at the edge
 // in their bearing, inside the chrome band, one semantics node, tappable,
 // gone once they are panned onto the map. Near members get no chip.
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -69,11 +71,32 @@ void main() {
     expect(flare.edge, EdgeSide.left);
     expect(flare.accent, BrayTokens.accentHeidi);                                     // the hairline colour
     final Rect bounds = flare.flare(const Size(EdgeChip.width, EdgeChip.height)).getBounds();
-    expect(bounds.left, lessThan(0));                                                 // the tail runs into the screen edge...
+    expect(bounds.left, lessThan(0));                                                 // the flare runs into the screen edge...
     expect(bounds.right, closeTo(EdgeChip.faceCentreIn + EdgeChip.face / 2, 1.0));    // ...and nothing sits on the map side of the circle
-    expect(bounds.top, closeTo(EdgeChip.height / 2 - EdgeChip.face / 2, 1.0));        // nothing above the circle...
-    expect(bounds.bottom, closeTo(EdgeChip.height / 2 + EdgeChip.face / 2, 1.0));     // ...or below it
-    expect(EdgeChip.tailEdgeHalf, lessThan(EdgeChip.face / 2));                       // a tail: narrower at the edge than the circle
+    // v6: widest AT the edge (1.5 x the circle), no taller than the circle where it leaves it, nothing above/below the circle on the map side.
+    final ui.Path sil = flare.flare(const Size(EdgeChip.width, EdgeChip.height));
+    const double cx = EdgeChip.faceCentreIn, cy = EdgeChip.height / 2, rad = EdgeChip.face / 2;
+    expect(EdgeChip.flareEdgeHalf, closeTo(1.5 * rad, 0.01));
+    expect(sil.contains(const Offset(0.5, cy - EdgeChip.flareEdgeHalf + 3)), isTrue);      // at the edge it reaches 1.5 x the circle...
+    expect(sil.contains(const Offset(0.5, cy + EdgeChip.flareEdgeHalf - 3)), isTrue);
+    expect(sil.contains(const Offset(cx, cy - rad - 2)), isFalse);                         // ...but not above the circle at the circle...
+    expect(sil.contains(const Offset(cx, cy + rad + 2)), isFalse);
+    expect(sil.contains(const Offset(cx + 12, cy - rad + 2)), isFalse);                    // ...and nothing on the map side beyond the circle
+    double widthAt(double x) {
+      double top = cy, bottom = cy;
+      for (double y = cy; y > 0; y -= 0.5) {
+        if (!sil.contains(Offset(x, y))) break;
+        top = y;
+      }
+      for (double y = cy; y < EdgeChip.height; y += 0.5) {
+        if (!sil.contains(Offset(x, y))) break;
+        bottom = y;
+      }
+      return bottom - top;
+    }
+    expect(widthAt(0.5), greaterThan(widthAt(12)));                                        // widening toward the edge...
+    expect(widthAt(12), greaterThanOrEqualTo(widthAt(22) - 0.5));                          // ...from the circle outward (monotone)
+    expect(widthAt(0.5), greaterThan(2 * rad + 12));                                        // clearly wider than the circle at the edge
     expect(find.text('Heidi'), findsNothing);                          // no name, no distance, no pill, no beam
     expect(find.textContaining('mi'), findsNothing);
     expect(find.byKey(const Key('edge-chip-pill')), findsNothing);
