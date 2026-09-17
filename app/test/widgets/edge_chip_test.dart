@@ -7,7 +7,9 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:openfamily/models/member.dart';
+import 'package:openfamily/theme/bray_tokens.dart';
 import 'package:openfamily/widgets/edge_chip.dart';
+import 'package:openfamily/widgets/heading_beam.dart';
 
 const LatLng elSegundo = LatLng(33.9301, -118.3837);
 const LatLng hebron = LatLng(34.0073, -83.9115);
@@ -46,13 +48,21 @@ void main() {
     final Rect r = t.getRect(find.byKey(const Key('edge-chip')));
     expect(r.left, 0);                                                // flush to the left edge - no air (Life360 style)
     expect(chip.edge, EdgeSide.left);
-    // The pointer is on the edge side, left of the face; no border on the flush side, square corners there.
-    expect(t.getRect(find.byKey(const Key('edge-chip-pointer'))).right, lessThan(t.getRect(find.byKey(const Key('edge-chip-face'))).left));
-    final BoxDecoration deco = t.widget<Container>(find.byKey(const Key('edge-chip'))).decoration as BoxDecoration;
-    expect((deco.border as Border).left, BorderSide.none);
-    expect((deco.border as Border).right.width, 1.5);
-    expect((deco.borderRadius as BorderRadius).topLeft, Radius.zero);
-    expect((deco.borderRadius as BorderRadius).topRight, const Radius.circular(999));
+    // v2: the face is on the edge side (~60 % of the marker ring), the small pill beside it, the fan centred on the face and aimed her way.
+    final Rect face = t.getRect(find.byKey(const Key('edge-chip-face')));
+    expect(face.width, EdgeChip.face);
+    expect(face.left, EdgeChip.faceInset);
+    expect(face.right, lessThan(t.getRect(find.byKey(const Key('edge-chip-pill'))).left));
+    final Rect fan = t.getRect(find.byKey(const Key('edge-chip-fan')));
+    expect(fan.center, face.center);
+    final HeadingBeamPainter painter = t.widget<CustomPaint>(find.byKey(const Key('edge-chip-fan'))).painter as HeadingBeamPainter;
+    expect(painter.headingDeg, chip.bearingDeg);
+    expect(painter.accent, BrayTokens.accentHeidi);
+    expect(painter.wedgeDeg, EdgeChip.fanWedgeDeg);
+    expect(painter.alpha, lessThan(BrayTokens.beamAlpha));            // lighter than the heading beam
+    expect(find.byKey(const Key('edge-chip-pointer')), findsNothing); // the solid triangle is gone
+    final Text name = t.widget(find.text('Heidi'));
+    expect(name.style!.fontSize, lessThan(BrayTokens.nameBadgeFont)); // smaller than the marker name pill
     expect(r.center.dy, closeTo(640, 30));                            // on the centre row (Heidi is almost due west)
     expect(r.top, greaterThanOrEqualTo(80 + EdgeChip.margin));
     expect(r.bottom, lessThanOrEqualTo(1280 - 88 - EdgeChip.margin));
@@ -89,10 +99,9 @@ void main() {
     final Rect r = t.getRect(find.byKey(const Key('edge-chip')));
     expect(r.right, 800);                                             // flush to the right edge
     expect(chip.edge, EdgeSide.right);
-    expect(t.getRect(find.byKey(const Key('edge-chip-pointer'))).left, greaterThan(t.getRect(find.byKey(const Key('edge-chip-face'))).right));
-    final BoxDecoration deco = t.widget<Container>(find.byKey(const Key('edge-chip'))).decoration as BoxDecoration;
-    expect((deco.border as Border).right, BorderSide.none);
-    expect((deco.borderRadius as BorderRadius).topRight, Radius.zero);
+    final Rect face = t.getRect(find.byKey(const Key('edge-chip-face')));
+    expect(face.right, 800 - EdgeChip.faceInset);                      // the face on the edge side, the pill inboard
+    expect(face.left, greaterThan(t.getRect(find.byKey(const Key('edge-chip-pill'))).right));
     expect(r.center.dy, lessThan(640));
     expect(r.top, greaterThanOrEqualTo(80 + EdgeChip.margin));
   });
