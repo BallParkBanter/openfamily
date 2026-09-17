@@ -177,16 +177,22 @@ func (s *Server) IngestLocation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// bray 5b (2026-09-17 15:55Z): the check is per DEVICE. Bo's iPhone (the
+	// primary, via the OwnTracks relay) and his tablet both post; the tablet
+	// posts every minute, so the phone's fix - a few seconds older - used to
+	// be refused as "not newer than the user's last location" and an arrival
+	// was dropped. A replayed / out-of-order point from the SAME device is
+	// still refused; a fresh fix from another device is stored (the app's
+	// primary-device rule reads locations by device) and, when older than the
+	// member row, leaves the row alone (see behindRow below).
 	var lastTS *time.Time
 	if err := tx.QueryRow(r.Context(), `
-		SELECT MAX(l.ts) FROM locations l
-		JOIN devices d ON d.id = l.device_id
-		WHERE d.user_id = $1`, ownerID).Scan(&lastTS); err != nil {
+		SELECT MAX(l.ts) FROM locations l WHERE l.device_id = $1`, req.DeviceID).Scan(&lastTS); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to check last location")
 		return
 	}
 	if lastTS != nil && !ts.After(*lastTS) {
-		writeError(w, http.StatusBadRequest, "ts is not newer than the user's last location")
+		writeError(w, http.StatusBadRequest, "ts is not newer than this device's last location")
 		return
 	}
 
@@ -205,6 +211,9 @@ func (s *Server) IngestLocation(w http.ResponseWriter, r *http.Request) {
 	// jitter while stationary. The member row gets 0 when the fix did not
 	// really move (parkedSpeed); `locations` keeps the raw value for history.
 	storedSpeed := parkedSpeed(mpLat, mpLon, mpTs, req.Lat, req.Lon, ts, req.AccuracyMeters, req.SpeedMPS)
+	// A fix older than the member row (another device already posted a newer
+	// one): keep it for history and the live frame, never rewrite the row.
+	behindRow := mpTs != nil && !ts.After(*mpTs)
 
 	// Stationary dedup: the point is within GPS noise of the stored position
 	// AND the speed hasn't materially changed, so storing it again adds no
@@ -220,7 +229,7 @@ func (s *Server) IngestLocation(w http.ResponseWriter, r *http.Request) {
 	// time-driven and must advance even while the user stands still. No audit
 	// entry — this fires per reporting interval and would flood the audit log
 	// with non-events.
-	if mpLat != nil && mpLon != nil &&
+	if !behindRow && mpLat != nil && mpLon != nil &&
 		haversineMeters(*mpLat, *mpLon, req.Lat, req.Lon) < stationaryDedupMeters &&
 		speedUnchanged(mpSpeed, storedSpeed) {
 		if _, err := tx.Exec(r.Context(), `
@@ -291,21 +300,24 @@ func (s *Server) IngestLocation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := updateMemberPlace(r.Context(), tx, ownerID, req.Lon, req.Lat, ts); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to update member place")
-		return
-	}
-	// bray 5b: the "here for" clock - mpLat/mpLon are the row BEFORE the upsert above.
-	if err := updateStationarySince(r.Context(), tx, ownerID, mpLat, mpLon, req.Lon, req.Lat, ts); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to update member stay")
-		return
-	}
-	// bray 5b: road snapping for a driving fix (handlers/mapmatch.go); raw
-	// (NULL) when still, off-road, or the matcher is down / slow.
-	road := s.snapRoad(r.Context(), tx, ownerID, req.SpeedMPS, req.HeadingDeg)
-	if _, err := tx.Exec(r.Context(), `UPDATE member_positions SET road_snap = $2 WHERE user_id = $1 AND ts = $3`, ownerID, road, ts); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to store road snap")
-		return
+	var road *models.RoadSnap
+	if !behindRow {
+		if err := updateMemberPlace(r.Context(), tx, ownerID, req.Lon, req.Lat, ts); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update member place")
+			return
+		}
+		// bray 5b: the "here for" clock - mpLat/mpLon are the row BEFORE the upsert above.
+		if err := updateStationarySince(r.Context(), tx, ownerID, mpLat, mpLon, req.Lon, req.Lat, ts); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update member stay")
+			return
+		}
+		// bray 5b: road snapping for a driving fix (handlers/mapmatch.go); raw
+		// (NULL) when still, off-road, or the matcher is down / slow.
+		road = s.snapRoad(r.Context(), tx, ownerID, req.SpeedMPS, req.HeadingDeg)
+		if _, err := tx.Exec(r.Context(), `UPDATE member_positions SET road_snap = $2 WHERE user_id = $1 AND ts = $3`, ownerID, road, ts); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to store road snap")
+			return
+		}
 	}
 
 	if _, err := tx.Exec(r.Context(), `
