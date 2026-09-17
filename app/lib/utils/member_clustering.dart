@@ -5,6 +5,7 @@ import 'package:latlong2/latlong.dart';
 
 import '../models/member.dart';
 import '../theme/bray_tokens.dart';
+import '../widgets/marker_extents.dart' show MarkerExtents;
 
 /// Converts a geographic position to a screen-space offset (logical pixels)
 /// at the map's current camera. Used to cluster by on-screen proximity, so
@@ -29,7 +30,6 @@ const double kFanGapPx = 8;
 
 /// On-screen radius (logical pixels) of the fan-out ring used to separate
 /// clustered members so their bubbles never stack or overlap when expanded.
-const double kFanOutRadiusPx = 60.0;
 
 /// Ground distance in metres between two positions - the Family Viewer's
 /// haversine, app.js:66-71 metres() (R = 6371000), so the app groups exactly
@@ -95,6 +95,7 @@ class BubblePlacement {
     this.clusterMembers = const [],
     this.anchor,
     this.forced = false,
+    this.mirrored,
   });
 
   /// Where to pin the bubble.
@@ -124,6 +125,11 @@ class BubblePlacement {
   /// away from an overlapping neighbour ([position] is the fanned point);
   /// null when drawn where they are. The layer draws a leader line to it.
   final LatLng? anchor;
+
+  /// 2026-09-17: a fanned pair's badges face OUTWARD - the left marker's
+  /// badges mirror to its left (true), the right marker's stay right
+  /// (false); null = the layer decides by the screen edge as usual.
+  final bool? mirrored;
 
   bool get isCluster => member == null;
 }
@@ -219,21 +225,20 @@ List<MemberCluster> clusterMembers(
 ///   separates their rings. Rings are measured at [ringLift] above the
 ///   point (at home the pin sits on the house chip).
 /// * A cluster (2+, physically together) collapses into a single capsule.
-/// * A cluster whose id is in [expandedClusterIds] fans out around its
-///   screen-space centroid (converted back to geographic positions) so each
-///   member can be tapped individually without overlapping.
+/// * A cluster is ALWAYS one capsule - no gesture fans it out (2026-09-17,
+///   Bo live: a tap on the at-home capsule split it into two solos; faces
+///   are the tap/hold targets, the capsule never expands).
 List<BubblePlacement> placeBubbles(
   List<Member> members, {
   required LatLngToScreenOffset toScreenOffset,
   required ScreenOffsetToLatLng toLatLng,
   double groupMetres = BrayTokens.groupMetres,
-  double fanOutRadiusPx = kFanOutRadiusPx,
   double ringOverlapPx = kRingOverlapPx,
   double fanGapPx = kFanGapPx,
-  Set<String> expandedClusterIds = const {},
   bool Function(Member a, Member b)? canGroup,
   bool Function(Member a, Member b)? mustGroup,
   double Function(Member m)? ringLift,
+  MarkerExtents Function(Member m)? extentsFor,
   DateTime? now,
 }) {
   final List<MemberCluster> clusters = clusterMembers(
@@ -250,19 +255,6 @@ List<BubblePlacement> placeBubbles(
   for (final MemberCluster cluster in clusters) {
     if (cluster.members.length == 1) {
       solos.add(cluster.members.first);
-    } else if (expandedClusterIds.contains(cluster.id) && !cluster.forced) {   // 5b: a riding-together capsule is never fanned out, whatever an old tap left in the set
-      final Offset centroid = _screenCentroid(cluster.members, toScreenOffset);
-      for (int i = 0; i < cluster.members.length; i++) {
-        final double angle = (2 * math.pi * i) / cluster.members.length;
-        final Offset offset =
-            centroid + Offset.fromDirection(angle, fanOutRadiusPx);
-        placements.add(
-          BubblePlacement(
-            position: toLatLng(offset),
-            member: cluster.members[i],
-          ),
-        );
-      }
     } else {
       placements.add(
         BubblePlacement(
@@ -276,16 +268,19 @@ List<BubblePlacement> placeBubbles(
     }
   }
 
-  placements.addAll(fanSolos(solos, toScreenOffset: toScreenOffset, toLatLng: toLatLng, ringOverlapPx: ringOverlapPx, fanGapPx: fanGapPx, ringLift: ringLift));
+  placements.addAll(fanSolos(solos, toScreenOffset: toScreenOffset, toLatLng: toLatLng, ringOverlapPx: ringOverlapPx, fanGapPx: fanGapPx, ringLift: ringLift, extentsFor: extentsFor));
   return placements;
 }
 
 /// 5b step 3: solo placements, with every set of solos whose rings overlap
 /// on screen (single-link, centres closer than [ringOverlapPx]) spread
-/// evenly round their screen centroid at the radius that leaves [fanGapPx]
-/// between neighbouring rings (two people: 32 px either side; the ring
-/// diameter plus the gap is the chord). The first member of a set sits at
-/// the top (12 o'clock) and the rest follow clockwise, in list order.
+/// apart. TWO people sit side by side (the first on the left) with their
+/// badges facing outward ([BubblePlacement.mirrored]) and the gap sized
+/// from their badges ([extentsFor]: the left one's mirrored right extent +
+/// the right one's left extent + [fanGapPx]) so nothing overlaps
+/// (2026-09-17, Bo live: two "home for" badges sat on each other). Three or
+/// more spread evenly round their screen centroid, the first at 12 o'clock,
+/// clockwise in list order, the neighbour chord sized the same way.
 List<BubblePlacement> fanSolos(
   List<Member> solos, {
   required LatLngToScreenOffset toScreenOffset,
@@ -293,6 +288,7 @@ List<BubblePlacement> fanSolos(
   double ringOverlapPx = kRingOverlapPx,
   double fanGapPx = kFanGapPx,
   double Function(Member m)? ringLift,
+  MarkerExtents Function(Member m)? extentsFor,
 }) {
   final Map<String, Offset> ring = <String, Offset>{
     for (final Member m in solos) m.id: toScreenOffset(m.position!) - Offset(0, ringLift?.call(m) ?? 0),
@@ -318,7 +314,22 @@ List<BubblePlacement> fanSolos(
       continue;
     }
     final Offset centroid = _screenCentroid(set, toScreenOffset);
-    final double radius = (ringOverlapPx + fanGapPx) / (2 * math.sin(math.pi / set.length));
+    if (set.length == 2) {
+      final Member l = set[0], r = set[1];
+      final MarkerExtents le = extentsFor?.call(l).mirrored ?? MarkerExtents.zero, re = extentsFor?.call(r) ?? MarkerExtents.zero;
+      final double chord = math.max(ringOverlapPx + fanGapPx, le.right + re.left + fanGapPx);
+      out.add(BubblePlacement(position: toLatLng(centroid + Offset(-chord / 2, 0)), member: l, anchor: l.position, mirrored: true));
+      out.add(BubblePlacement(position: toLatLng(centroid + Offset(chord / 2, 0)), member: r, anchor: r.position, mirrored: false));
+      continue;
+    }
+    double chord = ringOverlapPx + fanGapPx;
+    if (extentsFor != null) {
+      for (final Member m in set) {
+        final MarkerExtents e = extentsFor(m);
+        chord = math.max(chord, math.max(e.left, e.right) + fanGapPx / 2);   // room for the widest side beside a neighbour's ring
+      }
+    }
+    final double radius = chord / (2 * math.sin(math.pi / set.length));
     for (int i = 0; i < set.length; i++) {
       final double angle = -math.pi / 2 + (2 * math.pi * i) / set.length;   // 12 o'clock first, clockwise
       out.add(BubblePlacement(
