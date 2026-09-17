@@ -32,7 +32,8 @@ func (s *Server) memberDevices(ctx context.Context, userIDs []string) (map[strin
 		return out, nil
 	}
 	rows, err := s.Pool.Query(ctx, `
-		SELECT d.user_id, d.id, d.name, d.is_primary, l.ts, ST_Y(l.geom), ST_X(l.geom), l.battery_pct, l.charging
+		SELECT d.user_id, d.id, d.name, d.is_primary, l.ts, ST_Y(l.geom), ST_X(l.geom), l.battery_pct, l.charging,
+		       (SELECT MAX(ts) FROM locations WHERE device_id = d.id)
 		FROM devices d
 		LEFT JOIN LATERAL (
 			SELECT ts, geom, battery_pct, charging FROM locations
@@ -48,7 +49,7 @@ func (s *Server) memberDevices(ctx context.Context, userIDs []string) (map[strin
 	for rows.Next() {
 		var userID string
 		var d models.MemberDevice
-		if err := rows.Scan(&userID, &d.ID, &d.Name, &d.IsPrimary, &d.TS, &d.Lat, &d.Lon, &d.BatteryPct, &d.Charging); err != nil {
+		if err := rows.Scan(&userID, &d.ID, &d.Name, &d.IsPrimary, &d.TS, &d.Lat, &d.Lon, &d.BatteryPct, &d.Charging, &d.LastFixAt); err != nil {
 			return nil, err
 		}
 		out[userID] = append(out[userID], d)
@@ -139,4 +140,25 @@ func (s *Server) SetPrimaryDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"primary_device_id": req.DeviceID})
+}
+
+// silentAfter: a primary device whose newest fix is older than this is
+// "silent" (bray 5b, Bo: "are you SURE you won't miss ANY events?"). The
+// members JSON carries silent_since = that fix's time so the app can say so.
+const silentAfter = 2 * time.Hour
+
+// silentSince returns the primary device's newest fix time when it is older
+// than silentAfter; nil when the primary is reporting, has never reported, or
+// there is no primary.
+func silentSince(devices []models.MemberDevice, now time.Time) *time.Time {
+	for _, d := range devices {
+		if !d.IsPrimary {
+			continue
+		}
+		if d.LastFixAt != nil && now.Sub(*d.LastFixAt) > silentAfter {
+			return d.LastFixAt
+		}
+		return nil
+	}
+	return nil
 }
