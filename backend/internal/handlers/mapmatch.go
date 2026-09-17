@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"time"
@@ -91,6 +92,30 @@ type traceResponse struct {
 	} `json:"matched_points"`
 }
 
+// offRoad: Valhalla's "no path" answers - 442 no path for the input, 443
+// the exact-match algorithm failed, 444 the map_snap algorithm could not
+// snap the shape (measured 2026-09-17 13:42Z: five fixes creeping round
+// Bo's driveway at 1-4 m/s). Those are honest "not on a road", not errors.
+func offRoad(code int) bool { return code == 442 || code == 443 || code == 444 }
+
+// snapTraceWindow: fixes older than this before the newest are left out of
+// the trace - a point from ten minutes ago on a different street only
+// confuses the match.
+const snapTraceWindow = 3 * time.Minute
+
+// recentFixes keeps the fixes within snapTraceWindow of the newest (oldest first in, oldest first out).
+func recentFixes(fixes []TracePoint) []TracePoint {
+	if len(fixes) == 0 {
+		return fixes
+	}
+	newest := fixes[len(fixes)-1].At
+	i := 0
+	for i < len(fixes)-1 && newest.Sub(fixes[i].At) > snapTraceWindow {
+		i++
+	}
+	return fixes[i:]
+}
+
 // aheadPoint extrapolates the newest fix along its heading for
 // snapAheadSeconds at speedMPS (capped), so the matched shape runs on past
 // the car - the road the app dead-reckons along.
@@ -107,6 +132,10 @@ func aheadPoint(p TracePoint, speedMPS, headingDeg float64) TracePoint {
 func (m *Matcher) Snap(ctx context.Context, fixes []TracePoint, speedMPS float64, headingDeg *float64) (*models.RoadSnap, error) {
 	if m == nil || len(fixes) == 0 {
 		return nil, nil
+	}
+	fixes = recentFixes(fixes)
+	if len(fixes) < 2 {
+		return nil, nil // one point is no trace
 	}
 	last := len(fixes) - 1
 	shape := make([]traceShapePoint, 0, len(fixes)+1)
@@ -137,7 +166,15 @@ func (m *Matcher) Snap(ctx context.Context, fixes []TracePoint, speedMPS float64
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("valhalla: %s", resp.Status)
+		var ve struct {
+			ErrorCode int    `json:"error_code"`
+			Error     string `json:"error"`
+		}
+		_ = json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&ve)
+		if offRoad(ve.ErrorCode) {
+			return nil, nil // Valhalla found no road under these fixes (a driveway, a lot): raw, not an error
+		}
+		return nil, fmt.Errorf("valhalla: %s (%d %s)", resp.Status, ve.ErrorCode, ve.Error)
 	}
 	var tr traceResponse
 	if err := json.NewDecoder(resp.Body).Decode(&tr); err != nil {

@@ -74,37 +74,6 @@ func (r memberPlaceRow) toPlace(lat, lon *float64) *models.MemberPlace {
 	return p
 }
 
-// updateMemberPlace records which saved place (smallest radius that contains
-// the point - the same rule as the app's placeContaining and the history
-// matcher) the member is in, and since when. Runs inside the ingest
-// transaction on BOTH paths - stored and stationary-deduplicated - so a Home
-// created while the phone sits parked is picked up on its next report. The
-// UPDATE's right-hand sides all read the OLD row, so `place_since` compares
-// against the previous place_id. The `mp.ts <= $4` guard mirrors the
-// member_positions upsert's own `ts < EXCLUDED.ts` guard: batch backfill
-// replays points out of order (the first live post-reconnect fix makes every
-// queued point older than the head, so the batch path skips the strict
-// monotonicity check entirely), so without this guard a backfilled point
-// could regress place_id/place_since to somewhere the member already left.
-func updateMemberPlace(ctx context.Context, tx pgx.Tx, userID string, lon, lat float64, ts time.Time) error {
-	_, err := tx.Exec(ctx, `
-		WITH here AS (
-			SELECT p.id FROM places p
-			JOIN users u ON u.family_id = p.family_id
-			WHERE u.id = $1 AND p.geom IS NOT NULL AND p.radius_meters IS NOT NULL
-			  AND ST_DWithin(p.geom::geography, ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography, p.radius_meters)
-			ORDER BY p.radius_meters ASC
-			LIMIT 1
-		)
-		UPDATE member_positions mp SET
-			place_since = CASE
-				WHEN mp.place_since IS NULL OR mp.place_id IS DISTINCT FROM (SELECT id FROM here) THEN $4
-				ELSE mp.place_since END,
-			place_id = (SELECT id FROM here)
-		WHERE mp.user_id = $1 AND (mp.ts IS NULL OR mp.ts <= $4)`, userID, lon, lat, ts)
-	return err
-}
-
 // stationaryMoveMeters: a fix this far from the previous member_positions
 // row means the member moved on - the "here for" clock restarts there.
 // OPEN: chosen (coordinator 2026-09-16 17:13) - clear of the 25 m dedup
@@ -118,21 +87,6 @@ func stationaryReset(prevLat, prevLon *float64, lat, lon float64) bool {
 		return true
 	}
 	return haversineMeters(*prevLat, *prevLon, lat, lon) > stationaryMoveMeters
-}
-
-// updateStationarySince keeps member_positions.stationary_since - the moment
-// the member arrived at the spot they are at now (bray 5b, East Cobb: the
-// capsule read "here for 2 hr, 24 min" fifteen minutes after they stopped,
-// because place_since only moves when place_id changes). Runs on BOTH
-// ingest paths, in the ingest transaction, with the previous row's lat/lon
-// read before the upsert. `since` in the members JSON / WS frames is
-// place_since at a saved place, else this.
-func updateStationarySince(ctx context.Context, tx pgx.Tx, userID string, prevLat, prevLon *float64, lon, lat float64, ts time.Time) error {
-	_, err := tx.Exec(ctx, `
-		UPDATE member_positions SET
-			stationary_since = CASE WHEN $2 THEN $3 ELSE COALESCE(stationary_since, $3) END
-		WHERE user_id = $1`, userID, stationaryReset(prevLat, prevLon, lat, lon), ts)
-	return err
 }
 
 // loadMemberPlace reads one member's place for a broadcast. Best-effort: a
