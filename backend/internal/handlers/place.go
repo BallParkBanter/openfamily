@@ -1,11 +1,14 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -24,7 +27,13 @@ type placeOut struct {
 	RadiusMeters *float64  `json:"radius_meters,omitempty"`
 	Address      string    `json:"address"`
 	CreatedAt    time.Time `json:"created_at"`
+	// Icon (bray 2026-09-17): an emoji, or "img" when icon.png is stored (GET /family/places/{id}/icon.png?v=<IconVersion>).
+	Icon        *string `json:"icon,omitempty"`
+	IconVersion int64   `json:"icon_version,omitempty"`
 }
+
+// placeIconColumns / scanIcon: the icon columns every place read carries.
+const placeIconColumns = `, icon, COALESCE(EXTRACT(EPOCH FROM icon_updated_at)::bigint, 0)`
 
 // nullableFloat64 distinguishes an absent JSON field from an explicit null.
 // It is used for radius_meters on update, where null clears the radius.
@@ -135,7 +144,7 @@ func (s *Server) ListPlaces(w http.ResponseWriter, r *http.Request) {
 	// remain restricted to the creator.
 
 	rows, err := s.Pool.Query(r.Context(), `
-		SELECT id, family_id, name, type, ST_Y(geom), ST_X(geom), radius_meters, address, created_at
+		SELECT id, family_id, name, type, ST_Y(geom), ST_X(geom), radius_meters, address, created_at`+placeIconColumns+`
 		FROM places WHERE family_id = $1 ORDER BY created_at`, familyID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list places")
@@ -146,7 +155,7 @@ func (s *Server) ListPlaces(w http.ResponseWriter, r *http.Request) {
 	places := []placeOut{}
 	for rows.Next() {
 		var p placeOut
-		if err := rows.Scan(&p.ID, &p.FamilyID, &p.Name, &p.Type, &p.Lat, &p.Lon, &p.RadiusMeters, &p.Address, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.FamilyID, &p.Name, &p.Type, &p.Lat, &p.Lon, &p.RadiusMeters, &p.Address, &p.CreatedAt, &p.Icon, &p.IconVersion); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to scan place")
 			return
 		}
@@ -178,7 +187,7 @@ func (s *Server) AdminListPlaces(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := s.Pool.Query(r.Context(), `
 		SELECT p.id, p.family_id, f.name, p.name, p.type,
-		       ST_Y(p.geom), ST_X(p.geom), p.radius_meters, p.address, p.created_at
+		       ST_Y(p.geom), ST_X(p.geom), p.radius_meters, p.address, p.created_at, p.icon, COALESCE(EXTRACT(EPOCH FROM p.icon_updated_at)::bigint, 0)
 		FROM places p
 		JOIN families f ON f.id = p.family_id
 		ORDER BY f.name, p.created_at`)
@@ -191,7 +200,7 @@ func (s *Server) AdminListPlaces(w http.ResponseWriter, r *http.Request) {
 	places := []adminPlaceOut{}
 	for rows.Next() {
 		var p adminPlaceOut
-		if err := rows.Scan(&p.ID, &p.FamilyID, &p.FamilyName, &p.Name, &p.Type, &p.Lat, &p.Lon, &p.RadiusMeters, &p.Address, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.FamilyID, &p.FamilyName, &p.Name, &p.Type, &p.Lat, &p.Lon, &p.RadiusMeters, &p.Address, &p.CreatedAt, &p.Icon, &p.IconVersion); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to scan place")
 			return
 		}
@@ -293,9 +302,9 @@ func (s *Server) CreatePlace(w http.ResponseWriter, r *http.Request) {
 	err = tx.QueryRow(r.Context(), `
 		INSERT INTO places (family_id, name, type, geom, radius_meters, created_by, address)
 		VALUES ($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326), $6, $7, $8)
-		RETURNING id, family_id, name, type, ST_Y(geom), ST_X(geom), radius_meters, address, created_at`,
+		RETURNING id, family_id, name, type, ST_Y(geom), ST_X(geom), radius_meters, address, created_at`+placeIconColumns+``,
 		familyID, req.Name, placeType, req.Lon, req.Lat, req.RadiusMeters, claims.UserID, req.Address,
-	).Scan(&p.ID, &p.FamilyID, &p.Name, &p.Type, &p.Lat, &p.Lon, &p.RadiusMeters, &p.Address, &p.CreatedAt)
+	).Scan(&p.ID, &p.FamilyID, &p.Name, &p.Type, &p.Lat, &p.Lon, &p.RadiusMeters, &p.Address, &p.CreatedAt, &p.Icon, &p.IconVersion)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create place")
 		return
@@ -362,9 +371,15 @@ func (s *Server) UpdatePlace(w http.ResponseWriter, r *http.Request) {
 		Lon          *float64        `json:"lon,omitempty"`
 		RadiusMeters nullableFloat64 `json:"radius_meters,omitempty"`
 		Address      *string         `json:"address,omitempty"`
+		// Icon (bray 2026-09-17): an emoji (a few characters), "" to clear; "img" is set by the PNG upload only.
+		Icon *string `json:"icon,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Icon != nil && (len(*req.Icon) > 16 || *req.Icon == "img") {
+		writeError(w, http.StatusBadRequest, "icon must be a short emoji")
 		return
 	}
 	if req.Name != nil && *req.Name == "" {
@@ -409,9 +424,9 @@ func (s *Server) UpdatePlace(w http.ResponseWriter, r *http.Request) {
 	// and cannot be raced by a concurrent update (lost-update).
 	var cur placeOut
 	err = tx.QueryRow(r.Context(), `
-		SELECT id, family_id, name, type, ST_Y(geom), ST_X(geom), radius_meters, address, created_at
+		SELECT id, family_id, name, type, ST_Y(geom), ST_X(geom), radius_meters, address, created_at`+placeIconColumns+`
 		FROM places WHERE id = $1 AND family_id = $2`, id, familyID,
-	).Scan(&cur.ID, &cur.FamilyID, &cur.Name, &cur.Type, &cur.Lat, &cur.Lon, &cur.RadiusMeters, &cur.Address, &cur.CreatedAt)
+	).Scan(&cur.ID, &cur.FamilyID, &cur.Name, &cur.Type, &cur.Lat, &cur.Lon, &cur.RadiusMeters, &cur.Address, &cur.CreatedAt, &cur.Icon, &cur.IconVersion)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "place not found")
 		return
@@ -488,13 +503,23 @@ func (s *Server) UpdatePlace(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// the icon: unchanged unless the request says; "" clears it (and a stored PNG)
+	iconSet := req.Icon != nil
+	var icon *string
+	if iconSet && *req.Icon != "" {
+		v := *req.Icon
+		icon = &v
+	}
 	var p placeOut
 	err = tx.QueryRow(r.Context(), `
-		UPDATE places SET name = $3, type = $4, geom = ST_SetSRID(ST_MakePoint($5, $6), 4326), radius_meters = $7, address = $8
+		UPDATE places SET name = $3, type = $4, geom = ST_SetSRID(ST_MakePoint($5, $6), 4326), radius_meters = $7, address = $8,
+		    icon = CASE WHEN $9 THEN $10 ELSE icon END,
+		    icon_data = CASE WHEN $9 THEN NULL ELSE icon_data END,
+		    icon_updated_at = CASE WHEN $9 THEN now() ELSE icon_updated_at END
 		WHERE id = $1 AND family_id = $2
-		RETURNING id, family_id, name, type, ST_Y(geom), ST_X(geom), radius_meters, address, created_at`,
-		id, familyID, name, placeType, lon, lat, radius, address,
-	).Scan(&p.ID, &p.FamilyID, &p.Name, &p.Type, &p.Lat, &p.Lon, &p.RadiusMeters, &p.Address, &p.CreatedAt)
+		RETURNING id, family_id, name, type, ST_Y(geom), ST_X(geom), radius_meters, address, created_at`+placeIconColumns+``,
+		id, familyID, name, placeType, lon, lat, radius, address, iconSet, icon,
+	).Scan(&p.ID, &p.FamilyID, &p.Name, &p.Type, &p.Lat, &p.Lon, &p.RadiusMeters, &p.Address, &p.CreatedAt, &p.Icon, &p.IconVersion)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to update place")
 		return
@@ -616,4 +641,92 @@ func (s *Server) DeletePlace(w http.ResponseWriter, r *http.Request) {
 	s.logAudit(r.Context(), claims.UserID, familyID, "place.delete", "deleted place "+id, clientIP(r))
 	s.broadcastPlaces(unionIDs(was, changed))
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// bray (Bo 2026-09-17 17:10, "East Cobb Baseball" wants its logo): a place's
+// picture. PUT a PNG body (<= 256 KB; multipart "file" or raw image/png) at
+// /family/places/{id}/icon; the place's icon becomes "img" and the PNG is
+// served at GET /family/places/{id}/icon.png (family members only).
+const placeIconMaxBytes = 256 * 1024
+
+func (s *Server) PutPlaceIcon(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.ClaimsFromContext(r.Context())
+	if claims == nil {
+		writeError(w, http.StatusUnauthorized, "unauthenticated")
+		return
+	}
+	familyID, err := s.familyIDForUser(r.Context(), claims.UserID)
+	if err != nil || familyID == "" {
+		writeError(w, http.StatusNotFound, "no family")
+		return
+	}
+	id := chi.URLParam(r, "id")
+	var data []byte
+	ct := r.Header.Get("Content-Type")
+	if strings.HasPrefix(ct, "multipart/form-data") {
+		if err := r.ParseMultipartForm(placeIconMaxBytes + 4096); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid upload")
+			return
+		}
+		f, _, err := r.FormFile("file")
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "file is required")
+			return
+		}
+		defer f.Close()
+		data, err = io.ReadAll(io.LimitReader(f, placeIconMaxBytes+1))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid upload")
+			return
+		}
+	} else {
+		data, err = io.ReadAll(io.LimitReader(r.Body, placeIconMaxBytes+1))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid upload")
+			return
+		}
+	}
+	if len(data) > placeIconMaxBytes {
+		writeError(w, http.StatusRequestEntityTooLarge, "icon must be 256 KB or less")
+		return
+	}
+	if len(data) < 8 || !bytes.HasPrefix(data, []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}) {
+		writeError(w, http.StatusBadRequest, "icon must be a PNG")
+		return
+	}
+	tag, err := s.Pool.Exec(r.Context(), `
+		UPDATE places SET icon = 'img', icon_data = $3, icon_updated_at = now()
+		WHERE id = $1 AND family_id = $2`, id, familyID, data)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to store icon")
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		writeError(w, http.StatusNotFound, "place not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": id, "icon": "img"})
+}
+
+func (s *Server) GetPlaceIcon(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.ClaimsFromContext(r.Context())
+	if claims == nil {
+		writeError(w, http.StatusUnauthorized, "unauthenticated")
+		return
+	}
+	familyID, err := s.familyIDForUser(r.Context(), claims.UserID)
+	if err != nil || familyID == "" {
+		writeError(w, http.StatusNotFound, "no family")
+		return
+	}
+	var data []byte
+	err = s.Pool.QueryRow(r.Context(), `SELECT icon_data FROM places WHERE id = $1 AND family_id = $2 AND icon_data IS NOT NULL`, chi.URLParam(r, "id"), familyID).Scan(&data)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "no icon")
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "private, max-age=86400")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
 }

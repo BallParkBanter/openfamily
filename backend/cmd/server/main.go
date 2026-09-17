@@ -185,6 +185,9 @@ func main() {
 		r.Post("/family/places", srv.CreatePlace)
 		r.Patch("/family/places/{id}", srv.UpdatePlace)
 		r.Delete("/family/places/{id}", srv.DeletePlace)
+		r.Put("/family/places/{id}/icon", srv.PutPlaceIcon)   // bray: a place's picture
+		r.Post("/family/places/{id}/icon", srv.PutPlaceIcon)
+		r.Get("/family/places/{id}/icon.png", srv.GetPlaceIcon)
 
 		r.Get("/audit", srv.ListAudit)
 

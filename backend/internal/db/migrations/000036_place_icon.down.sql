@@ -1,0 +1,1 @@
+ALTER TABLE places DROP COLUMN IF EXISTS icon, DROP COLUMN IF EXISTS icon_data, DROP COLUMN IF EXISTS icon_updated_at;
