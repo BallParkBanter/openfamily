@@ -75,10 +75,12 @@ class RetryingImageProvider extends ImageProvider<RetryingImageProvider> {
   @override
   ImageStreamCompleter loadImage(RetryingImageProvider key, ImageDecoderCallback decode) => RetryingCompleter(this);
 
-  @override
-  bool operator ==(Object other) => other is RetryingImageProvider && other.key == key;
-  @override
-  int get hashCode => key.hashCode;
+  // Identity, deliberately: Flutter's ImageCache keys pending loads by this
+  // provider. Live 16:16 ET (blank map in follow mode): a tile flutter_map
+  // cancelled (pruned during the zoom-in animation) left its completer
+  // pending in the cache under a URL-based key, and every later request for
+  // that tile got the dead completer back. A re-created tile must always
+  // start a fresh load.
 }
 
 class RetryingCompleter extends ImageStreamCompleter {
@@ -115,7 +117,12 @@ class RetryingCompleter extends ImageStreamCompleter {
   }
 
   void _scheduleRetry() {
-    if (!provider.stillWanted()) return;   // scrolled away / disposed: let it go
+    if (!provider.stillWanted()) {
+      // scrolled away / disposed: give up LOUDLY so the ImageCache drops this
+      // pending entry (a silent stop left it there forever - live 16:16).
+      reportError(exception: StateError('tile no longer wanted'), silent: true);
+      return;
+    }
     final Duration delay = provider.delays[_failures.clamp(0, provider.delays.length - 1)];
     _failures++;
     _timer?.cancel();

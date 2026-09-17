@@ -48,6 +48,36 @@ class _OneShot extends ImageProvider<_OneShot> {
   int get hashCode => Object.hash(k, n);
 }
 
+/// A tile source whose loads hang until told to fail or succeed.
+class _HangThenOk extends TileProvider {
+  _HangThenOk(this.image);
+  final ui.Image image;
+  final List<Completer<ImageInfo>> pending = <Completer<ImageInfo>>[];
+  int loads = 0;
+  @override
+  ImageProvider<Object> getImage(TileCoordinates c, TileLayer options) {
+    final Completer<ImageInfo> done = Completer<ImageInfo>();
+    pending.add(done);
+    return _Pending(loads++, done.future);
+  }
+  void failPending() { for (final Completer<ImageInfo> p in pending.where((p) => !p.isCompleted)) { p.completeError(TimeoutException('cancelled')); } }
+  void succeedPending() { for (final Completer<ImageInfo> p in pending.where((p) => !p.isCompleted)) { p.complete(ImageInfo(image: image.clone())); } }
+}
+
+class _Pending extends ImageProvider<_Pending> {
+  const _Pending(this.n, this.future);
+  final int n;
+  final Future<ImageInfo> future;
+  @override
+  Future<_Pending> obtainKey(ImageConfiguration c) => SynchronousFuture<_Pending>(this);
+  @override
+  ImageStreamCompleter loadImage(_Pending key, ImageDecoderCallback decode) => OneFrameImageStreamCompleter(future);
+  @override
+  bool operator ==(Object other) => other is _Pending && other.n == n;
+  @override
+  int get hashCode => n;
+}
+
 void main() {
   testWidgets('tiles that time out twice come up on the third try inside the same layer - no rebuild, no reset', (t) async {
     final ui.Image img = await blankImage(4);
@@ -84,6 +114,36 @@ void main() {
     await t.pumpWidget(const SizedBox());                              // dispose: timers gone
     await t.pump(const Duration(seconds: 31));
     expect(flaky.attempts.values.every((int n) => n == 3), isTrue);   // no retries after disposal
+  });
+
+  testWidgets('the live 16:16 bug: a tile cancelled mid-load (pruned by a zoom) and requested again later loads fresh - the dead completer is not handed back', (t) async {
+    final ui.Image img = await blankImage(4);
+    // first load of every tile hangs until cancelled; the second succeeds
+    final _HangThenOk src = _HangThenOk(img);
+    final RetryTileProvider retry = RetryTileProvider(src);
+    const TileCoordinates c = TileCoordinates(17494, 26182, 16);
+    final TileLayer layer = TileLayer(urlTemplate: 'https://t/{z}/{x}/{y}.png', tileProvider: retry);
+    // request 1: flutter_map creates the tile, then prunes it (cancel) while it is still loading
+    final Completer<void> cancel1 = Completer<void>();
+    final ImageProvider<Object> p1 = retry.getImageWithCancelLoadingSupport(c, layer, cancel1.future);
+    final ImageStream s1 = p1.resolve(ImageConfiguration.empty);
+    Object? err1;
+    s1.addListener(ImageStreamListener((_, __) {}, onError: (Object e, StackTrace? st) => err1 = e));
+    await t.pump();
+    cancel1.complete();
+    src.failPending();                                                  // dio would throw a cancel error
+    await t.pump();
+    expect(err1, isNotNull);                                            // the stream reports it: the ImageCache drops the pending entry
+    // request 2: the tile scrolls back into view - a fresh load, which succeeds
+    final ImageProvider<Object> p2 = retry.getImageWithCancelLoadingSupport(c, layer, Completer<void>().future);
+    final ImageStream s2 = p2.resolve(ImageConfiguration.empty);
+    ImageInfo? got;
+    s2.addListener(ImageStreamListener((ImageInfo i, __) => got = i));
+    await t.pump();
+    src.succeedPending();
+    await t.pump();
+    expect(got, isNotNull);
+    expect(identical(s1.completer, s2.completer), isFalse);            // never the dead one again
   });
 
   test('backoff ladder and the prefetcher circuit breaker', () {

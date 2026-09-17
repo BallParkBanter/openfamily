@@ -1408,6 +1408,12 @@ class _MapScreenState extends State<MapScreen>
                   urlTemplate: _satellite ? kSatelliteTileUrl : kTileUrl,
                   userAgentPackageName: 'app.openfamily',
                   tileProvider: _tiles,   // bray: on-device cache, 30 days / ~300 MB (services/tile_cache.dart)
+                  // Live 16:16 (Bo driving, follow mode): the camera moves every
+                  // frame; schedule tile loads/prunes a few times a second, not
+                  // per frame, and keep a wider ring of tiles around the view.
+                  tileUpdateTransformer: TileUpdateTransformers.throttle(const Duration(milliseconds: 300)),
+                  keepBuffer: 3,
+                  panBuffer: 1,
                 ),
                 // Blue "range" circle - Bray look: only for members in the
                 // approximate GPS-accuracy state (see showRange), never for a

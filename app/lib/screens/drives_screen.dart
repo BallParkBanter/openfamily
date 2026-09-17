@@ -207,7 +207,7 @@ class DriveMapScreen extends StatelessWidget {
             initialZoom: 14,
           ),
           children: [
-            TileLayer(urlTemplate: kTileUrl, userAgentPackageName: 'app.openfamily', tileProvider: tileProvider ?? TileCache.instance.provider()),
+            TileLayer(urlTemplate: kTileUrl, userAgentPackageName: 'app.openfamily', tileProvider: tileProvider ?? TileCache.instance.provider(), tileUpdateTransformer: TileUpdateTransformers.throttle(const Duration(milliseconds: 300)), keepBuffer: 3),
             if (pts.length >= 2)
               PolylineLayer(polylines: [
                 Polyline(points: pts, color: BrayTokens.ink.withValues(alpha: 0.35), strokeWidth: 7),
