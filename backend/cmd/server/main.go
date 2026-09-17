@@ -205,6 +205,11 @@ func main() {
 		r.Use(mid.RequireAuthOrDeviceIngestKey(tm, pool))
 
 		r.Post("/devices/heartbeat", srv.HeartbeatDevice)
+		// bray 5b: the OwnTracks relay on .103 pushes the family's saved places
+		// to each phone as OwnTracks waypoints (regions -> transition events
+		// even in significant-change mode); it only holds device ingest keys,
+		// so the places list is readable with one too (same family scope).
+		r.Get("/devices/places", srv.ListPlaces)
 		r.Post("/locations", srv.IngestLocation)
 		// Offline backfill: points queued while the device had no data,
 		// delivered newest-first once connectivity returns. Relaxed freshness
