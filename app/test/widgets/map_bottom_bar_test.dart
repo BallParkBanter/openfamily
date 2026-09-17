@@ -18,6 +18,10 @@ Widget _bar(Map<String, VoidCallback> spies) {
   );
 }
 
+
+/// Finds a widget by the label it gives to accessibility (a Semantics wrapper or an Icon's semanticLabel) - tooltips are gone.
+Finder labeled(Pattern l) => find.byWidgetPredicate((Widget w) => (w is Semantics && w.properties.label != null && (l is String ? w.properties.label == l : (l as RegExp).hasMatch(w.properties.label!))) || (w is Icon && w.semanticLabel != null && (l is String ? w.semanticLabel == l : (l as RegExp).hasMatch(w.semanticLabel!))));
+
 void main() {
   testWidgets('People destination is present and fires onPeople', (
     WidgetTester tester,
@@ -38,7 +42,7 @@ void main() {
 
     // The People control is present (icon + tooltip) alongside the others.
     expect(find.byIcon(Icons.people_alt_outlined), findsOneWidget);
-    expect(find.byTooltip('People'), findsOneWidget);
+    expect(labeled('People'), findsOneWidget);
     expect(find.byIcon(Icons.place_outlined), findsOneWidget);
     expect(find.byIcon(Icons.key_outlined), findsNothing);
     expect(find.byIcon(Icons.shield_outlined), findsOneWidget);
@@ -46,7 +50,7 @@ void main() {
     expect(find.text('SOS'), findsOneWidget);
 
     // Tapping it fires the wired callback.
-    await tester.tap(find.byTooltip('People'));
+    await tester.tap(labeled('People'));
     await tester.pump();
     expect(calls['people'], 1);
     expect(calls['sos'], isNull);

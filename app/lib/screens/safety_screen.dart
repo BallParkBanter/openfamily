@@ -345,8 +345,7 @@ class _ContactTile extends StatelessWidget {
       ),
       subtitle: Text(subtitle),
       trailing: IconButton(
-        tooltip: 'Remove',
-        icon: const Icon(Icons.delete_outline, color: AppColors.textMuted),
+        icon: const Icon(semanticLabel: 'Remove', Icons.delete_outline, color: AppColors.textMuted),
         onPressed: onRemove,
       ),
     );

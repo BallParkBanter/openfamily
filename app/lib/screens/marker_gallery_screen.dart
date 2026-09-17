@@ -303,7 +303,6 @@ class _MarkerGalleryScreenState extends State<MarkerGalleryScreen> {
                   IconButton(
                     onPressed: () => Navigator.of(context).maybePop(),
                     icon: const Icon(Icons.arrow_back_rounded, color: AppColors.nightInk),
-                    tooltip: 'Back',
                   ),
                   const SizedBox(width: 4),
                   Expanded(
@@ -380,7 +379,7 @@ class _MarkerGalleryScreenState extends State<MarkerGalleryScreen> {
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                       ),
-                      icon: const Icon(Icons.chevron_left_rounded),
+                      icon: const Icon(semanticLabel: 'Back', Icons.chevron_left_rounded),
                       label: const Text('Previous', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                     ),
                   ),

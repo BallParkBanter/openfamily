@@ -177,8 +177,9 @@ class _FloatingIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: label,
+    return Semantics(
+      label: label,
+      button: true,
       child: Material(
         color: BrandTheme.of(context).sheet,
         shape: const CircleBorder(),

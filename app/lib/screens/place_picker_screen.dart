@@ -299,10 +299,12 @@ class _PlacePickerScreenState extends State<PlacePickerScreen> {
                 Positioned(
                   right: 12,
                   bottom: 12,
-                  child: FloatingActionButton.small(
+                  child: Semantics(
+                    label: 'Use my location',
+                    button: true,
+                    child: FloatingActionButton.small(
                     heroTag: 'place-picker-locate',
                     onPressed: _locating ? null : _locateUser,
-                    tooltip: 'Use my location',
                     child: _locating
                         ? const SizedBox(
                             width: 18,
@@ -313,6 +315,7 @@ class _PlacePickerScreenState extends State<PlacePickerScreen> {
                             ),
                           )
                         : const Icon(Icons.my_location),
+                  ),
                   ),
                 ),
               ],
@@ -368,8 +371,7 @@ class _PlacePickerScreenState extends State<PlacePickerScreen> {
                                   ),
                                 )
                               : IconButton(
-                                  icon: const Icon(Icons.search),
-                                  tooltip: 'Search address',
+                                  icon: const Icon(Icons.search, semanticLabel: 'Search address'),
                                   onPressed: () =>
                                       _searchAddress(_address.text),
                                 ),

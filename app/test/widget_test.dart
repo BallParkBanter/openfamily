@@ -7,6 +7,10 @@ import 'package:openfamily/screens/settings_screen.dart';
 import 'package:openfamily/widgets/circle_switcher.dart';
 import 'package:openfamily/widgets/member_list_sheet.dart';
 
+
+/// Finds a widget by the label it gives to accessibility (a Semantics wrapper or an Icon's semanticLabel) - tooltips are gone.
+Finder labeled(Pattern l) => find.byWidgetPredicate((Widget w) => (w is Semantics && w.properties.label != null && (l is String ? w.properties.label == l : (l as RegExp).hasMatch(w.properties.label!))) || (w is Icon && w.semanticLabel != null && (l is String ? w.semanticLabel == l : (l as RegExp).hasMatch(w.semanticLabel!))));
+
 void main() {
   test('smoke test', () {
     expect(true, isTrue);
@@ -55,7 +59,7 @@ void main() {
     expect(find.byIcon(Icons.group_outlined), findsOneWidget);
     expect(find.text('Join a family'), findsNothing);
 
-    await tester.tap(find.byTooltip('Join a family'));
+    await tester.tap(labeled('Join a family').first);
 
     expect(joined, isTrue);
   });

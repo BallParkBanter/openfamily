@@ -60,6 +60,10 @@ Widget _app({
   );
 }
 
+
+/// Finds a widget by the label it gives to accessibility (a Semantics wrapper or an Icon's semanticLabel) - tooltips are gone.
+Finder labeled(Pattern l) => find.byWidgetPredicate((Widget w) => (w is Semantics && w.properties.label != null && (l is String ? w.properties.label == l : (l as RegExp).hasMatch(w.properties.label!))) || (w is Icon && w.semanticLabel != null && (l is String ? w.semanticLabel == l : (l as RegExp).hasMatch(w.semanticLabel!))));
+
 void main() {
   test('EmergencyContact.fromJson reads server fields', () {
     final EmergencyContact contact = EmergencyContact.fromJson(
@@ -161,7 +165,7 @@ void main() {
     await tester.pumpWidget(_app(service: service));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('Remove'));
+    await tester.tap(labeled('Remove').first);
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Remove'));
     await tester.pumpAndSettle();

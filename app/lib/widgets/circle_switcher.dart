@@ -146,8 +146,8 @@ class _SingleCircleContext extends StatelessWidget {
               ),
               if (onJoinCircle != null) ...[
                 const SizedBox(width: 8),
-                Tooltip(
-                  message: 'Join a family',
+                Semantics(
+                  container: true,
                   child: Semantics(
                     button: true,
                     label: 'Join a family',
