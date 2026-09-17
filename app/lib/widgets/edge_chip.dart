@@ -62,7 +62,7 @@ class EdgeChip extends StatelessWidget {
   static const double height = 84;        // the flare at the edge (72) + the shadow's air
   static const double face = 48;          // the whole circle: hairline + white border + colour ring + photo
   static const double hairline = 1.5;     // the person's colour round the white silhouette (circle + tail)
-  static const double whiteBorder = BrayTokens.ringSolo;   // the uniform white border = the marker ring's width (3)
+  static const double whiteBorder = BrayTokens.ringSolo;   // the uniform border round the ring = the marker ring's width (3); capsule grey since 08:40
   static const double faceRing = 2;       // the ring in the person's colour, inside the white
   static const double rimIn = 3;          // the circle's edge-side rim this far inside the screen edge (v7: was 6): nothing of it is ever clipped
   static const double faceCentreIn = rimIn + face / 2;   // 27
@@ -127,9 +127,12 @@ class EdgeChip extends StatelessWidget {
 /// one wedge from the circle into the screen edge - its top and bottom
 /// edges are the straight tangents from the edge points (2 x [edgeHalf]
 /// apart, just past the edge) to the circle. Drawn with the marker's drop
-/// shadow, filled with the badge white, outlined with a 1.5 px hairline in
-/// [accent]. Nothing above/below the circle on the map side.
+/// shadow, filled with the capsule grey (BrayTokens.capsuleGrey), outlined
+/// with a 1.5 px hairline in [accent]. Nothing above/below the circle on the map side.
 class EdgeFlarePainter extends CustomPainter {
+  /// The silhouette's fill: the grey the capsule uses for its padding and each face's border.
+  static const Color fill = BrayTokens.capsuleGrey;
+
   const EdgeFlarePainter({required this.edge, required this.faceCentre, required this.faceRadius, required this.edgeHalf, required this.accent});
   final EdgeSide edge;
   final Offset faceCentre;
@@ -179,7 +182,7 @@ class EdgeFlarePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final Path p = flare(size);
     canvas.drawShadow(p, BrayTokens.ringShadow, BrayTokens.ringShadowDy, true);                     // the marker's drop shadow under the whole shape
-    canvas.drawPath(p, Paint()..color = BrayTokens.badgeBg..style = PaintingStyle.fill);            // the badges' white (markers-13.html .age #fff)
+    canvas.drawPath(p, Paint()..color = fill..style = PaintingStyle.fill);                       // the capsule's padding/ring grey (#d5d9e2), Bo 2026-09-17 08:40: not white
     canvas.drawPath(p, Paint()..color = accent..style = PaintingStyle.stroke..strokeWidth = EdgeChip.hairline);   // the hairline in the person's colour
   }
 
