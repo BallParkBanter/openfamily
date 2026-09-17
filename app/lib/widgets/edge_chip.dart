@@ -11,7 +11,6 @@
 // the dark pill with the accent outline) - there is no mockup for this
 // chip; every other number is OPEN: chosen.
 
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -27,14 +26,16 @@ import 'member_avatar_bubble.dart' show StatusAvatar;
 enum EdgeSide { left, right }
 
 /// Life360's off-screen avatar (Bo's reference, mockups/2026-09-16-edge-chip/
-/// life360-reference-offscreen-avatar-crop.png; v3 2026-09-17 00:45): the
-/// person's round photo with its colour ring and a white border, ENTIRELY on
-/// screen (its edge-side rim 6 px in from the screen edge - Bo 00:55: "I
-/// need to see the FULL circle icon"), sitting on a SOLID white flare that
-/// widens from the circle toward the edge and runs into it (the flare is
-/// what the screen clips, never the face). Nothing else - no name, no
-/// distance (the smallest badge text would not fit under the face), no dark
-/// surface. The spoken label still says who, how far and which way.
+/// life360-reference-offscreen-avatar-crop.png; v5 2026-09-17 01:00): the
+/// person's round photo with its colour ring and a uniform white border,
+/// ENTIRELY on screen (its edge-side rim 6 px in from the screen edge), and
+/// ONE flat tail from the circle's edge side straight into the screen edge -
+/// the circle's height at the circle, tapering toward the edge, nothing
+/// above/below the circle, nothing on the map side. The white silhouette
+/// (circle + tail) carries the marker's drop shadow and a 1.5 px hairline in
+/// the person's colour so it reads on a white/beige map. Nothing else - no
+/// name, no distance, no dark surface. The spoken label still says who, how
+/// far and which way.
 class EdgeChip extends StatelessWidget {
   const EdgeChip({super.key, required this.member, required this.label, required this.metres, required this.bearingDeg, this.edge = EdgeSide.left, this.onTap});
 
@@ -49,24 +50,27 @@ class EdgeChip extends StatelessWidget {
   /// Screen bearing to the member, 0 = up, clockwise - spoken only.
   final double bearingDeg;
 
-  /// The edge the avatar is tucked into.
+  /// The edge the tail runs into.
   final EdgeSide edge;
   final VoidCallback? onTap;
 
-  static const double width = 72;         // the box, flush to the edge: rim air (6) + the circle (48) + the flare's cap (5) + shadow air
-  static const double height = 84;        // the flare at the edge (76) + 4 of air top and bottom
-  static const double face = 48;          // the whole circle: white border + colour ring + photo (coordinator: 40 or 48; 48 next to the flare)
-  static const double faceRing = 2;       // the ring in the person's colour
-  static const double faceBorder = 2;     // the white border outside the ring (the crop's white-rimmed photo)
+  static const double width = 72;         // the box, flush to the edge: rim air (6) + the circle (48) + shadow air
+  static const double height = 72;        // the circle (48) + the shadow's air
+  static const double face = 48;          // the whole circle: hairline + white border + colour ring + photo
+  static const double hairline = 1.5;     // the person's colour round the white silhouette (circle + tail)
+  static const double whiteBorder = BrayTokens.ringSolo;   // the uniform white border = the marker ring's width (3)
+  static const double faceRing = 2;       // the ring in the person's colour, inside the white
   static const double rimIn = 6;          // the circle's edge-side rim this far inside the screen edge: nothing of it is ever clipped
   static const double faceCentreIn = rimIn + face / 2;   // 30
-  static const double flarePad = 5;       // white round the circle's inboard side (the crop: a thin margin)
-  static const double flareEdgeHalf = 38; // the flare's half-height at the edge: ~1.6 x the circle (the crop widens to ~1.35-1.6 D)
+  static const double tailEdgeHalf = 17;  // the tail's half-height where it meets the screen edge (~0.7 of the circle: a tail, not a flare)
   static const double margin = 8;         // OPEN: chosen - air between the avatar and the header / bottom bar (= BrayTokens.fitAir)
+
+  /// The inner disc (colour ring + photo) inside the white border and the hairline.
+  static const double inner = face - 2 * (hairline + whiteBorder);   // 39
 
   String get a11y => '$label, ${milesLabel(metres)} away, off screen to the ${compassWord(bearingDeg)}';
 
-  /// The face's centre inside the box.
+  /// The circle's centre inside the box.
   Offset get faceCentre => Offset(edge == EdgeSide.left ? faceCentreIn : width - faceCentreIn, height / 2);
 
   @override
@@ -88,25 +92,23 @@ class EdgeChip extends StatelessWidget {
           child: Stack(
             clipBehavior: Clip.none,
             children: [
+              // The white silhouette (circle + tail): shadow, white fill, colour hairline.
               Positioned.fill(
                 child: CustomPaint(
                   key: const Key('edge-chip-flare'),
-                  painter: EdgeFlarePainter(edge: edge, faceCentre: fc, faceRadius: face / 2 + flarePad, edgeHalf: flareEdgeHalf),
+                  painter: EdgeFlarePainter(edge: edge, faceCentre: fc, faceRadius: face / 2, edgeHalf: tailEdgeHalf, accent: accent),
                 ),
               ),
               Positioned(
-                left: fc.dx - face / 2,
-                top: fc.dy - face / 2,
+                left: fc.dx - inner / 2,
+                top: fc.dy - inner / 2,
                 child: Container(
                   key: const Key('edge-chip-face'),
-                  width: face,
-                  height: face,
-                  decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: BrayTokens.badgeBg, width: faceBorder)),
-                  child: Container(
-                    decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: accent, width: faceRing)),
-                    clipBehavior: Clip.antiAlias,
-                    child: ClipOval(child: StatusAvatar(member: member, size: face - 2 * faceRing - 2 * faceBorder, ringWidth: 0)),
-                  ),
+                  width: inner,
+                  height: inner,
+                  decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: accent, width: faceRing)),
+                  clipBehavior: Clip.antiAlias,
+                  child: ClipOval(child: StatusAvatar(member: member, size: inner - 2 * faceRing, ringWidth: 0)),
                 ),
               ),
             ],
@@ -117,30 +119,33 @@ class EdgeChip extends StatelessWidget {
   }
 }
 
-/// The white flare: from the screen edge (a 2 x [edgeHalf] tall base) it
-/// narrows inboard to a round cap round the face ([faceRadius] round
-/// [faceCentre]), filled with the badge white and a soft drop shadow -
-/// the crop's tail shape (mockup edge-chip-3.html's path).
+/// The white silhouette: the circle ([faceRadius] round [faceCentre]) plus
+/// one flat tail from the circle's edge side into the screen edge (the
+/// circle's height at the circle, 2 x [edgeHalf] at the edge). Drawn with
+/// the marker's drop shadow, filled with the badge white, outlined with a
+/// 1.5 px hairline in [accent]. Nothing above/below the circle, nothing on
+/// the map side.
 class EdgeFlarePainter extends CustomPainter {
-  const EdgeFlarePainter({required this.edge, required this.faceCentre, required this.faceRadius, required this.edgeHalf});
+  const EdgeFlarePainter({required this.edge, required this.faceCentre, required this.faceRadius, required this.edgeHalf, required this.accent});
   final EdgeSide edge;
   final Offset faceCentre;
   final double faceRadius, edgeHalf;
+  final Color accent;
 
+  /// The silhouette, inset by half the hairline so the stroke stays inside [face].
   Path flare(Size size) {
-    // Drawn for the LEFT edge (x = 0 is the screen edge), mirrored for the right.
+    const double inset = EdgeChip.hairline / 2;
     final double cx = faceCentre.dx, cy = faceCentre.dy;
-    final double r = faceRadius;
-    // the cap's tangent points, +-16 degrees off the inboard axis (the mockup's arc: 25 wide, 14 tall)
-    const double a = 16 * math.pi / 180;
-    final Offset top = Offset(cx + r * math.cos(a), cy - r * math.sin(a));
-    final Offset bottom = Offset(cx + r * math.cos(a), cy + r * math.sin(a));
-    final Path p = Path()
-      ..moveTo(0, cy - edgeHalf)
-      ..cubicTo(cx * 0.4, cy - edgeHalf + 6, cx + r * 0.55, top.dy - 12, top.dx, top.dy)
-      ..arcToPoint(bottom, radius: Radius.circular(r), clockwise: true)
-      ..cubicTo(cx + r * 0.55, bottom.dy + 12, cx * 0.4, cy + edgeHalf - 6, 0, cy + edgeHalf)
+    final double r = faceRadius - inset;
+    // Drawn for the LEFT edge (x = 0 is the screen edge), mirrored for the right.
+    final Path circle = Path()..addOval(Rect.fromCircle(center: Offset(cx, cy), radius: r));
+    final Path tail = Path()
+      ..moveTo(cx, cy - r)
+      ..lineTo(-inset - 4, cy - edgeHalf)   // past the edge: the screen clips the tail, its outline never closes on screen
+      ..lineTo(-inset - 4, cy + edgeHalf)
+      ..lineTo(cx, cy + r)
       ..close();
+    final Path p = Path.combine(PathOperation.union, circle, tail);
     if (edge == EdgeSide.right) {
       return p.transform((Matrix4.identity()..translateByDouble(size.width, 0, 0, 1)..scaleByDouble(-1, 1, 1, 1)).storage);
     }
@@ -149,13 +154,15 @@ class EdgeFlarePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final Path p = flare(edge == EdgeSide.left ? size : Size(size.width, size.height));
-    canvas.drawShadow(p, const Color(0xFF000000), 3, true);                                   // the crop's soft drop shadow
-    canvas.drawPath(p, Paint()..color = BrayTokens.badgeBg..style = PaintingStyle.fill);      // the badges' white (markers-13.html .age #fff)
+    final Path p = flare(size);
+    canvas.drawShadow(p, BrayTokens.ringShadow, BrayTokens.ringShadowDy, true);                     // the marker's drop shadow under the whole shape
+    canvas.drawPath(p, Paint()..color = BrayTokens.badgeBg..style = PaintingStyle.fill);            // the badges' white (markers-13.html .age #fff)
+    canvas.drawPath(p, Paint()..color = accent..style = PaintingStyle.stroke..strokeWidth = EdgeChip.hairline);   // the hairline in the person's colour
   }
 
   @override
-  bool shouldRepaint(EdgeFlarePainter old) => old.edge != edge || old.faceCentre != faceCentre || old.faceRadius != faceRadius || old.edgeHalf != edgeHalf;
+  bool shouldRepaint(EdgeFlarePainter old) =>
+      old.edge != edge || old.faceCentre != faceCentre || old.faceRadius != faceRadius || old.edgeHalf != edgeHalf || old.accent != accent;
 }
 
 /// A FlutterMap child: one [EdgeChip] per far member whose marker is not on
