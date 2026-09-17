@@ -53,6 +53,8 @@ services:
       # Advertised to the app via GET /config so a generic APK can register
       # UnifiedPush without a dart-define.
       NTFY_BASE_URL: ${NTFY_BASE_URL:-http://localhost:2586}
+      # bray 5b: road snapping for driving fixes (handlers/mapmatch.go); empty = raw positions only
+      VALHALLA_URL: ${VALHALLA_URL:-}
       # Raster tile templates on GET /config. Empty uses OSM street + Esri satellite.
       TILE_URL: ${TILE_URL:-}
       SATELLITE_TILE_URL: ${SATELLITE_TILE_URL:-}
@@ -121,6 +123,37 @@ services:
       interval: 5s
       timeout: 5s
       retries: 12
+
+  # bray 5b: Valhalla map matching (road snapping) for OpenFamily. Profile
+  # "valhalla" so a plain `docker compose up` (dev, CI) never pulls it; Bo's
+  # server sets COMPOSE_PROFILES=valhalla and VALHALLA_DATA in .env. Tiles
+  # live under VALHALLA_DATA/tiles (a symlink swapped between tile sets - a
+  # restart picks the new set up). Not exposed: the api reaches it on the
+  # compose network as http://valhalla:8002. Family-app repo:
+  # docs/valhalla-as-built.md.
+  valhalla:
+    image: ghcr.io/gis-ops/docker-valhalla/valhalla:latest
+    profiles: ["valhalla"]
+    restart: unless-stopped
+    volumes:
+      - ${VALHALLA_DATA:-/mnt/DATA3-10TB/valhalla}/tiles:/custom_files
+    environment:
+      serve_tiles: "True"
+      use_tiles_ignore_pbf: "True"
+      build_elevation: "False"
+      build_admins: "True"
+      build_time_zones: "False"
+      build_transit: "False"
+      build_tar: "True"
+      force_rebuild: "False"
+      server_threads: "2"
+    expose:
+      - "8002"
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 20g
 
   ntfy:
     image: binwiederhier/ntfy:latest
