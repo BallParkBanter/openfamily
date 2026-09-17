@@ -37,7 +37,6 @@ import '../utils/focus_rules.dart';
 import '../utils/member_clustering.dart';
 import '../utils/member_grouping.dart';
 import '../utils/near_fit.dart';
-import '../utils/speed_smoother.dart';
 import '../widgets/capsule_bubble.dart';
 import '../widgets/circle_switcher.dart';
 import '../widgets/contact_link_sheet.dart';
@@ -178,10 +177,6 @@ class _MapScreenState extends State<MapScreen>
   /// paused between fixes and restarted on each one.
   final MotionTracker _motion = MotionTracker();
 
-  /// 5b (Bo driving, 17:35): the printed speed is the median of the last
-  /// three fresh fixes (utils/speed_smoother.dart); the trackers keep the raw one.
-  final SpeedSmoother _speeds = SpeedSmoother();
-
   /// 5b: a riding-together capsule's own glide (utils/anchor_glide.dart) -
   /// a change of lead phone or a late post never hops it; the camera follows
   /// its drawn anchor while following one of its members.
@@ -226,9 +221,7 @@ class _MapScreenState extends State<MapScreen>
   /// capsule's badge, the grouping tracker and the card (utils/drive_state.dart
   /// inDriveVerdict). DECISIONS state 1 + ruling 6 - parked inside the home
   /// geofence is not a drive, for the marker, the capsule and the card alike.
-  /// The drive verdict reads the RAW member (the smoothed speed in
-  /// _liveMembers is for printing only - the thresholds keep the truth).
-  bool _inDriveFor(Member m) => inDriveVerdict(_drives.inDrive(m.id), _members.firstWhere((Member r) => r.id == m.id, orElse: () => m));
+  bool _inDriveFor(Member m) => inDriveVerdict(_drives.inDrive(m.id), m);
 
   /// Task 8: the ~1 min matching-speed-and-heading clock per pair
   /// (utils/member_grouping.dart), fed alongside [_drives] so a group forms
@@ -312,7 +305,6 @@ class _MapScreenState extends State<MapScreen>
       }
     }
     _motion.observe(members, now);   // 5b: dead reckoning + the pull (the 2 km snap rule lives there)
-    _speeds.observe(members);
     setState(() {
       _members = members;
       _membersListenable.value = members;
@@ -834,8 +826,6 @@ class _MapScreenState extends State<MapScreen>
       Member out = m;
       final LatLng? drawn = m.position == null ? null : _motion.drawnAt(m.id, now);
       if (drawn != null) out = out.copyWith(position: drawn);
-      final int? shown = _speeds.displayMph(m);
-      if (shown != null && shown != m.speedMph) out = out.copyWith(speedMph: shown);   // the badge / card print the median
       if (_userId != null && m.id == _userId) out = out.copyWith(name: 'You');
       return out;
     }).toList();
