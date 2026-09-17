@@ -27,6 +27,9 @@ func (s *Server) RegisterDevice(w http.ResponseWriter, r *http.Request) {
 		PushToken           string `json:"push_token,omitempty"`
 		UnifiedPushEndpoint string `json:"unifiedpush_endpoint,omitempty"`
 		AppVersion          string `json:"app_version,omitempty"`
+		// HardwareID (bray 5b): a stable per-install id from the app; a repeat
+		// registration with the same one re-uses the existing device row.
+		HardwareID string `json:"hardware_id,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -56,13 +59,28 @@ func (s *Server) RegisterDevice(w http.ResponseWriter, r *http.Request) {
 		Name       string `json:"name"`
 		AppVersion string `json:"app_version"`
 	}
-	err = s.Pool.QueryRow(r.Context(), `
-		INSERT INTO devices (user_id, platform, name, push_token, unifiedpush_endpoint, app_version, ingest_key_hash)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		RETURNING id, user_id, platform, name, app_version`,
-		claims.UserID, req.Platform, req.Name, req.PushToken, req.UnifiedPushEndpoint, req.AppVersion,
-		middleware.EncodeIngestKeyHash(middleware.HashDeviceIngestKey(ingestKey)),
-	).Scan(&device.ID, &device.UserID, &device.Platform, &device.Name, &device.AppVersion)
+	keyHash := middleware.EncodeIngestKeyHash(middleware.HashDeviceIngestKey(ingestKey))
+	if req.HardwareID != "" {
+		// the same install again (a reinstall, a data wipe, a re-login): the
+		// existing row keeps its id and its is_primary, and gets a fresh key
+		err = s.Pool.QueryRow(r.Context(), `
+			INSERT INTO devices (user_id, platform, name, push_token, unifiedpush_endpoint, app_version, ingest_key_hash, hardware_id)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			ON CONFLICT (user_id, hardware_id) WHERE hardware_id IS NOT NULL DO UPDATE SET
+				platform = EXCLUDED.platform, name = EXCLUDED.name, push_token = EXCLUDED.push_token,
+				unifiedpush_endpoint = EXCLUDED.unifiedpush_endpoint, app_version = EXCLUDED.app_version,
+				ingest_key_hash = EXCLUDED.ingest_key_hash, last_seen = now()
+			RETURNING id, user_id, platform, name, app_version`,
+			claims.UserID, req.Platform, req.Name, req.PushToken, req.UnifiedPushEndpoint, req.AppVersion, keyHash, req.HardwareID,
+		).Scan(&device.ID, &device.UserID, &device.Platform, &device.Name, &device.AppVersion)
+	} else {
+		err = s.Pool.QueryRow(r.Context(), `
+			INSERT INTO devices (user_id, platform, name, push_token, unifiedpush_endpoint, app_version, ingest_key_hash)
+			VALUES ($1, $2, $3, $4, $5, $6, $7)
+			RETURNING id, user_id, platform, name, app_version`,
+			claims.UserID, req.Platform, req.Name, req.PushToken, req.UnifiedPushEndpoint, req.AppVersion, keyHash,
+		).Scan(&device.ID, &device.UserID, &device.Platform, &device.Name, &device.AppVersion)
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to register device")
 		return
