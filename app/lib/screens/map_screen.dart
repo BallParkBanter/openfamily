@@ -62,6 +62,7 @@ import '../widgets/poi_chip.dart';
 import 'card_gallery_screen.dart';
 import 'marker_gallery_screen.dart';
 import 'check_in_screen.dart';
+import 'drives_screen.dart';
 import 'help_alert_screen.dart';
 import 'invite_screen.dart';
 import 'join_circle_screen.dart';
@@ -1162,6 +1163,10 @@ class _MapScreenState extends State<MapScreen>
         .push(MaterialPageRoute<void>(builder: (_) => const SosScreen()));
   }
 
+  void _openDrives(Member m) {
+    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => DrivesScreen(member: m, label: _labelFor(m))));
+  }
+
   void _openPlaces() {
     Navigator.of(context)
         .push(MaterialPageRoute<void>(builder: (_) => const PlacesScreen()));
@@ -1573,6 +1578,7 @@ class _MapScreenState extends State<MapScreen>
                   onLinkContact: _linkContact,
                   onSavePlace: _savePlace,
                   onCheckIn: (_) => _openCheckIn(),
+                  onDrives: _openDrives,   // bray 2026-09-17: the Drives list
                   onLevelChanged: _onSheetLevel,
                   onCardTap: _onCardTap,
                   onCardHold: _openMemberDetails,

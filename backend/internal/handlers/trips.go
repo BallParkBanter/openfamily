@@ -35,6 +35,7 @@ const (
 	tripChunk       = 100  // trace_route points per request
 	tripRefresh     = 60 * time.Second
 	tripLookback    = 6 * time.Hour
+	tripBackfill    = 30 * 24 * time.Hour // a member with no trips yet gets their last 30 days built once
 	tripMinFixes    = 3
 	tripMinSpanM    = 60.0 // a "drive" whose fixes never got this far from its first fix never left the house (phantom speed at rest)
 	tripMatchTimout = 8 * time.Second
@@ -58,6 +59,37 @@ type Trip struct {
 	DistanceM float64      `json:"distance_m"`
 	Matched   bool         `json:"matched"`
 	Fixes     int          `json:"fixes"`
+	// Drives screen (2026-09-17): the fastest fix, and the saved place (if
+	// any) at each end - the app fills in streets with its own geocoder.
+	TopSpeedMPS *float64 `json:"top_speed_mps,omitempty"`
+	FromPlace   *string  `json:"from_place,omitempty"`
+	ToPlace     *string  `json:"to_place,omitempty"`
+}
+
+// topSpeed is the fastest fix of a drive (nil when no fix carried a speed).
+func topSpeed(fixes []tripFix) *float64 {
+	var best *float64
+	for _, f := range fixes {
+		if f.SpeedMPS != nil && (best == nil || *f.SpeedMPS > *best) {
+			v := *f.SpeedMPS
+			best = &v
+		}
+	}
+	return best
+}
+
+// placeNameAt is the family's saved place containing the point, or nil.
+func (s *Server) placeNameAt(ctx context.Context, userID string, lat, lon float64) *string {
+	var name string
+	err := s.Pool.QueryRow(ctx, `
+		SELECT p.name FROM places p JOIN users u ON u.family_id = p.family_id
+		WHERE u.id = $1 AND p.geom IS NOT NULL
+		  AND ST_DWithin(p.geom::geography, ST_SetSRID(ST_MakePoint($3, $2), 4326)::geography, COALESCE(p.radius_meters, 100))
+		ORDER BY ST_Distance(p.geom::geography, ST_SetSRID(ST_MakePoint($3, $2), 4326)::geography) LIMIT 1`, userID, lat, lon).Scan(&name)
+	if err != nil {
+		return nil
+	}
+	return &name
 }
 
 // moving says whether fix i counts as moving: by its speed when it has one,
@@ -287,37 +319,62 @@ func (s *Server) upsertTrip(ctx context.Context, userID string, fixes []tripFix,
 		t := fixes[len(fixes)-1].At
 		ended = &t
 	}
+	first, last := fixes[0], fixes[len(fixes)-1]
 	_, err = s.Pool.Exec(ctx, `
-		INSERT INTO trips (user_id, started_at, ended_at, polyline, distance_m, matched, fixes, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+		INSERT INTO trips (user_id, started_at, ended_at, polyline, distance_m, matched, fixes, top_speed_mps, from_place, to_place, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
 		ON CONFLICT (user_id, started_at) DO UPDATE SET
 			ended_at = EXCLUDED.ended_at, polyline = EXCLUDED.polyline, distance_m = EXCLUDED.distance_m,
-			matched = EXCLUDED.matched, fixes = EXCLUDED.fixes, updated_at = now()`,
-		userID, fixes[0].At, ended, raw, dist, matched, len(fixes))
+			matched = EXCLUDED.matched, fixes = EXCLUDED.fixes, top_speed_mps = EXCLUDED.top_speed_mps,
+			from_place = EXCLUDED.from_place, to_place = EXCLUDED.to_place, updated_at = now()`,
+		userID, first.At, ended, raw, dist, matched, len(fixes), topSpeed(fixes),
+		s.placeNameAt(ctx, userID, first.Lat, first.Lon), s.placeNameAt(ctx, userID, last.Lat, last.Lon))
 	return err
 }
 
-// rebuildTripsFor recomputes a user's trips over the lookback window: closed
-// drives are (re)written when new, the open drive every pass.
+// rebuildTripsFor builds a user's trips from where the last closed trip
+// ended (or the lookback window - 30 days when they have none yet): new
+// closed drives are written once, the open drive is rewritten every pass. A
+// drive already underway at the window's start is skipped rather than
+// stored truncated (it would grow a new row every pass as the window slid).
 func (s *Server) rebuildTripsFor(ctx context.Context, userID string, now time.Time) error {
-	fixes, err := s.loadTripFixes(ctx, userID, now.Add(-tripLookback))
+	var lastEnd *time.Time
+	var older int // closed trips older than the lookback window: none = the history was never built
+	if err := s.Pool.QueryRow(ctx, `SELECT MAX(ended_at), COUNT(*) FILTER (WHERE started_at < $2) FROM trips WHERE user_id = $1 AND ended_at IS NOT NULL`,
+		userID, now.Add(-tripLookback)).Scan(&lastEnd, &older); err != nil {
+		return err
+	}
+	from := now.Add(-tripLookback)
+	if older == 0 {
+		from = now.Add(-tripBackfill)
+		lastEnd = nil // rebuild from the far edge; existing rows are upserted in place
+	}
+	edge := true // the window starts at an arbitrary moment: a drive underway there is skipped
+	if lastEnd != nil && lastEnd.After(from) {
+		from = *lastEnd
+		edge = false // it starts where a drive ended: still by definition
+	}
+	fixes, err := s.loadTripFixes(ctx, userID, from)
 	if err != nil || len(fixes) < tripMinFixes {
 		return err
 	}
 	closed, open := segmentDrives(fixes, now)
+	if edge && len(closed) > 0 && closed[0][0].At.Sub(fixes[0].At) < tripStillGap {
+		closed = closed[1:] // underway at the window edge: not a whole drive
+	}
+	if edge && open != nil && len(closed) == 0 && open[0].At.Sub(fixes[0].At) < tripStillGap {
+		open = nil
+	}
 	for _, d := range closed {
-		var exists bool
-		if err := s.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM trips WHERE user_id = $1 AND started_at = $2 AND ended_at IS NOT NULL)`, userID, d[0].At).Scan(&exists); err != nil {
-			return err
-		}
-		if exists {
-			continue
-		}
 		if err := s.upsertTrip(ctx, userID, d, false); err != nil {
 			return err
 		}
 	}
 	if open != nil {
+		// one open row at a time: an earlier open row that never closed is replaced
+		if _, err := s.Pool.Exec(ctx, `DELETE FROM trips WHERE user_id = $1 AND ended_at IS NULL AND started_at <> $2`, userID, open[0].At); err != nil {
+			return err
+		}
 		return s.upsertTrip(ctx, userID, open, true)
 	}
 	return nil
@@ -340,9 +397,12 @@ func (s *Server) RebuildTrips(ctx context.Context) {
 
 func (s *Server) rebuildTripsOnce(ctx context.Context) {
 	now := time.Now().UTC()
+	// Every user with a fix in the lookback window - a parked phone's fixes
+	// are deduped into heartbeats, so "posted in the last minute" would skip
+	// exactly the people whose last drive needs closing.
 	rows, err := s.Pool.Query(ctx, `
 		SELECT DISTINCT d.user_id FROM locations l JOIN devices d ON d.id = l.device_id
-		WHERE l.ts > $1`, now.Add(-tripRefresh-tripStillGap-time.Minute))
+		WHERE l.ts > $1`, now.Add(-tripLookback))
 	if err != nil {
 		slog.Warn("trips: list users failed", "err", err)
 		return
@@ -356,7 +416,7 @@ func (s *Server) rebuildTripsOnce(ctx context.Context) {
 	}
 	rows.Close()
 	for _, u := range users {
-		uctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+		uctx, cancel := context.WithTimeout(ctx, 5*time.Minute) // a 30-day backfill matches every drive once
 		if err := s.rebuildTripsFor(uctx, u, now); err != nil {
 			slog.Warn("trips: rebuild failed", "err", err, "user_id", u)
 		}
@@ -395,7 +455,7 @@ func (s *Server) ListMemberTrips(w http.ResponseWriter, r *http.Request) {
 		slog.Debug("trips: rebuild on read failed", "err", err)
 	}
 	rows, err := s.Pool.Query(r.Context(), `
-		SELECT id, user_id, started_at, ended_at, polyline, distance_m, matched, fixes
+		SELECT id, user_id, started_at, ended_at, polyline, distance_m, matched, fixes, top_speed_mps, from_place, to_place
 		FROM trips WHERE user_id = $1 AND (ended_at IS NULL OR ended_at >= $2)
 		ORDER BY started_at`, memberID, since)
 	if err != nil {
@@ -407,7 +467,7 @@ func (s *Server) ListMemberTrips(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var t Trip
 		var raw []byte
-		if err := rows.Scan(&t.ID, &t.UserID, &t.StartedAt, &t.EndedAt, &raw, &t.DistanceM, &t.Matched, &t.Fixes); err != nil {
+		if err := rows.Scan(&t.ID, &t.UserID, &t.StartedAt, &t.EndedAt, &raw, &t.DistanceM, &t.Matched, &t.Fixes, &t.TopSpeedMPS, &t.FromPlace, &t.ToPlace); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to scan trip")
 			return
 		}

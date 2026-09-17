@@ -35,6 +35,7 @@ class PersonCard extends StatefulWidget {
     this.onSavePlace,
     this.onNoShow,
     this.onCheckIn,
+    this.onDrives,
     this.launch,
     this.now,
     this.onTap,
@@ -67,6 +68,10 @@ class PersonCard extends StatefulWidget {
   /// drawn per the mock and does nothing until a host wires this.
   final VoidCallback? onNoShow;
   final VoidCallback? onCheckIn;
+
+  /// bray 2026-09-17: opens the Drives list (the action row is full, so a
+  /// small chip-style text button under the fact chips).
+  final VoidCallback? onDrives;
   final Future<void> Function(String action, String uri)? launch;
   final DateTime? now;
   final VoidCallback? onTap;
@@ -223,6 +228,32 @@ class _PersonCardState extends State<PersonCard> {
                       ),
                     ],
                   ],
+                ),
+              ),
+            ),
+          if (widget.onDrives != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Semantics(
+                  button: true,
+                  label: 'Drives',
+                  child: InkWell(
+                    key: const Key('card-drives'),
+                    borderRadius: BorderRadius.circular(999),
+                    onTap: widget.onDrives,
+                    child: Container(
+                      padding: BrayTokens.cardFactPad,
+                      decoration: BoxDecoration(
+                        color: BrayTokens.cardFactBg,
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: BrayTokens.cardLime.withValues(alpha: .6)),
+                      ),
+                      child: const Text('🚗 Drives', maxLines: 1, softWrap: false,
+                          style: TextStyle(fontSize: BrayTokens.cardFactFont, color: BrayTokens.cardLime, fontWeight: FontWeight.w700, height: BrayTokens.cardTextLineHeight)),
+                    ),
+                  ),
                 ),
               ),
             ),
