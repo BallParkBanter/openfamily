@@ -113,6 +113,7 @@ func main() {
 	// Background reconciliation self-heals any geofence evaluation that failed
 	// or was interrupted during ingest.
 	go srv.ReconcileGeofences(ctx)
+	go srv.RebuildTrips(ctx) // bray: on-road trips for the trail (handlers/trips.go)
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
@@ -171,6 +172,7 @@ func main() {
 		r.Post("/family/members/{id}/location-request", srv.RequestMemberLocation)
 		r.Patch("/family/members/{id}/role", srv.UpdateMemberRole)
 		r.Put("/family/members/{id}/primary-device", srv.SetPrimaryDevice)
+		r.Get("/family/members/{id}/trips", srv.ListMemberTrips)
 		r.Post("/family/invites", srv.CreateFamilyInvite)
 		r.Post("/family/join", srv.JoinFamily)
 
