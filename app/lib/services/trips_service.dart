@@ -8,7 +8,7 @@ import 'package:latlong2/latlong.dart';
 import 'api_client.dart';
 
 class Trip {
-  const Trip({required this.startedAt, this.endedAt, required this.points, required this.matched, this.distanceM = 0, this.fixes = 0});
+  const Trip({required this.startedAt, this.endedAt, required this.points, required this.matched, this.distanceM = 0, this.fixes = 0, this.topSpeedMps, this.fromPlace, this.toPlace});
 
   final DateTime startedAt;
 
@@ -19,7 +19,14 @@ class Trip {
   final double distanceM;
   final int fixes;
 
+  /// Drives screen: the fastest fix, and the saved place (if any) at each end.
+  final double? topSpeedMps;
+  final String? fromPlace, toPlace;
+
   bool get open => endedAt == null;
+  Duration get duration => (endedAt ?? DateTime.now()).difference(startedAt);
+  double get miles => distanceM / 1609.344;
+  int? get topMph => topSpeedMps == null ? null : (topSpeedMps! * 2.23694).round();
 
   static Trip? fromJson(Object? raw) {
     if (raw is! Map) return null;
@@ -39,6 +46,9 @@ class Trip {
       matched: raw['matched'] == true,
       distanceM: (raw['distance_m'] as num?)?.toDouble() ?? 0,
       fixes: (raw['fixes'] as num?)?.toInt() ?? 0,
+      topSpeedMps: (raw['top_speed_mps'] as num?)?.toDouble(),
+      fromPlace: raw['from_place'] as String?,
+      toPlace: raw['to_place'] as String?,
     );
   }
 }
