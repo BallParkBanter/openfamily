@@ -57,22 +57,23 @@ void main() {
     final Rect r = t.getRect(find.byKey(const Key('edge-chip')));
     expect(r.left, 0);                                                // the box is flush to the left edge
     expect(chip.edge, EdgeSide.left);
-    // v3 (the Life360 crop): the photo tucked ~40 % into the edge, ring in her colour, in a white flare; nothing else.
+    // v5 (Bo 01:00): the whole circle on screen, uniform white border, one flat tail into the edge, shadow + colour hairline.
     final Rect face = t.getRect(find.byKey(const Key('edge-chip-face')));
-    expect(face.width, EdgeChip.face);
-    expect(face.left, EdgeChip.rimIn);                                // the WHOLE circle on screen, its rim 6 in from the edge (Bo 00:55)
+    expect(face.width, EdgeChip.inner);
     expect(face.center.dx, EdgeChip.faceCentreIn);
-    final BoxDecoration border = t.widget<Container>(find.byKey(const Key('edge-chip-face'))).decoration as BoxDecoration;
-    expect(border.border!.top.color, BrayTokens.badgeBg);              // white border outside...
-    final BoxDecoration ring = t.widget<Container>(find.descendant(of: find.byKey(const Key('edge-chip-face')), matching: find.byType(Container)).first).decoration as BoxDecoration;
-    expect(ring.border!.top.color, BrayTokens.accentHeidi);            // ...the ring in her colour
+    expect(face.left, EdgeChip.rimIn + EdgeChip.hairline + EdgeChip.whiteBorder);   // the circle's rim (hairline + white) is 6 in from the edge, on screen
+    expect(EdgeChip.whiteBorder, BrayTokens.ringSolo);                              // = the marker ring's width, uniform all round
+    final BoxDecoration ring = t.widget<Container>(find.byKey(const Key('edge-chip-face'))).decoration as BoxDecoration;
+    expect(ring.border!.top.color, BrayTokens.accentHeidi);
     final EdgeFlarePainter flare = t.widget<CustomPaint>(find.byKey(const Key('edge-chip-flare'))).painter as EdgeFlarePainter;
     expect(flare.edge, EdgeSide.left);
-    expect(flare.faceRadius, EdgeChip.face / 2 + EdgeChip.flarePad);
+    expect(flare.accent, BrayTokens.accentHeidi);                                     // the hairline colour
     final Rect bounds = flare.flare(const Size(EdgeChip.width, EdgeChip.height)).getBounds();
-    expect(bounds.left, 0);                                           // the flare reaches the screen edge...
-    expect(bounds.height, closeTo(2 * EdgeChip.flareEdgeHalf, 0.5));  // ...where it is widest (1.6 x the face)
-    expect(bounds.right, closeTo(EdgeChip.faceCentreIn + EdgeChip.face / 2 + EdgeChip.flarePad, 1.5));   // and narrows to a cap round the face (getBounds is control-point loose)
+    expect(bounds.left, lessThan(0));                                                 // the tail runs into the screen edge...
+    expect(bounds.right, closeTo(EdgeChip.faceCentreIn + EdgeChip.face / 2, 1.0));    // ...and nothing sits on the map side of the circle
+    expect(bounds.top, closeTo(EdgeChip.height / 2 - EdgeChip.face / 2, 1.0));        // nothing above the circle...
+    expect(bounds.bottom, closeTo(EdgeChip.height / 2 + EdgeChip.face / 2, 1.0));     // ...or below it
+    expect(EdgeChip.tailEdgeHalf, lessThan(EdgeChip.face / 2));                       // a tail: narrower at the edge than the circle
     expect(find.text('Heidi'), findsNothing);                          // no name, no distance, no pill, no beam
     expect(find.textContaining('mi'), findsNothing);
     expect(find.byKey(const Key('edge-chip-pill')), findsNothing);
@@ -114,9 +115,9 @@ void main() {
     expect(r.right, 800);                                             // flush to the right edge
     expect(chip.edge, EdgeSide.right);
     final Rect face = t.getRect(find.byKey(const Key('edge-chip-face')));
-    expect(face.right, 800 - EdgeChip.rimIn);                          // whole circle on screen, rim 6 in from the right edge
+    expect(face.right, 800 - EdgeChip.rimIn - EdgeChip.hairline - EdgeChip.whiteBorder);   // whole circle on screen, rim 6 in from the right edge
     final EdgeFlarePainter flare = t.widget<CustomPaint>(find.byKey(const Key('edge-chip-flare'))).painter as EdgeFlarePainter;
-    expect(flare.flare(const Size(EdgeChip.width, EdgeChip.height)).getBounds().right, closeTo(EdgeChip.width, 0.5));   // mirrored: widest at the right edge
+    expect(flare.flare(const Size(EdgeChip.width, EdgeChip.height)).getBounds().right, greaterThan(EdgeChip.width));   // mirrored: the tail runs into the right edge
     expect(r.center.dy, lessThan(640));
     expect(r.top, greaterThanOrEqualTo(80 + EdgeChip.margin));
   });
