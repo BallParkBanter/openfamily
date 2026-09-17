@@ -44,7 +44,15 @@ void main() {
     expect(chip.member.id, 'h');
     expect(chip.a11y, 'Heidi, 1,950 mi away, off screen to the west');
     final Rect r = t.getRect(find.byKey(const Key('edge-chip')));
-    expect(r.left, EdgeChip.margin);                                  // pinned to the left edge with 8 of air
+    expect(r.left, 0);                                                // flush to the left edge - no air (Life360 style)
+    expect(chip.edge, EdgeSide.left);
+    // The pointer is on the edge side, left of the face; no border on the flush side, square corners there.
+    expect(t.getRect(find.byKey(const Key('edge-chip-pointer'))).right, lessThan(t.getRect(find.byKey(const Key('edge-chip-face'))).left));
+    final BoxDecoration deco = t.widget<Container>(find.byKey(const Key('edge-chip'))).decoration as BoxDecoration;
+    expect((deco.border as Border).left, BorderSide.none);
+    expect((deco.border as Border).right.width, 1.5);
+    expect((deco.borderRadius as BorderRadius).topLeft, Radius.zero);
+    expect((deco.borderRadius as BorderRadius).topRight, const Radius.circular(999));
     expect(r.center.dy, closeTo(640, 30));                            // on the centre row (Heidi is almost due west)
     expect(r.top, greaterThanOrEqualTo(80 + EdgeChip.margin));
     expect(r.bottom, lessThanOrEqualTo(1280 - 88 - EdgeChip.margin));
@@ -79,7 +87,12 @@ void main() {
     expect(chip.bearingDeg, inInclusiveRange(20, 70));
     expect(chip.a11y, contains('north-east'));
     final Rect r = t.getRect(find.byKey(const Key('edge-chip')));
-    expect(r.right, 800 - EdgeChip.margin);
+    expect(r.right, 800);                                             // flush to the right edge
+    expect(chip.edge, EdgeSide.right);
+    expect(t.getRect(find.byKey(const Key('edge-chip-pointer'))).left, greaterThan(t.getRect(find.byKey(const Key('edge-chip-face'))).right));
+    final BoxDecoration deco = t.widget<Container>(find.byKey(const Key('edge-chip'))).decoration as BoxDecoration;
+    expect((deco.border as Border).right, BorderSide.none);
+    expect((deco.borderRadius as BorderRadius).topRight, Radius.zero);
     expect(r.center.dy, lessThan(640));
     expect(r.top, greaterThanOrEqualTo(80 + EdgeChip.margin));
   });
