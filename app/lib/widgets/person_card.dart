@@ -13,11 +13,13 @@ import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatf
 import 'package:flutter/material.dart';
 
 import '../models/member.dart';
+import '../models/place.dart';
 import '../models/member_place.dart';
 import '../services/contact_link_store.dart';
 import '../services/member_avatar_cache.dart';
 import '../theme/bray_tokens.dart';
 import 'card_state.dart';
+import 'place_icon.dart';
 
 class PersonCard extends StatefulWidget {
   const PersonCard({
@@ -28,6 +30,7 @@ class PersonCard extends StatefulWidget {
     this.place,
     this.isViewer = false,
     this.savedKind,
+    this.savedPlace,
     this.inDrive,
     this.phone,
     this.contact,
@@ -72,6 +75,9 @@ class PersonCard extends StatefulWidget {
   /// bray 2026-09-17: opens the Drives list (the action row is full, so a
   /// small chip-style text button under the fact chips).
   final VoidCallback? onDrives;
+
+  /// bray 2026-09-17: the saved place the member is at, for its own icon on the place line.
+  final Place? savedPlace;
   final Future<void> Function(String action, String uri)? launch;
   final DateTime? now;
   final VoidCallback? onTap;
@@ -197,8 +203,7 @@ class _PersonCardState extends State<PersonCard> {
           if (s.placeLine != null)
             Padding(
               padding: const EdgeInsets.only(top: BrayTokens.cardPlaceTop),                          // .pl margin-top:2px
-              child: Text(s.placeLine!, key: const Key('card-place'), maxLines: 1, overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: BrayTokens.cardPlaceFont, fontWeight: BrayTokens.cardPlaceWeight, color: BrayTokens.cardLime, height: BrayTokens.cardTextLineHeight)),   // .pl 17px 600 #A3E635
+              child: _placeLine(s.placeLine!),
             ),
           if (s.facts.isNotEmpty)
             Padding(
@@ -259,6 +264,21 @@ class _PersonCardState extends State<PersonCard> {
             ),
         ],
       );
+
+  /// The place line: "🏠 Home" / "🏫 School" as words; a saved place with its
+  /// own icon draws that icon (emoji or a 20 px rounded picture) before the name.
+  Widget _placeLine(String line) {
+    const TextStyle style = TextStyle(fontSize: BrayTokens.cardPlaceFont, fontWeight: BrayTokens.cardPlaceWeight, color: BrayTokens.cardLime, height: BrayTokens.cardTextLineHeight);   // .pl 17px 600 #A3E635
+    final Place? p = widget.savedPlace;
+    if (p != null && p.type != 'home' && (p.iconEmoji != null || p.hasImage) && line.endsWith(p.name)) {
+      return Row(mainAxisSize: MainAxisSize.min, children: [
+        PlaceIcon(place: p, size: 20),
+        const SizedBox(width: 6),
+        Flexible(child: Text(p.name, key: const Key('card-place'), maxLines: 1, overflow: TextOverflow.ellipsis, style: style)),
+      ]);
+    }
+    return Text(line, key: const Key('card-place'), maxLines: 1, overflow: TextOverflow.ellipsis, style: style);
+  }
 
   /// .row: the raised button (.save) left, the battery stat (.bwrap) right,
   /// both cardSaveH tall and bottom-aligned.

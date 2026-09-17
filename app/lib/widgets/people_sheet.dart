@@ -10,6 +10,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../models/member.dart';
+import '../models/place.dart';
 import '../models/member_place.dart';
 import '../services/contact_link_store.dart';
 import '../theme/bray_tokens.dart';
@@ -28,6 +29,7 @@ class PeopleSheet extends StatelessWidget {
     this.focusedId,
     this.contactFor,
     this.savedKindFor,
+    this.savedPlaceFor,
     this.inDriveFor,
     this.onLinkContact,
     this.onSavePlace,
@@ -52,6 +54,7 @@ class PeopleSheet extends StatelessWidget {
   /// The family place type behind `place.placeName` (map_screen looks it up
   /// in FamilyService.places), for the place line's icon.
   final String? Function(Member)? savedKindFor;
+  final Place? Function(Member)? savedPlaceFor;
   final bool Function(Member)? inDriveFor;
   final ValueChanged<Member>? onLinkContact;
   final ValueChanged<Member>? onSavePlace;
@@ -151,6 +154,7 @@ class PeopleSheet extends StatelessWidget {
                                 place: placeFor(f),
                                 isViewer: f.id == viewerId,
                                 savedKind: savedKindFor?.call(f),
+                                savedPlace: savedPlaceFor?.call(f),
                                 inDrive: inDriveFor?.call(f),
                                 contact: contactFor?.call(f),
                                 onLinkContact: onLinkContact == null ? null : () => onLinkContact!(f),

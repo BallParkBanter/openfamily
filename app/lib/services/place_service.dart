@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:latlong2/latlong.dart';
 
 import '../models/place.dart';
@@ -30,6 +32,7 @@ class PlaceService {
     required double lon,
     required double radiusMeters,
     String? address,
+    String? iconEmoji,
   }) async {
     final Map<String, dynamic> body = <String, dynamic>{
       'name': name,
@@ -41,6 +44,7 @@ class PlaceService {
     if (address != null && address.isNotEmpty) {
       body['address'] = address;
     }
+    if (iconEmoji != null && iconEmoji.isNotEmpty) body['icon'] = iconEmoji;
     final dynamic data = await ApiClient.post('/family/places', body: body);
     final Place? place = _fromBackend(data as Map<String, dynamic>);
     if (place == null) {
@@ -74,6 +78,22 @@ class PlaceService {
           kMinPlaceRadiusMeters,
       type: type,
       alertsOn: false,
+      iconEmoji: json['icon'] is String && json['icon'] != 'img' && (json['icon'] as String).isNotEmpty ? json['icon'] as String : null,
+      iconVersion: (json['icon_version'] as num?)?.toInt() ?? 0,
     );
   }
+
+  /// bray 2026-09-17: the place's emoji ('' clears the icon and any picture).
+  static Future<Place> setIcon(String id, String emoji) async {
+    final dynamic data = await ApiClient.patch('/family/places/$id', body: <String, dynamic>{'icon': emoji});
+    final Place? place = _fromBackend(data as Map<String, dynamic>);
+    if (place == null) throw const ApiException(0, 'Unexpected place response.');
+    return place;
+  }
+
+  /// A PNG (<= 256 KB) as the place's picture.
+  static Future<void> uploadIcon(String id, Uint8List png) => ApiClient.putBytes('/family/places/$id/icon', png, contentType: 'image/png');
+
+  /// The place's stored picture, or null.
+  static Future<Uint8List?> fetchIcon(String id) => ApiClient.getBytesOrNull('/family/places/$id/icon.png');
 }

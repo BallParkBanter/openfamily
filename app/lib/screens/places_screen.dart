@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../models/place.dart';
+import '../widgets/place_icon.dart';
+import '../widgets/place_icon_sheet.dart';
 import '../services/api_client.dart';
 import '../services/family_service.dart';
 import '../services/geofence_service.dart';
@@ -104,6 +106,7 @@ class _PlacesScreenState extends State<PlacesScreen> {
         lon: picked.position.longitude,
         radiusMeters: picked.radiusMeters,
         address: picked.address,
+        iconEmoji: picked.iconEmoji,
       );
       if (!mounted) return;
       setState(() => _places = <Place>[...?_places, created]);
@@ -112,6 +115,28 @@ class _PlacesScreenState extends State<PlacesScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(_errorMessage(e))),
       );
+    }
+  }
+
+  /// bray 2026-09-17: choose the place's icon - an emoji (PATCH) or a picture (PUT PNG).
+  Future<void> _pickIcon(int i) async {
+    final Place place = _places![i];
+    final PlaceIconChoice? choice = await showPlaceIconSheet(context, current: place.iconEmoji);
+    if (choice == null || !mounted) return;
+    try {
+      Place updated;
+      if (choice.png != null) {
+        await PlaceService.uploadIcon(place.id, choice.png!);
+        updated = place.copyWith(clearIcon: true).copyWith(iconVersion: DateTime.now().millisecondsSinceEpoch ~/ 1000);
+      } else {
+        updated = await PlaceService.setIcon(place.id, choice.clear ? '' : choice.emoji!);
+        updated = updated.copyWith(alertsOn: place.alertsOn, geofenceId: place.geofenceId);
+      }
+      if (!mounted) return;
+      setState(() => _places![i] = updated);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e is ApiException ? e.message : 'Couldn\'t save the icon.')));
     }
   }
 
@@ -250,6 +275,7 @@ class _PlacesScreenState extends State<PlacesScreen> {
             onToggleAlerts: _canManage ? () => _toggleAlerts(i) : null,
             toggling: _toggling,
             onDelete: _canManage ? () => _deletePlace(places[i]) : null,
+            onIcon: _canManage ? () => _pickIcon(i) : null,
           ),
         if (_canManage) _AddPlaceTile(onTap: _addPlace),
       ],
@@ -263,6 +289,7 @@ class _PlaceTile extends StatelessWidget {
     required this.onToggleAlerts,
     required this.toggling,
     required this.onDelete,
+    this.onIcon,
   });
 
   final Place place;
@@ -270,20 +297,35 @@ class _PlaceTile extends StatelessWidget {
   final bool toggling;
   final VoidCallback? onDelete;
 
+  /// bray 2026-09-17: tap the leading icon = choose the place's own icon.
+  final VoidCallback? onIcon;
+
   @override
   Widget build(BuildContext context) {
     final String subtitle = place.address.isEmpty
         ? place.radiusLabel
         : '${place.address} · ${place.radiusLabel}';
     return ListTile(
-      leading: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: AppColors.purple.withValues(alpha: 0.12),
+      leading: Semantics(
+        button: onIcon != null,
+        label: 'Icon for ${place.name}',
+        child: InkWell(
+          key: Key('place-icon-${place.id}'),
+          customBorder: const CircleBorder(),
+          onTap: onIcon,
+          child: Container(
+            width: 40,
+            height: 40,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppColors.purple.withValues(alpha: 0.12),
+            ),
+            child: place.iconEmoji != null || place.hasImage
+                ? PlaceIcon(place: place, size: place.hasImage ? 28 : 26)
+                : Icon(place.icon, color: AppColors.purple, size: 22),
+          ),
         ),
-        child: Icon(place.icon, color: AppColors.purple, size: 22),
       ),
       title: Text(
         place.name,

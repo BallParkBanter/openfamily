@@ -365,6 +365,22 @@ class ApiClient {
     return _avatarBytesFromResponse(response, label: 'family member photo');
   }
 
+  /// PUT raw bytes (a place picture): 2xx = ok.
+  static Future<void> putBytes(String path, Uint8List bytes, {required String contentType}) async {
+    final http.Response response = await _sendResponse('PUT', _uri(path), bytes: bytes, contentType: contentType);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(response.statusCode, 'Upload failed (${response.statusCode}).');
+    }
+  }
+
+  /// GET raw bytes (a place picture); null on 404.
+  static Future<Uint8List?> getBytesOrNull(String path) async {
+    final http.Response response = await _sendResponse('GET', _uri(path), accept: 'image/png, image/jpeg, application/json');
+    if (response.statusCode == 404) return null;
+    if (response.statusCode != 200) throw ApiException(response.statusCode, 'Could not load the picture.');
+    return response.bodyBytes;
+  }
+
   /// PUT /api/profile/avatar with raw JPEG or PNG bytes.
   ///
   /// The endpoint returns 204 No Content on success. Validation is repeated
