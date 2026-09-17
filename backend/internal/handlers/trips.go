@@ -36,6 +36,7 @@ const (
 	tripRefresh     = 60 * time.Second
 	tripLookback    = 6 * time.Hour
 	tripMinFixes    = 3
+	tripMinSpanM    = 60.0 // a "drive" whose fixes never got this far from its first fix never left the house (phantom speed at rest)
 	tripMatchTimout = 8 * time.Second
 )
 
@@ -88,7 +89,7 @@ func segmentDrives(fixes []tripFix, now time.Time) (closed [][]tripFix, open []t
 			end--
 		}
 		cur = cur[:end]
-		if len(cur) >= tripMinFixes {
+		if len(cur) >= tripMinFixes && spanMeters(cur) >= tripMinSpanM {
 			if isOpen {
 				open = cur
 			} else {
@@ -120,6 +121,18 @@ func segmentDrives(fixes []tripFix, now time.Time) (closed [][]tripFix, open []t
 		flush(now.Sub(lastMoving) < tripStillGap) // open when the last motion is recent
 	}
 	return closed, open
+}
+
+// spanMeters is how far the fixes ever got from the first one.
+func spanMeters(fixes []tripFix) float64 {
+	if len(fixes) == 0 {
+		return 0
+	}
+	best := 0.0
+	for _, f := range fixes[1:] {
+		best = math.Max(best, haversineMeters(fixes[0].Lat, fixes[0].Lon, f.Lat, f.Lon))
+	}
+	return best
 }
 
 // rawPolyline is the fallback: the fixes themselves, skipping steps under

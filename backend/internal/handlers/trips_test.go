@@ -49,6 +49,14 @@ func TestSegmentDrivesHomeThenWobble(t *testing.T) {
 	if len(d) != 60 {
 		t.Fatalf("the red light stays inside the drive: 60 fixes, got %d", len(d))
 	}
+	// phantom speed at the house (the tablet says 10 mph while sitting still): not a trip
+	var phantom []tripFix
+	for i := 0; i < 9; i++ {
+		phantom = append(phantom, fixAt(t0.Add(6*time.Hour), i*10, home[0]+float64(i%2)*0.00003, home[1], 10, 6))
+	}
+	if c, o := segmentDrives(phantom, t0.Add(7*time.Hour)); len(c) != 0 || o != nil {
+		t.Fatalf("a drive that never left the house is not a trip: closed %d open %v", len(c), o != nil)
+	}
 	// the raw fallback of the wobble alone would be nothing but the ends
 	poly, dist := rawPolyline(fixes[60:])
 	if len(poly) > 2 || dist > 30 {
