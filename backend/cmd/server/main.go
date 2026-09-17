@@ -170,6 +170,7 @@ func main() {
 		r.Get("/family/members/{id}/history", srv.GetMemberHistory)
 		r.Post("/family/members/{id}/location-request", srv.RequestMemberLocation)
 		r.Patch("/family/members/{id}/role", srv.UpdateMemberRole)
+		r.Put("/family/members/{id}/primary-device", srv.SetPrimaryDevice)
 		r.Post("/family/invites", srv.CreateFamilyInvite)
 		r.Post("/family/join", srv.JoinFamily)
 

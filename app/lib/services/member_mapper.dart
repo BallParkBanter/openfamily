@@ -1,9 +1,11 @@
 import 'package:latlong2/latlong.dart';
 
 import '../models/member.dart';
+import '../models/member_device.dart';
 import '../models/member_place.dart';
 import '../models/road_snap.dart';
 import '../models/place.dart';
+import '../utils/primary_device.dart';
 
 export '../models/member.dart' show kStaleAfter;
 
@@ -13,7 +15,7 @@ export '../models/member.dart' show kStaleAfter;
 /// The backend's location fields are all nullable: a member who has never
 /// reported a location has null `lat`/`lon`/`ts`. `speed_mps` is meters/second
 /// and is converted to mph for display. `motion_state` is a free string.
-Member memberFromJson(Map<String, dynamic> json) {
+Member memberFromJson(Map<String, dynamic> json, {DateTime? now}) {
   final num? lat = json['lat'] as num?;
   final num? lon = json['lon'] as num?;
   final dynamic ts = json['ts'];
@@ -43,7 +45,7 @@ Member memberFromJson(Map<String, dynamic> json) {
       _movementFromSpeed(speedMps) ??
       MovementType.none;
 
-  return Member(
+  final Member member = Member(
     id: (json['id'] as String?) ?? '',
     name: (json['name'] as String?) ?? 'Member',
     position: position,
@@ -70,7 +72,10 @@ Member memberFromJson(Map<String, dynamic> json) {
     place: MemberPlace.fromJson(json['place']),
     headingDeg: heading?.toDouble(),
     road: RoadSnap.fromJson(json['road']),
+    primaryDeviceId: json['primary_device_id'] as String?,
+    devices: MemberDevice.listFromJson(json['devices']),
   );
+  return applyPrimaryDevice(member, now ?? DateTime.now());
 }
 
 /// Applies a WebSocket `avatar` frame to [existing].
@@ -100,7 +105,22 @@ Member memberFromAvatarUpdate(Member existing, Map<String, dynamic> json) {
 /// A `location` frame always carries a fresh `lat`/`lon`, so the position is
 /// updated in place; the other fields fall back to the existing values when
 /// the frame omits them.
-Member memberFromLocationUpdate(Member existing, Map<String, dynamic> json) {
+Member memberFromLocationUpdate(Member existing, Map<String, dynamic> json, {DateTime? now}) {
+  final DateTime at = now ?? DateTime.now();
+  final String? deviceId = json['device_id'] as String?;
+  // bray 2026-09-17: every frame refreshes its device's entry; a frame from a
+  // non-primary device while the primary is fresh moves nothing else.
+  final num? fLat = json['lat'] as num?, fLon = json['lon'] as num?;
+  final Member withDevice = existing.copyWith(devices: updateDevice(existing.devices, deviceId,
+      ts: _parseTs(json['ts']),
+      position: fLat != null && fLon != null ? LatLng(fLat.toDouble(), fLon.toDouble()) : null,
+      batteryPct: (json['battery_pct'] as num?)?.toDouble(),
+      charging: json['charging'] as bool?));
+  if (ignoreFrameFrom(withDevice, deviceId, at)) {
+    final DateTime? seen = _newer(existing.lastSeen, _newer(_parseTs(json['ts']), _parseTs(json['last_seen_at'])));
+    return applyPrimaryDevice(withDevice.copyWith(lastSeen: seen), at);
+  }
+  existing = withDevice;
   final num? lat = json['lat'] as num?;
   final num? lon = json['lon'] as num?;
   final dynamic ts = json['ts'];
@@ -141,7 +161,7 @@ Member memberFromLocationUpdate(Member existing, Map<String, dynamic> json) {
   final num? effectiveBattery = batteryPct ??
       (existing.batteryPercent > 0 ? existing.batteryPercent : null);
 
-  return existing.copyWith(
+  final Member updated = existing.copyWith(
     position: position,
     status: _statusFrom(
       position: position,
@@ -167,6 +187,7 @@ Member memberFromLocationUpdate(Member existing, Map<String, dynamic> json) {
     road: RoadSnap.fromJson(json['road']),   // bray 5b: every location frame says whether the fix is on a road (absent = raw)
     clearRoad: json['road'] == null,
   );
+  return applyPrimaryDevice(updated, at);
 }
 
 /// Applies a `/ws/stream` `place` frame (the geocoder wrote a new street, or
@@ -185,7 +206,7 @@ Member memberFromPlaceUpdate(Member existing, Map<String, dynamic> json) {
 /// pin, speed, and movement stay untouched, and they come back from grey
 /// "stopped" if a stale member starts reporting again. Malformed frames return
 /// [existing] unchanged.
-Member memberFromPresenceUpdate(Member existing, Map<String, dynamic> json) {
+Member memberFromPresenceUpdate(Member existing, Map<String, dynamic> json, {DateTime? now}) {
   if (json['user_id'] is! String) return existing;
   final DateTime? ts = _parseTs(json['ts']);
   if (ts == null) return existing;
@@ -194,12 +215,18 @@ Member memberFromPresenceUpdate(Member existing, Map<String, dynamic> json) {
   // cannot make the member fresher.
   final DateTime? current = existing.lastSeen;
   if (current != null && !ts.isAfter(current)) return existing;
+  final DateTime at = now ?? DateTime.now();
+  // bray 2026-09-17: a heartbeat / deduped fix keeps its device's entry fresh
+  // (a parked primary phone stays the primary); its battery/charging land
+  // on that entry, and the primary rule below decides what is drawn.
+  existing = existing.copyWith(devices: updateDevice(existing.devices, json['device_id'] as String?,
+      ts: ts, batteryPct: (json['battery_pct'] as num?)?.toDouble(), charging: json['charging'] as bool?));
 
   final num? batteryPct = json['battery_pct'] as num?;
   // bray: a parked phone plugged in or unplugged only ever shows up on the
   // presence path (stationary dedup), so the bolt has to follow it here too.
   final bool? charging = json['charging'] as bool?;
-  return existing.copyWith(
+  return applyPrimaryDevice(existing.copyWith(
     status: MemberStatus.normal,
     batteryPercent:
         batteryPct != null ? batteryPct.round() : existing.batteryPercent,
@@ -210,7 +237,7 @@ Member memberFromPresenceUpdate(Member existing, Map<String, dynamic> json) {
     ),
     lastSeen: ts,
     charging: charging ?? existing.charging,
-  );
+  ), at);
 }
 
 // kStaleAfter (10 min) lives in models/member.dart now, next to the display
