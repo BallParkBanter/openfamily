@@ -2,55 +2,67 @@
 // The Family Viewer's breadcrumb (app.js 151-171): only for the focused
 // person ("showing everyone's history at once is unreadable"), the last 6 h
 // (J:159), a dark halo under an accent line (J:166-167) and a small dot at
-// the start (J:168). Points come from their HistoryService (today's trail),
-// thinned the way server.py 239-245 thins it.
+// the start (J:168).
+//
+// bray 2026-09-17 (Bo, focused on himself at home: "straight green lines
+// between raw fixes ... plus a star-shaped scribble at the house"): the
+// trail is the member's TRIPS (services/trips_service.dart) - each drive as
+// the on-road polyline the backend map-matched with Valhalla - drawn one
+// polyline per trip. Nothing is drawn for a stationary period (a stop is not
+// a trip; a wobble at the house never becomes a line). An unmatched trip
+// falls back to its raw fixes, thinned so no segment joins two fixes within
+// max(accuracy, 25 m). The open drive is refetched every minute.
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../models/member.dart';
-import '../services/history_service.dart';
+import '../services/trips_service.dart';
 import '../theme/bray_tokens.dart';
 
 class FocusTrailLayer extends StatefulWidget {
-  const FocusTrailLayer({super.key, required this.member, this.fetch, this.now});
+  const FocusTrailLayer({super.key, required this.member, this.fetch, this.now, this.refresh = const Duration(seconds: 60)});
 
   /// The focused member, or null (draws nothing).
   final Member? member;
 
-  /// Injected in tests; defaults to HistoryService.fetchDay(today).trail.
-  final Future<List<HistoryTrailPoint>> Function(String memberId)? fetch;
+  /// Injected in tests; defaults to TripsService.fetch(since: now - 6 h).
+  final Future<List<Trip>> Function(String memberId, DateTime since)? fetch;
   final DateTime? now;
 
-  static const Duration window = Duration(hours: 6);     // J:159 hours=6
-  static const double minStepMeters = 25;                // P:241 metres(...) < 25 skipped
-  static const int maxPoints = 300;                      // P:245 out[-300:]
+  /// How often the trips are refetched while focused (the open drive grows).
+  final Duration refresh;
 
-  static List<LatLng> trailPoints(List<HistoryTrailPoint> raw, DateTime now) {
+  static const Duration window = Duration(hours: 6);     // J:159 hours=6
+  static const double minStepMeters = 25;                // the raw fallback: a step under max(accuracy, 25 m) is wobble
+
+  /// The polylines to draw: one per trip inside the window, oldest first.
+  /// A matched trip is drawn as stored; an unmatched one as its raw fixes,
+  /// thinned to [minStepMeters]. A trip with fewer than two points is nothing.
+  static List<List<LatLng>> tripLines(List<Trip> trips, DateTime now) {
     final DateTime cutoff = now.subtract(window);
-    final List<HistoryTrailPoint> sorted = raw.where((p) => !p.ts.isBefore(cutoff)).toList()
-      ..sort((a, b) => a.ts.compareTo(b.ts));
-    final List<LatLng> out = <LatLng>[];
-    LatLng? last;
-    const Distance d = Distance();
-    for (final HistoryTrailPoint p in sorted) {
-      if (last != null && d.as(LengthUnit.Meter, last, p.position) < minStepMeters) continue;
-      last = p.position;
-      out.add(p.position);
+    final List<Trip> inWindow = trips.where((Trip t) => t.open || !t.endedAt!.isBefore(cutoff)).toList()
+      ..sort((Trip a, Trip b) => a.startedAt.compareTo(b.startedAt));
+    final List<List<LatLng>> out = <List<LatLng>>[];
+    for (final Trip t in inWindow) {
+      final List<LatLng> pts = t.matched ? t.points : thinRaw(t.points);
+      if (pts.length >= 2) out.add(pts);
     }
-    return out.length > maxPoints ? out.sublist(out.length - maxPoints) : out;
+    return out;
   }
 
-  /// The local calendar days the 6 h window (J:159) can touch, oldest first.
-  /// The default fetch pulls one calendar day at a time
-  /// (HistoryService.fetchDay); near local midnight the window's start falls
-  /// on the previous day, so fetching only `now`'s day would silently shrink
-  /// or empty the trail until local-today is >= 6 h old (the midnight gap).
-  static List<DateTime> daysCovering(DateTime now) {
-    final DateTime today = DateTime(now.year, now.month, now.day);
-    final DateTime start = now.subtract(window);
-    final DateTime startDay = DateTime(start.year, start.month, start.day);
-    return startDay == today ? <DateTime>[today] : <DateTime>[startDay, today];
+  /// The raw fallback: drop a point within [minStepMeters] of the last kept one.
+  static List<LatLng> thinRaw(List<LatLng> raw, {double accuracy = 0}) {
+    const Distance d = Distance();
+    final double floor = accuracy > minStepMeters ? accuracy : minStepMeters;
+    final List<LatLng> out = <LatLng>[];
+    for (final LatLng p in raw) {
+      if (out.isNotEmpty && d.as(LengthUnit.Meter, out.last, p) < floor) continue;
+      out.add(p);
+    }
+    return out;
   }
 
   @override
@@ -59,12 +71,20 @@ class FocusTrailLayer extends StatefulWidget {
 
 class _FocusTrailLayerState extends State<FocusTrailLayer> {
   String? _forId;
-  List<LatLng> _points = const <LatLng>[];
+  List<List<LatLng>> _lines = const <List<LatLng>>[];
+  Timer? _timer;
 
   @override
   void initState() {
     super.initState();
     _refresh();
+    _timer = Timer.periodic(widget.refresh, (_) => _refresh());
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -76,47 +96,39 @@ class _FocusTrailLayerState extends State<FocusTrailLayer> {
   Future<void> _refresh() async {
     final Member? m = widget.member;
     if (m == null) {
-      setState(() { _forId = null; _points = const <LatLng>[]; });
+      if (_forId != null || _lines.isNotEmpty) setState(() { _forId = null; _lines = const <List<LatLng>>[]; });
       return;
     }
     final String id = m.id;
     final DateTime now = widget.now ?? DateTime.now();
+    final DateTime since = now.subtract(FocusTrailLayer.window);
     try {
-      final List<HistoryTrailPoint> raw = widget.fetch != null
-          ? await widget.fetch!(id)
-          : await _fetchDefault(id, now);
+      final List<Trip> trips = widget.fetch != null
+          ? await widget.fetch!(id, since)
+          : await TripsService.fetch(memberId: id, since: since);
       if (!mounted || widget.member?.id != id) return;
-      setState(() { _forId = id; _points = FocusTrailLayer.trailPoints(raw, now); });
+      setState(() { _forId = id; _lines = FocusTrailLayer.tripLines(trips, now); });
     } catch (_) {
       // J:170 "a missing trail should never break the map"
-      if (mounted) setState(() { _forId = id; _points = const <LatLng>[]; });
+      if (mounted) setState(() { _forId = id; _lines = const <List<LatLng>>[]; });
     }
-  }
-
-  /// Fetches every local calendar day the 6 h window touches (see
-  /// [FocusTrailLayer.daysCovering] — the midnight gap) and concatenates
-  /// their trails; [FocusTrailLayer.trailPoints] applies the window/thinning.
-  Future<List<HistoryTrailPoint>> _fetchDefault(String id, DateTime now) async {
-    final List<HistoryTrailPoint> raw = <HistoryTrailPoint>[];
-    for (final DateTime day in FocusTrailLayer.daysCovering(now)) {
-      raw.addAll((await HistoryService.fetchDay(memberId: id, day: day)).trail);
-    }
-    return raw;
   }
 
   @override
   Widget build(BuildContext context) {
     final Member? m = widget.member;
-    if (m == null || _forId != m.id || _points.length < 2) return const SizedBox.shrink();   // J:163
+    if (m == null || _forId != m.id || _lines.isEmpty) return const SizedBox.shrink();   // J:163
     final Color accent = BrayTokens.accentFor(m);
     return Stack(children: [
       PolylineLayer(polylines: [
         // OPEN: chosen - BrayTokens.ink (#0A0E16) for J:166's #0a0e1a, 4 units of blue apart; one near-black, not two
-        Polyline(points: _points, color: BrayTokens.ink.withValues(alpha: 0.35), strokeWidth: 7),   // J:166 halo #0a0e1a w7 .35
-        Polyline(points: _points, color: accent.withValues(alpha: 0.95), strokeWidth: 3.5),         // J:167 accent w3.5 .95
+        for (final List<LatLng> line in _lines)
+          Polyline(points: line, color: BrayTokens.ink.withValues(alpha: 0.35), strokeWidth: 7),   // J:166 halo #0a0e1a w7 .35
+        for (final List<LatLng> line in _lines)
+          Polyline(points: line, color: accent.withValues(alpha: 0.95), strokeWidth: 3.5),         // J:167 accent w3.5 .95
       ]),
       CircleLayer(circles: [
-        CircleMarker(point: _points.first, radius: 4, color: BrayTokens.ink, borderColor: accent, borderStrokeWidth: 2), // J:168
+        CircleMarker(point: _lines.first.first, radius: 4, color: BrayTokens.ink, borderColor: accent, borderStrokeWidth: 2), // J:168 the start of the oldest trip
       ]),
     ]);
   }
