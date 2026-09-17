@@ -209,9 +209,21 @@ class BackgroundLocatorPlugin
             val plugin = BackgroundLocatorPlugin()
             plugin.context = context
 
+            val settings = args[Keys.ARG_SETTINGS] as Map<*, *>
+            // bray 2026-09-17: nothing (or only part) stored - the app never
+            // registered on this install (an app-data clear, or the receiver
+            // ran before the first registration). Starting the service with an
+            // empty notification channel name threw IllegalArgumentException
+            // in onStartCommand and crash-looped the app ("keeps stopping").
+            val interval = (settings[Keys.SETTINGS_INTERVAL] as? Int) ?: 0
+            val channel = settings[Keys.SETTINGS_ANDROID_NOTIFICATION_CHANNEL_NAME] as? String
+            if (interval <= 0 || channel.isNullOrBlank()) {
+                Log.w("BackgroundLocatorPlugin", "registerAfterBoot: no complete stored settings, not starting")
+                return
+            }
+
             initializeService(context, args)
 
-            val settings = args[Keys.ARG_SETTINGS] as Map<*, *>
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
                 context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
                 == PackageManager.PERMISSION_GRANTED

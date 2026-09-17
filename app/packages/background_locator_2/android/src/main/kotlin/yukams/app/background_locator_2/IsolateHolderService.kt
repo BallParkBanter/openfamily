@@ -182,8 +182,11 @@ class IsolateHolderService : MethodChannel.MethodCallHandler, LocationUpdateList
     private fun getNotification(): Notification {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             // Notification channel is available in Android O and up
+            // bray 2026-09-17: a blank / "null" name throws IllegalArgumentException
+            // in createNotificationChannel and kills the app - never let it through.
+            val channelName = if (notificationChannelName.isBlank() || notificationChannelName == "null") "Location" else notificationChannelName
             val channel = NotificationChannel(
-                Keys.CHANNEL_ID, notificationChannelName,
+                Keys.CHANNEL_ID, channelName,
                 NotificationManager.IMPORTANCE_LOW
             )
 
