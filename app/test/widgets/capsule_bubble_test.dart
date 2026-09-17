@@ -81,4 +81,26 @@ void main() {
     // upward only.
     expect(CapsuleBubble.markerHeight, CapsuleBubble.badgeZone + 66 + BrayTokens.capsuleLift + BrayTokens.dotSize / 2);
   });
+
+  // 5b (Bo live 17:50): a riding-together capsule never expands on a tap -
+  // each face is its own target and the capsule stays whole.
+  testWidgets('tap the second face: that member is handed back, the capsule keeps both faces, the ring sits on the tapped one', (t) async {
+    final Member bo = m('Bo Bray', mph: 60), charlie = m('Charlie', mph: 60);
+    Member? tapped; int expands = 0;
+    await t.pumpWidget(host(CapsuleBubble(members: [bo, charlie], inDriveFor: (_) => true, onTap: () => expands++, onFaceTap: (x) => tapped = x)));
+    expect(find.byKey(const Key('capsule-avatar')), findsNWidgets(2));
+    await t.tap(find.byKey(const Key('capsule-avatar')).last);
+    expect(tapped?.id, 'Charlie');
+    expect(expands, 0);
+    await t.pumpWidget(host(CapsuleBubble(members: [bo, charlie], inDriveFor: (_) => true, selectedId: 'Charlie', onTap: () => expands++, onFaceTap: (x) => tapped = x)));
+    expect(find.byKey(const Key('capsule-avatar')), findsOneWidget);
+    expect(find.byKey(const Key('capsule-avatar-selected')), findsOneWidget);
+    expect(find.byType(CapsuleBubble), findsOneWidget);
+  });
+  testWidgets('without onFaceTap (a parked group) the pill tap still expands as before', (t) async {
+    int expands = 0;
+    await t.pumpWidget(host(CapsuleBubble(members: [m('Bo Bray'), m('Charlie')], inDriveFor: (_) => false, onTap: () => expands++)));
+    await t.tap(find.byKey(const Key('capsule-avatar')).first);
+    expect(expands, 1);
+  });
 }

@@ -1,7 +1,7 @@
 name: openfamily
 description: A self-hosted, privacy-first family location tracker.
 publish_to: "none"
-version: 0.1.0+29826513
+version: 0.1.0+29826535
 
 environment:
   sdk: ">=3.4.0 <4.0.0"

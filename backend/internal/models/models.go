@@ -94,6 +94,17 @@ type MemberWithLocation struct {
 // nil when no geocode exists or it is farther than geocodeStaleMeters from
 // the current position. PlaceName/AtHome/HomeDistanceM/Since come from the
 // family's places table.
+// RoadSnap (bray 5b): where the road is under a driving member - the newest
+// fix snapped to the road, the road's heading there, and the road ahead as
+// [lat, lon] points starting at the snapped point. Nil when the member is
+// not driving or the matcher had no road within reach.
+type RoadSnap struct {
+	Lat        float64      `json:"lat"`
+	Lon        float64      `json:"lon"`
+	HeadingDeg float64      `json:"heading_deg"`
+	Path       [][2]float64 `json:"path"`
+}
+
 type MemberPlace struct {
 	Street        *string    `json:"street"`
 	City          *string    `json:"city"`

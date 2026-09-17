@@ -49,4 +49,12 @@ void main() {
   test('camera lift is half the sheet height (J:204)', () {
     expect(FocusRules.liftFor(206), 103);
   });
+
+  test('5b: visible keeps the focused member\'s capsule-mates, hides everyone else', () {
+    final FocusRules f = FocusRules();
+    f.tap('bo');
+    Member mk(String id) => Member(id: id, name: id, status: MemberStatus.normal, position: null, batteryPercent: 0, address: '');
+    expect(f.visible([mk('bo'), mk('charlie'), mk('heidi')], keep: {'charlie'}).map((m) => m.id), ['bo', 'charlie']);
+    expect(f.visible([mk('bo'), mk('charlie'), mk('heidi')]).map((m) => m.id), ['bo']);
+  });
 }

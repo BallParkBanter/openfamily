@@ -18,10 +18,20 @@ import 'member_avatar_bubble.dart' show StatusAvatar;
 import 'slot_badge.dart';
 
 class CapsuleBubble extends StatelessWidget {
-  const CapsuleBubble({super.key, required this.members, this.onTap, this.selectedId, this.now, this.viewerId, this.contactFor, this.inDriveFor});
+  const CapsuleBubble({super.key, required this.members, this.onTap, this.onFaceTap, this.onFaceLongPress, this.selectedId, this.now, this.viewerId, this.contactFor, this.inDriveFor});
 
   final List<Member> members;
+
+  /// A tap on the pill as a whole (upstream: expand the cluster). Unused
+  /// when the faces are hit targets ([onFaceTap]).
   final VoidCallback? onTap;
+
+  /// 5b (Bo live 2026-09-16 17:50): in a riding-together capsule each face
+  /// is its own hit target - tap = focus that member (the ring on the face,
+  /// the "Following" pill, their card), long-press = their details - and
+  /// the capsule stays whole. Null keeps the pill's own [onTap].
+  final ValueChanged<Member>? onFaceTap;
+  final ValueChanged<Member>? onFaceLongPress;
 
   /// "<name> arrived" names people like the cards (BrayTokens.labelFor).
   final String? viewerId;
@@ -95,7 +105,7 @@ class CapsuleBubble extends StatelessWidget {
         label: label,
         button: true,
         child: GestureDetector(
-          onTap: onTap,
+          onTap: onFaceTap == null ? onTap : null,
           child: SizedBox(
             width: markerWidth,
             height: markerHeight,
@@ -127,7 +137,11 @@ class CapsuleBubble extends StatelessWidget {
                               Positioned(
                                 left: i * step,
                                 top: 0,
-                                child: Container(
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: onFaceTap == null ? null : () => onFaceTap!(faces[i]),
+                                  onLongPress: onFaceLongPress == null ? null : () => onFaceLongPress!(faces[i]),
+                                  child: Container(
                                   key: Key(_selected(faces[i]) ? 'capsule-avatar-selected' : 'capsule-avatar'),
                                   width: BrayTokens.capsuleAvatar,                                // .cap img width/height:58px
                                   height: BrayTokens.capsuleAvatar,
@@ -146,6 +160,7 @@ class CapsuleBubble extends StatelessWidget {
                                       ringWidth: 0,
                                     ),
                                   ),
+                                ),
                                 ),
                               ),
                             if (more > 0)

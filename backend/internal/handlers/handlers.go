@@ -29,6 +29,9 @@ type Server struct {
 	// NtfyBaseURL is the public ntfy origin advertised by GET /config.
 	NtfyBaseURL string
 
+	// Matcher (bray 5b): the Valhalla road snapper for driving fixes; nil = raw only.
+	Matcher *Matcher
+
 	// APNsConfigured is true when the operator set an APNs key file. The
 	// client uses this to skip iOS token registration when APNs cannot work.
 	APNsConfigured bool
