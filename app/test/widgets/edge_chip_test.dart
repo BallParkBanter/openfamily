@@ -9,7 +9,6 @@ import 'package:latlong2/latlong.dart';
 import 'package:openfamily/models/member.dart';
 import 'package:openfamily/theme/bray_tokens.dart';
 import 'package:openfamily/widgets/edge_chip.dart';
-import 'package:openfamily/widgets/heading_beam.dart';
 
 const LatLng elSegundo = LatLng(33.9301, -118.3837);
 const LatLng hebron = LatLng(34.0073, -83.9115);
@@ -31,6 +30,16 @@ Widget app(MapController c, List<Member> members, {ValueChanged<Member>? onTap, 
     );
 
 void main() {
+  test('a steep bearing sits at the top or bottom of its edge, never on the header or the bar', () {
+    const Rect band = Rect.fromLTRB(32, 120, 768, 1160);
+    const Offset centre = Offset(400, 640);
+    expect(edgeAvatarPoint(centre: centre, target: const Offset(-1000, 640), band: band, edge: EdgeSide.left), const Offset(32, 640));   // due west: mid-edge
+    expect(edgeAvatarPoint(centre: centre, target: const Offset(390, -5000), band: band, edge: EdgeSide.left), const Offset(32, 120)); // almost due north: top of the left edge
+    expect(edgeAvatarPoint(centre: centre, target: const Offset(410, 9000), band: band, edge: EdgeSide.right), const Offset(768, 1160)); // almost due south: bottom of the right edge
+    final Offset nw = edgeAvatarPoint(centre: centre, target: const Offset(-400, 240), band: band, edge: EdgeSide.left);
+    expect(nw.dx, 32);
+    expect(nw.dy, closeTo(640 - 400 * 368 / 800, 0.01));   // on the ray
+  });
   Future<void> pump(WidgetTester t, Widget w) async {
     t.view.physicalSize = const Size(1600, 2560);
     t.view.devicePixelRatio = 2.0;
@@ -46,23 +55,26 @@ void main() {
     expect(chip.member.id, 'h');
     expect(chip.a11y, 'Heidi, 1,950 mi away, off screen to the west');
     final Rect r = t.getRect(find.byKey(const Key('edge-chip')));
-    expect(r.left, 0);                                                // flush to the left edge - no air (Life360 style)
+    expect(r.left, 0);                                                // the box is flush to the left edge
     expect(chip.edge, EdgeSide.left);
-    // v2: the face is on the edge side (~60 % of the marker ring), the small pill beside it, the fan centred on the face and aimed her way.
+    // v3 (the Life360 crop): the photo tucked ~40 % into the edge, ring in her colour, in a white flare; nothing else.
     final Rect face = t.getRect(find.byKey(const Key('edge-chip-face')));
     expect(face.width, EdgeChip.face);
-    expect(face.left, EdgeChip.faceInset);
-    expect(face.right, lessThan(t.getRect(find.byKey(const Key('edge-chip-pill'))).left));
-    final Rect fan = t.getRect(find.byKey(const Key('edge-chip-fan')));
-    expect(fan.center, face.center);
-    final HeadingBeamPainter painter = t.widget<CustomPaint>(find.byKey(const Key('edge-chip-fan'))).painter as HeadingBeamPainter;
-    expect(painter.headingDeg, chip.bearingDeg);
-    expect(painter.accent, BrayTokens.accentHeidi);
-    expect(painter.wedgeDeg, EdgeChip.fanWedgeDeg);
-    expect(painter.alpha, lessThan(BrayTokens.beamAlpha));            // lighter than the heading beam
-    expect(find.byKey(const Key('edge-chip-pointer')), findsNothing); // the solid triangle is gone
-    final Text name = t.widget(find.text('Heidi'));
-    expect(name.style!.fontSize, lessThan(BrayTokens.nameBadgeFont)); // smaller than the marker name pill
+    expect(face.center.dx, EdgeChip.faceCentreIn);                    // 6 in: 14 of the 40 is off screen
+    expect(face.left, lessThan(0));
+    final BoxDecoration ring = t.widget<Container>(find.byKey(const Key('edge-chip-face'))).decoration as BoxDecoration;
+    expect(ring.border!.top.color, BrayTokens.accentHeidi);
+    final EdgeFlarePainter flare = t.widget<CustomPaint>(find.byKey(const Key('edge-chip-flare'))).painter as EdgeFlarePainter;
+    expect(flare.edge, EdgeSide.left);
+    expect(flare.faceRadius, EdgeChip.face / 2 + EdgeChip.flarePad);
+    final Rect bounds = flare.flare(const Size(EdgeChip.width, EdgeChip.height)).getBounds();
+    expect(bounds.left, 0);                                           // the flare reaches the screen edge...
+    expect(bounds.height, closeTo(2 * EdgeChip.flareEdgeHalf, 0.5));  // ...where it is widest (1.6 x the face)
+    expect(bounds.right, closeTo(EdgeChip.faceCentreIn + EdgeChip.face / 2 + EdgeChip.flarePad, 1.5));   // and narrows to a cap round the face (getBounds is control-point loose)
+    expect(find.text('Heidi'), findsNothing);                          // no name, no distance, no pill, no beam
+    expect(find.textContaining('mi'), findsNothing);
+    expect(find.byKey(const Key('edge-chip-pill')), findsNothing);
+    expect(find.byKey(const Key('edge-chip-fan')), findsNothing);
     expect(r.center.dy, closeTo(640, 30));                            // on the centre row (Heidi is almost due west)
     expect(r.top, greaterThanOrEqualTo(80 + EdgeChip.margin));
     expect(r.bottom, lessThanOrEqualTo(1280 - 88 - EdgeChip.margin));
@@ -100,8 +112,9 @@ void main() {
     expect(r.right, 800);                                             // flush to the right edge
     expect(chip.edge, EdgeSide.right);
     final Rect face = t.getRect(find.byKey(const Key('edge-chip-face')));
-    expect(face.right, 800 - EdgeChip.faceInset);                      // the face on the edge side, the pill inboard
-    expect(face.left, greaterThan(t.getRect(find.byKey(const Key('edge-chip-pill'))).right));
+    expect(face.center.dx, 800 - EdgeChip.faceCentreIn);              // tucked into the right edge
+    final EdgeFlarePainter flare = t.widget<CustomPaint>(find.byKey(const Key('edge-chip-flare'))).painter as EdgeFlarePainter;
+    expect(flare.flare(const Size(EdgeChip.width, EdgeChip.height)).getBounds().right, closeTo(EdgeChip.width, 0.5));   // mirrored: widest at the right edge
     expect(r.center.dy, lessThan(640));
     expect(r.top, greaterThanOrEqualTo(80 + EdgeChip.margin));
   });
