@@ -43,11 +43,22 @@ void main() {
     expect(freshPrimary(bo, now), isNull);
   });
 
-  test('a null charging on the primary keeps the member\'s own value (Charlie: the app device sends none, the relay does)', () {
+  test('a null charging on the primary takes the freshest other device\'s word, else the member\'s (Charlie: the app device never says, the relay does)', () {
     final Map<String, dynamic> j = boJson(phoneTs: now.subtract(const Duration(minutes: 1)), phoneCharging: null)..['charging'] = true;
     final Member bo = memberFromJson(j, now: now);
-    expect(bo.charging, isTrue);
+    expect(bo.charging, isTrue);                                    // the member row said so (the tablet entry has no charging)
     expect(bo.batteryPercent, 71);
+    // Charlie live: primary = the app device (no charging, posted last); the relay said charging 5 min ago
+    final Map<String, dynamic> c = <String, dynamic>{
+      'id': 'c', 'name': 'Charlie', 'lat': 33.9, 'lon': -83.8, 'ts': iso(now), 'battery_pct': 100, 'primary_device_id': 'app',
+      'devices': <Map<String, dynamic>>[
+        <String, dynamic>{'id': 'app', 'is_primary': true, 'ts': iso(now), 'lat': 33.9, 'lon': -83.8, 'battery_pct': 100},
+        <String, dynamic>{'id': 'relay', 'is_primary': false, 'ts': iso(now.subtract(const Duration(minutes: 5))), 'lat': 33.9, 'lon': -83.8, 'battery_pct': 100, 'charging': true},
+      ],
+    };
+    expect(memberFromJson(c, now: now).charging, isTrue);           // the relay's bolt survives
+    c['devices'][1]['ts'] = iso(now.subtract(const Duration(minutes: 30)));
+    expect(memberFromJson(c, now: now).charging, isNull);           // a stale relay does not
   });
 
   test('a location frame from the tablet while the phone is fresh moves nothing but the tablet\'s entry; a frame from the phone moves the face', () {

@@ -29,16 +29,29 @@ bool ignoreFrameFrom(Member m, String? deviceId, DateTime now) {
 }
 
 /// The member as drawn: the fresh primary's position / battery / charging
-/// laid over the member (a null on the primary keeps the member's own value -
-/// Charlie's app device sends no `charging`, his OwnTracks relay does).
+/// laid over the member. A null `charging` on the primary (Charlie's app
+/// device never says; his OwnTracks relay does) takes the freshest other
+/// device's word within [kPrimaryFresh], else the member's own value.
 Member applyPrimaryDevice(Member m, DateTime now) {
   final MemberDevice? p = freshPrimary(m, now);
   if (p == null) return m;
   return m.copyWith(
     position: p.position ?? m.position,
     batteryPercent: p.batteryPct?.round() ?? m.batteryPercent,
-    charging: p.charging ?? m.charging,
+    charging: p.charging ?? freshChargingWord(m, now, except: p.id) ?? m.charging,
   );
+}
+
+/// The freshest device (not [except]) that said charging or not within
+/// [kPrimaryFresh]; null when none did.
+bool? freshChargingWord(Member m, DateTime now, {String? except}) {
+  MemberDevice? best;
+  for (final MemberDevice d in m.devices) {
+    if (d.id == except || d.charging == null || d.ts == null) continue;
+    if (now.difference(d.ts!) > kPrimaryFresh) continue;
+    if (best == null || d.ts!.isAfter(best.ts!)) best = d;
+  }
+  return best?.charging;
 }
 
 /// [devices] with the entry for [deviceId] updated from a location frame.
