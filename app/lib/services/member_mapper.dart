@@ -2,6 +2,7 @@ import 'package:latlong2/latlong.dart';
 
 import '../models/member.dart';
 import '../models/member_place.dart';
+import '../models/road_snap.dart';
 import '../models/place.dart';
 
 export '../models/member.dart' show kStaleAfter;
@@ -68,6 +69,7 @@ Member memberFromJson(Map<String, dynamic> json) {
     charging: charging,
     place: MemberPlace.fromJson(json['place']),
     headingDeg: heading?.toDouble(),
+    road: RoadSnap.fromJson(json['road']),
   );
 }
 
@@ -162,6 +164,8 @@ Member memberFromLocationUpdate(Member existing, Map<String, dynamic> json) {
     charging: charging ?? existing.charging,
     place: MemberPlace.fromJson(json['place']) ?? existing.place,
     headingDeg: heading?.toDouble() ?? existing.headingDeg,
+    road: RoadSnap.fromJson(json['road']),   // bray 5b: every location frame says whether the fix is on a road (absent = raw)
+    clearRoad: json['road'] == null,
   );
 }
 

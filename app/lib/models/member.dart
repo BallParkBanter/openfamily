@@ -3,6 +3,7 @@ import 'package:latlong2/latlong.dart';
 
 import '../theme/app_theme.dart';
 import 'member_place.dart';
+import 'road_snap.dart';
 
 /// Speed (mph) at or above which a driving member is shown as a
 /// "race car with flames".
@@ -117,6 +118,7 @@ class Member {
     this.charging,
     this.place,
     this.headingDeg,
+    this.road,
   });
 
   final String id;
@@ -197,6 +199,10 @@ class Member {
   /// stored in `locations.heading_deg`). Null when the backend did not say.
   /// Drives the Life360 direction cone on the map marker; see [hasHeadingCone].
   final double? headingDeg;
+
+  /// bray 5b: the newest fix snapped to the road + the road ahead (RoadSnap);
+  /// null when not driving / not on a road / the matcher had no answer.
+  final RoadSnap? road;
 
   /// Whether this member is driving fast enough to show as "speeding".
   bool get isSpeeding =>
@@ -282,6 +288,8 @@ class Member {
     bool? charging,
     MemberPlace? place,
     double? headingDeg,
+    RoadSnap? road,
+    bool clearRoad = false,   // bray 5b: a location frame with no `road` means raw - drop the old snap
   }) {
     return Member(
       id: id,
@@ -304,6 +312,7 @@ class Member {
       charging: charging ?? this.charging,
       place: place ?? this.place,
       headingDeg: headingDeg ?? this.headingDeg,
+      road: clearRoad ? null : (road ?? this.road),
     );
   }
 
