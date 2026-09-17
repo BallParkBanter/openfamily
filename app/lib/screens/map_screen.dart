@@ -17,7 +17,9 @@ import '../services/battery_optimization_service.dart';
 import '../services/map_visibility_store.dart';
 import '../services/tile_cache.dart';
 import '../utils/stillness.dart';
+import '../utils/view_history.dart';
 import '../utils/visibility_change.dart';
+import '../widgets/back_pill.dart';
 import '../services/contact_link_store.dart';
 import '../services/device_place_resolver.dart';
 import '../services/device_service.dart';
@@ -140,6 +142,14 @@ class _MapScreenState extends State<MapScreen>
 
   /// Whether the map has finished its first layout (so camera moves are safe).
   bool _mapReady = false;
+
+  /// bray 2026-09-17 (Bo 08:40): the last view is saved on every change and
+  /// restored at launch; explicit view changes push the view they leave on
+  /// the Back stack (utils/view_history.dart).
+  final ViewHistory _history = ViewHistory();
+  MapView? _restoredView;
+  bool _launchRestored = false;   // a saved view was put back at launch: the first-welcome re-fit must not undo it
+  Timer? _viewSaveTimer;
 
   /// bray 2026-09-17: phantom speed at rest reads 0 (utils/stillness.dart).
   final StillnessTracker _stillness = StillnessTracker();
@@ -303,6 +313,10 @@ class _MapScreenState extends State<MapScreen>
     unawaited(_refreshServerFeatures());
     unawaited(ContactLinkStore.instance.load());   // bray: device-contact links for the cards' Call/Text
     unawaited(MapVisibilityStore.instance.load());   // bray: who is hidden on the map (this device only)
+    unawaited(ViewStateStore.instance.load().then((MapView? v) {
+      _restoredView = v;
+      if (v != null && _mapReady && mounted) _restoreView(v);
+    }));
     MapVisibilityStore.instance.addListener(_onMapVisibilityChanged);
     // One-time Android battery-optimization guidance (keeps background
     // updates alive when the app is closed). No-op elsewhere. Runs after the
@@ -499,6 +513,7 @@ class _MapScreenState extends State<MapScreen>
 
   /// A tap on a face or a card. Same person again = back (J:239-241).
   void _focusMember(Member member) {
+    _pushView();
     final FocusChange change = _focus.tap(member.id);
     if (change == FocusChange.cleared) {
       _leaveFocus();
@@ -623,7 +638,15 @@ class _MapScreenState extends State<MapScreen>
 
   void _onUserId(String userId) {
     if (!mounted) return;
+    final bool first = _userId == null;
     setState(() => _userId = userId);
+    // The viewer's id arrives with the WS welcome frame, AFTER _load()'s first
+    // fit - which therefore framed everyone (no viewer = nobody near). Once
+    // the viewer is known, and nothing has been touched or restored, fit the
+    // near cluster the way every later fit does (bray 2026-09-17).
+    if (first && _mapReady && !_launchRestored && _lastGesture == null && _focus.focusedId == null && _followId == null && !_history.canGoBack) {
+      _fitToMembers();
+    }
   }
 
   /// Retries the initial family load automatically when the network returns
@@ -660,7 +683,15 @@ class _MapScreenState extends State<MapScreen>
         _hasFamily = true;
         _loading = false;
       });
-      if (_mapReady) _fitToMembers();
+      if (_mapReady) {
+        final MapView? rv = _restoredView;
+        if (rv != null && (rv.focusedId != null || rv.followId != null)) {
+          _restoreView(rv);   // the person is known now: focus / follow them again
+        } else if (rv == null) {
+          _fitToMembers();
+        }
+      }
+      _restoredView = null;
       await _familyService.start();
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -783,6 +814,70 @@ class _MapScreenState extends State<MapScreen>
     }
   }
 
+  /// The view as it is right now.
+  MapView _currentView() => MapView(
+      center: _mapReady ? _mapController.camera.center : const LatLng(37.7749, -122.4194),
+      zoom: _mapReady ? _mapController.camera.zoom : 13,
+      satellite: _satellite,
+      focusedId: _focus.focusedId,
+      followId: _followId);
+
+  /// Saves the current view (debounced: a pan fires this every frame).
+  void _saveView() {
+    _viewSaveTimer?.cancel();
+    _viewSaveTimer = Timer(const Duration(milliseconds: 400), () {
+      if (mounted && _mapReady) unawaited(ViewStateStore.instance.save(_currentView()));
+    });
+  }
+
+  /// Before an explicit view change: remember the view being left.
+  void _pushView() {
+    if (!_mapReady) return;
+    _history.push(_currentView());
+  }
+
+  /// Puts the map on [v] (camera, satellite, focus/follow) without touching
+  /// the Back stack.
+  void _restoreView(MapView v) {
+    if (!_mapReady) return;
+    _idleTimer?.cancel();
+    setState(() {
+      _satellite = v.satellite;
+      _focus.clear();
+      _followId = null;
+      _followPausedUntil = null;
+      _sheetLevel = _focus.levelFor(_sheetLevel);
+    });
+    final String? want = v.focusedId ?? v.followId;
+    Member? who;
+    if (want != null) {
+      for (final Member m in _members) {
+        if (m.id == want) who = m;
+      }
+    }
+    if (who != null && v.focusedId != null) {
+      _focus.tap(who.id);
+      _touch();
+      setState(() => _sheetLevel = _focus.levelFor(_sheetLevel));
+    }
+    if (who != null) {
+      setState(() {
+        _followId = who!.id;
+        _followPausedUntil = null;
+      });
+    }
+    _lastGesture = DateTime.now();   // the auto-fit waits its 12 s, as after a gesture
+    _launchRestored = true;
+    _mapController.move(v.center, v.zoom);
+    _saveView();
+  }
+
+  /// The Back pill: walk the stack one step.
+  void _goBack() {
+    final MapView? v = _history.pop();
+    if (v != null) _restoreView(v);
+  }
+
   /// The map's list: everyone not hidden on this device. Counts, cards and
   /// the People screen keep the full list.
   List<Member> _onMap(List<Member> members) => MapVisibilityStore.instance.shown(members);
@@ -795,6 +890,7 @@ class _MapScreenState extends State<MapScreen>
   @override
   void dispose() {
     MapVisibilityStore.instance.removeListener(_onMapVisibilityChanged);
+    _viewSaveTimer?.cancel();
     _idleTimer?.cancel();
     _driveTick?.cancel();
     _glideTicker?.dispose();
@@ -927,6 +1023,7 @@ class _MapScreenState extends State<MapScreen>
   /// (which always carries the freshest GPS fix); falls back to the live device
   /// position when the caller has no backend location yet.
   Future<void> _centerOnUser() async {
+    _pushView();
     // Piece 3: one focus/follow state - locating "You" while focused on
     // someone else would follow a hidden pin, so leave focus first.
     if (_focus.focusedId != null) _leaveFocus();
@@ -947,6 +1044,7 @@ class _MapScreenState extends State<MapScreen>
   /// Called on every camera change: remembers the gesture for the auto-fit
   /// clock, pauses following, and touches the idle timer.
   void _onCameraChanged(MapCamera camera, bool hasGesture) {
+    _saveView();
     if (hasGesture) _lastGesture = DateTime.now();
     if (hasGesture) _pauseFollowing();
     if (hasGesture) _touch();
@@ -1186,7 +1284,21 @@ class _MapScreenState extends State<MapScreen>
   }
 
   void _toggleSatellite() {
+    _pushView();
     setState(() => _satellite = !_satellite);
+    _saveView();
+  }
+
+  /// The "fit everyone" button: the overview fit on demand (the existing
+  /// behaviour, now also a button beside center-on-me - Bo 2026-09-17 08:40).
+  void _fitEveryone() {
+    _pushView();
+    if (_focus.focusedId != null) {
+      _leaveFocus();   // its fit
+      return;
+    }
+    _stopFollowing();
+    _animatedFit();
   }
 
   @override
@@ -1234,7 +1346,12 @@ class _MapScreenState extends State<MapScreen>
                 ),
                 onMapReady: () {
                   _mapReady = true;
-                  _fitToMembers();
+                  // Bo 2026-09-17 08:40: the last view comes back instead of the default fit.
+                  if (_restoredView != null) {
+                    _restoreView(_restoredView!);
+                  } else {
+                    _fitToMembers();
+                  }
                 },
                 onPositionChanged: (camera, hasGesture) =>
                     _onCameraChanged(camera, hasGesture),
@@ -1381,9 +1498,30 @@ class _MapScreenState extends State<MapScreen>
                       onTap: _centerOnUser,
                       active: _followId != null && _followId == _userId,
                     ),
+                    _FitEveryoneButton(onTap: _fitEveryone),
                   ],
                 ),
               ),
+            ),
+
+            // bray 2026-09-17: the Back pill - in the Following pill's place, or
+            // under it while following; only while there is a view to go back to.
+            ListenableBuilder(
+              listenable: _history,
+              builder: (BuildContext context, _) => !_history.canGoBack
+                  ? const SizedBox.shrink()
+                  : Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      child: SafeArea(
+                        bottom: false,
+                        child: Padding(
+                          padding: EdgeInsets.only(top: _followedMember != null ? 8 + 44 + 8 : 8),
+                          child: Center(child: BackPill(onBack: _goBack, depth: _history.depth)),
+                        ),
+                      ),
+                    ),
             ),
 
             // Top-centre: who the camera is following, with a way to open their
@@ -1645,6 +1783,36 @@ class _LocateButton extends StatelessWidget {
                   ? BrandTheme.of(context).sheet
                   : BrandTheme.of(context).accentInk,
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A small circular "fit everyone" button under center-on-me: the overview
+/// fit on demand (bray 2026-09-17).
+class _FitEveryoneButton extends StatelessWidget {
+  const _FitEveryoneButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Fit everyone',
+      child: Material(
+        color: BrandTheme.of(context).sheet,
+        shape: const CircleBorder(),
+        elevation: 3,
+        child: InkWell(
+          key: const Key('fit-everyone'),
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Icon(Icons.zoom_out_map, size: 22, color: BrandTheme.of(context).accentInk),
           ),
         ),
       ),
