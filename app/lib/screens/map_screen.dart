@@ -1497,6 +1497,16 @@ class _MapScreenState extends State<MapScreen>
 
             const Positioned(top: 0, left: 0, right: 0, child: FamilyHeaderScrim()),   // S:37
 
+            // bray: a tap anywhere outside the open family panel closes it
+            // drawn under the chrome (the panel lives in it) and over the map.
+            if (_familyOpen)
+              Positioned.fill(
+                child: GestureDetector(
+                  key: const Key('family-panel-barrier'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _closeFamily,
+                ),
+              ),
             // Top chrome, one column (bray 2026-09-16): family chip + summary
             // chip on the first row; the location-off banner (when the user
             // skipped location during onboarding) full width under it; the
@@ -1509,26 +1519,47 @@ class _MapScreenState extends State<MapScreen>
               child: SafeArea(
                 bottom: false,
                 child: MapTopChrome(
+                  // Bo 2026-09-17 17:20: the Back pill takes the top-left slot (only while there is somewhere to go back to)
+                  leading: _history.canGoBack ? BackPill(onBack: _goBack, depth: _history.depth) : null,
                   // OPEN: S:38 .brand 21px 800 - theirs shows the family name in a chip; left as is, remove nothing
-                  // bray: a long press on the family chip opens the hidden
-                  // card gallery (ten card designs for Bo to pick from).
-                  leading: Align(
-                    alignment: Alignment.centerLeft,
-                    child: GestureDetector(
-                      key: const Key('family-chip-hold'),
-                      onLongPress: _openCardGallery,
-                      child: _hasFamily
-                          // bray: the accordion chip (chevron down/up; the panel is drawn below, over the map)
-                          ? FamilyChip(label: _familyName, expanded: _familyOpen, onTap: _toggleFamilyOpen)
-                          : CircleSwitcher(
-                              circles: [_familyName],
-                              selectedIndex: 0,
-                              onSelected: (_) {},
-                              onJoinCircle: _openJoinCircle,
-                              alignment: Alignment.centerLeft,
-                            ),
+                  // bray: the family pill, ALWAYS top-centre; a long press opens the hidden card gallery.
+                  center: GestureDetector(
+                    key: const Key('family-chip-hold'),
+                    onLongPress: _openCardGallery,
+                    child: _hasFamily
+                        ? FamilyChip(label: _familyName, expanded: _familyOpen, onTap: _toggleFamilyOpen)
+                        : CircleSwitcher(
+                            circles: [_familyName],
+                            selectedIndex: 0,
+                            onSelected: (_) {},
+                            onJoinCircle: _openJoinCircle,
+                            alignment: Alignment.center,
+                          ),
+                  ),
+                  // bray: the accordion panel straight down from the pill, centred; the open
+                  // panel pushes the Following pill down.
+                  centerPanel: ListenableBuilder(
+                    listenable: MapVisibilityStore.instance,
+                    builder: (BuildContext context, _) => FamilyAccordionPanel(
+                      expanded: _familyOpen,
+                      members: members,
+                      labelFor: _labelFor,
+                      hiddenIds: MapVisibilityStore.instance.hiddenIds,
+                      onToggle: (String id, bool shown) => MapVisibilityStore.instance.setHidden(id, !shown),
                     ),
                   ),
+                  // Bo 17:20: "Following <name> ✕" sits directly under the family pill, centred, in every state.
+                  under: _followedMember == null
+                      ? null
+                      : FollowingPill(
+                          label: _labelFor(_followedMember!),
+                          accent: BrayTokens.accentFor(_followedMember!),
+                          paused: _followPaused,
+                          onProfile: () => _openMemberDetails(_followedMember!),
+                          // Piece 3: one focus/follow state - letting go of the
+                          // person also leaves focus (others back on the map).
+                          onStop: _focus.focusedId != null ? _leaveFocus : _stopFollowing,
+                        ),
                   // The "N home · M out" summary - a summary only (Round 4:
                   // no Everyone view); long press = the marker gallery.
                   // Always shown - "Everyone" when there is no count yet.
@@ -1560,54 +1591,6 @@ class _MapScreenState extends State<MapScreen>
                 ),
               ),
             ),
-
-            // bray 2026-09-17: the Back pill - in the Following pill's place, or
-            // under it while following; only while there is a view to go back to.
-            ListenableBuilder(
-              listenable: _history,
-              builder: (BuildContext context, _) => !_history.canGoBack
-                  ? const SizedBox.shrink()
-                  : Positioned(
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      child: SafeArea(
-                        bottom: false,
-                        child: Padding(
-                          padding: EdgeInsets.only(top: _followedMember != null ? 8 + 44 + 8 : 8),
-                          child: Center(child: BackPill(onBack: _goBack, depth: _history.depth)),
-                        ),
-                      ),
-                    ),
-            ),
-
-            // Top-centre: who the camera is following, with a way to open their
-            // profile (which a bubble tap used to do) and a way to let go.
-            if (_followedMember != null)
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: SafeArea(
-                  bottom: false,
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Center(
-                      child: FollowingPill(
-                        label: _labelFor(_followedMember!),
-                        accent: BrayTokens.accentFor(_followedMember!),
-                        paused: _followPaused,
-                        onProfile: () => _openMemberDetails(_followedMember!),
-                        // Piece 3: one focus/follow state - letting go of the
-                        // person also leaves focus (others back on the map).
-                        onStop: _focus.focusedId != null
-                            ? _leaveFocus
-                            : _stopFollowing,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
 
             // The people sheet (piece 3) sits on the fixed bottom bar; their `+`
             // FAB now rides the sheet's top-right edge so the sheet never covers it.
@@ -1673,34 +1656,6 @@ class _MapScreenState extends State<MapScreen>
                 ),
               ),
             ),
-
-            // bray: a tap anywhere outside the open family panel closes it
-            // drawn last, so the tap lands here and nowhere else.
-            if (_familyOpen)
-              Positioned.fill(
-                child: GestureDetector(
-                  key: const Key('family-panel-barrier'),
-                  behavior: HitTestBehavior.opaque,
-                  onTap: _closeFamily,
-                ),
-              ),
-            // bray: the family accordion panel, straight down from the chip,
-            // over the map; every family member with a map show/hide switch.
-            Positioned(
-              top: media.padding.top + MapTopChrome.gap + FamilyChip.height + 6,
-              left: MapTopChrome.edge,
-              child: ListenableBuilder(
-                listenable: MapVisibilityStore.instance,
-                builder: (BuildContext context, _) => FamilyAccordionPanel(
-                  expanded: _familyOpen,
-                  members: members,
-                  labelFor: _labelFor,
-                  hiddenIds: MapVisibilityStore.instance.hiddenIds,
-                  onToggle: (String id, bool shown) => MapVisibilityStore.instance.setHidden(id, !shown),
-                ),
-              ),
-            ),
-
           ],
         ),
       ),

@@ -1,28 +1,35 @@
 // app/lib/widgets/map_top_chrome.dart
 //
-// bray (2026-09-16, Bo's drive notes #3 bug): the top of the map as ONE
-// column - the family chip and the summary chip on the first row, any notice
-// (location-off banner, a status message) full-width under that row, and the
-// circle buttons (layer toggle, center-on-me) under whatever is showing.
-//
-// The old layout drew the notice in one Positioned and the buttons in
-// another, painted later, so the buttons sat ON the banner and hid its
-// action. Here a notice can never be under a button: the buttons live below
-// it in the same column and slide down as it appears (AnimatedSize), and
-// slide back up as it goes.
+// bray (2026-09-16, Bo's drive notes #3 bug; 2026-09-17 17:20 layout): the
+// top of the map as ONE column.
+//   top row : [leading = Back pill, left]  [center = "Bray Family ▾", screen
+//             centre]  [summary = "N home · M out", right]
+//   notice  : any banner / status message, full width - never under a button
+//   below   : the accordion panel straight down from the family pill,
+//             centred, and the "Following <name> ✕" pill under it (the
+//             open panel pushes the pill down); the circle buttons hang under
+//             the summary chip on the right, unmoved by the centre column.
+// A notice can never be under a button: the buttons live below it in the
+// same column and slide down as it appears (AnimatedSize).
 import 'package:flutter/material.dart';
 
 class MapTopChrome extends StatelessWidget {
   const MapTopChrome({
     super.key,
-    required this.leading,
+    this.leading,
+    required this.center,
     required this.summary,
     required this.controls,
     this.notice,
+    this.centerPanel,
+    this.under,
   });
 
-  /// Top-left: the family chip (accordion later).
-  final Widget leading;
+  /// Top-left: the Back pill (null = nothing to go back to).
+  final Widget? leading;
+
+  /// Top-centre: the family pill.
+  final Widget center;
 
   /// Top-right, same row: the "N home · M out" chip.
   final Widget summary;
@@ -30,7 +37,13 @@ class MapTopChrome extends StatelessWidget {
   /// Full width under the top row; null when nothing needs saying.
   final Widget? notice;
 
-  /// The circle buttons, top to bottom, 8 apart, right-aligned.
+  /// Straight down from the family pill, centred (the accordion; sizes itself to 0 when closed).
+  final Widget? centerPanel;
+
+  /// Under the panel, centred: the Following pill (null when not following).
+  final Widget? under;
+
+  /// The circle buttons, top to bottom, 8 apart, right-aligned under the summary chip.
   final List<Widget> controls;
 
   static const Duration noticeTransition = Duration(milliseconds: 220);
@@ -43,19 +56,13 @@ class MapTopChrome extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        // The top row: a Stack so the centre is the SCREEN centre whatever the sides measure.
+        Stack(
           children: [
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.only(top: gap, left: edge, right: gap),
-                child: leading,
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(top: gap, right: edge),
-              child: summary,
-            ),
+            Align(alignment: Alignment.topCenter, child: Padding(padding: const EdgeInsets.only(top: gap), child: center)),
+            if (leading != null)
+              Positioned(left: edge, top: gap, child: leading!),
+            Positioned(right: edge, top: gap, child: summary),
           ],
         ),
         AnimatedSize(
@@ -70,22 +77,40 @@ class MapTopChrome extends StatelessWidget {
                   child: notice,
                 ),
         ),
-        Align(
-          alignment: Alignment.topRight,
-          child: Padding(
-            padding: const EdgeInsets.only(top: gap, right: edge),
-            child: Column(
-              key: const Key('top-controls'),
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                for (int i = 0; i < controls.length; i++) ...[
-                  if (i > 0) const SizedBox(height: gap),
-                  controls[i],
+        // Below the row: the centre column (panel, then the Following pill)
+        // and the right column (the circle buttons) side by side in a Stack,
+        // each anchored to the top - the buttons stay put when the centre grows.
+        Stack(
+          children: [
+            Align(
+              alignment: Alignment.topCenter,
+              child: Column(
+                key: const Key('top-center-column'),
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (centerPanel != null) Padding(padding: const EdgeInsets.only(top: 6), child: centerPanel),
+                  if (under != null) Padding(padding: const EdgeInsets.only(top: gap), child: under),
                 ],
-              ],
+              ),
             ),
-          ),
+            Align(
+              alignment: Alignment.topRight,
+              child: Padding(
+                padding: const EdgeInsets.only(top: gap, right: edge),
+                child: Column(
+                  key: const Key('top-controls'),
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    for (int i = 0; i < controls.length; i++) ...[
+                      if (i > 0) const SizedBox(height: gap),
+                      controls[i],
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ],
     );
