@@ -73,6 +73,25 @@ class TilePrefetcher {
   final DateTime Function() _clock;
 
   int _inFlight = 0;
+  int _consecutiveFailures = 0;
+  DateTime? _pausedUntil;
+  static const int failuresToPause = 5;
+  static const Duration pauseFor = Duration(seconds: 60);
+
+  /// Circuit breaker (live 16:03: a burst of timeouts must not let the
+  /// prefetcher starve the visible tiles): after [failuresToPause] failures
+  /// in a row the prefetcher stops for [pauseFor]; a success resets it.
+  void noteFailure() {
+    if (_pausedUntil != null && !paused) _consecutiveFailures = 0;   // the pause has served: count afresh
+    _consecutiveFailures++;
+    if (_consecutiveFailures >= failuresToPause) {
+      _pausedUntil = _clock().add(pauseFor);
+      _consecutiveFailures = 0;
+    }
+  }
+
+  void noteSuccess() => _consecutiveFailures = 0;
+  bool get paused => _pausedUntil != null && _clock().isBefore(_pausedUntil!);
   final List<DateTime> _sent = <DateTime>[];
   final Set<String> _done = <String>{};
   final List<String> _queue = <String>[];
@@ -94,7 +113,7 @@ class TilePrefetcher {
   }
 
   Future<void> _pump() async {
-    while (_queue.isNotEmpty && _inFlight < maxInFlight && sentLastMinute < perMinute) {
+    while (!paused && _queue.isNotEmpty && _inFlight < maxInFlight && sentLastMinute < perMinute) {
       final String url = _queue.removeAt(0);
       if (_done.contains(url)) continue;
       _done.add(url);
@@ -115,8 +134,9 @@ class TilePrefetcher {
       } else {
         await TileCache.instance.dio().get<List<int>>(url, options: Options(responseType: ResponseType.bytes));
       }
+      noteSuccess();
     } catch (_) {
-      // a missed tile is fetched by the map itself when it gets there
+      noteFailure();   // a missed tile is fetched by the map itself when it gets there
     }
   }
 
