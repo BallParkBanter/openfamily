@@ -17,6 +17,7 @@ import '../services/battery_optimization_service.dart';
 import '../services/map_visibility_store.dart';
 import '../services/tile_cache.dart';
 import '../utils/stillness.dart';
+import '../utils/visibility_change.dart';
 import '../services/contact_link_store.dart';
 import '../services/device_place_resolver.dart';
 import '../services/device_service.dart';
@@ -522,12 +523,12 @@ class _MapScreenState extends State<MapScreen>
   /// Back to the map alone: map tap, tap-again, swipe the focus sheet down,
   /// the system back button, or 5 idle minutes. Bo, 2026-09-14: "back" is
   /// the map with no sheet (FocusRules.levelFor lands on hidden).
-  void _leaveFocus() {
+  void _leaveFocus({bool refit = true}) {
     _idleTimer?.cancel();
     _focus.clear();
     setState(() => _sheetLevel = _focus.levelFor(_sheetLevel));
     _stopFollowing();
-    _animatedFit();
+    if (refit) _animatedFit();   // an accordion toggle leaves the camera where it is
   }
 
   /// Tap on a card: the focused person's big card opens their profile (the
@@ -766,10 +767,15 @@ class _MapScreenState extends State<MapScreen>
   /// A person hidden on the map can't stay focused or followed there.
   void _onMapVisibilityChanged() {
     if (!mounted) return;
-    final MapVisibilityStore v = MapVisibilityStore.instance;
-    if (_focus.focusedId != null && v.isHidden(_focus.focusedId!)) {
-      _leaveFocus();
-    } else if (_followId != null && v.isHidden(_followId!)) {
+    // Bo 2026-09-17 08:40: a toggle never moves the camera - no fit, no pan
+    // (utils/visibility_change.dart); the auto-fit clock restarts as if the
+    // toggle were a gesture, so the overview does not re-frame either.
+    final VisibilityOutcome o = onVisibilityChanged(
+        isHidden: MapVisibilityStore.instance.isHidden, focusedId: _focus.focusedId, followId: _followId);
+    _lastGesture = DateTime.now();
+    if (o.clearFocus) {
+      _leaveFocus(refit: false);
+    } else if (o.stopFollowing) {
       _stopFollowing();
       setState(() {});
     } else {

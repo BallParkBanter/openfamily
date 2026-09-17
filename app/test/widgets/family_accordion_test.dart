@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:openfamily/models/member.dart';
 import 'package:openfamily/services/map_visibility_store.dart';
+import 'package:openfamily/utils/visibility_change.dart';
 import 'package:openfamily/widgets/family_accordion.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -91,5 +92,36 @@ void main() {
     expect(again.hiddenIds, {'h'});
     await again.setHidden('h', false);
     expect((await SharedPreferences.getInstance()).getStringList(MapVisibilityStore.key), <String>[]);
+  });
+
+  testWidgets('a toggle never moves the camera: hiding/showing anyone is marker-only; hiding the focused person clears focus, hiding the followed one lets go - still no camera move', (t) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final MapVisibilityStore store = MapVisibilityStore();
+    await store.load();
+    final List<VisibilityOutcome> outcomes = <VisibilityOutcome>[];
+    String? focused = 'c', followed = 'c';
+    store.addListener(() => outcomes.add(onVisibilityChanged(isHidden: store.isHidden, focusedId: focused, followId: followed)));
+    await t.pumpWidget(_Host(hidden: const {}, onToggle: (id, shown) => store.setHidden(id, !shown)));
+    await t.tap(find.byKey(const Key('family-chip')));
+    await t.pumpAndSettle();
+    await t.tap(find.byKey(const Key('family-switch-h')));      // hide Heidi (not focused): marker-only
+    await t.pump();
+    expect(outcomes.last.moveCamera, isFalse);
+    expect(outcomes.last.clearFocus, isFalse);
+    expect(outcomes.last.stopFollowing, isFalse);
+    expect(store.shown(family).map((m) => m.id), ['b', 'c']);
+    await t.tap(find.byKey(const Key('family-switch-c')));      // hide Charlie, the focused one: focus clears, camera stays
+    await t.pump();
+    expect(outcomes.last.clearFocus, isTrue);
+    expect(outcomes.last.moveCamera, isFalse);
+    focused = null;                                             // focus is gone; still following him
+    await store.setHidden('c', false);
+    await store.setHidden('c', true);
+    expect(outcomes.last.clearFocus, isFalse);
+    expect(outcomes.last.stopFollowing, isTrue);
+    expect(outcomes.last.moveCamera, isFalse);
+    followed = null;                                            // the screen let go
+    await store.setHidden('h', false);                          // showing someone back: marker-only
+    expect(outcomes.last.clearFocus || outcomes.last.stopFollowing || outcomes.last.moveCamera, isFalse);
   });
 }
