@@ -17,6 +17,7 @@ import '../services/battery_optimization_service.dart';
 import '../services/map_visibility_store.dart';
 import '../services/self_fix.dart';
 import '../services/tile_cache.dart';
+import '../utils/cadence.dart';
 import '../utils/stillness.dart';
 import '../utils/view_history.dart';
 import '../utils/visibility_change.dart';
@@ -155,6 +156,9 @@ class _MapScreenState extends State<MapScreen>
 
   /// bray 2026-09-17: phantom speed at rest reads 0 (utils/stillness.dart).
   final StillnessTracker _stillness = StillnessTracker();
+
+  /// bray 2026-09-17: a phone that stops reporting goes stale after max(2 min, 3 x its cadence) (utils/cadence.dart).
+  final CadenceTracker _cadence = CadenceTracker();
 
   /// bray: the cached tile provider, one per screen (its Dio client lives with it).
   final TileProvider _tiles = TileCache.instance.provider();
@@ -332,7 +336,7 @@ class _MapScreenState extends State<MapScreen>
   void _onMembersChanged(List<Member> rawMembers) {
     if (!mounted) return;
     final DateTime now = DateTime.now();
-    final List<Member> members = _stillness.apply(withSelfLive(rawMembers, _userId, selfFix.value, now), now);   // bray: the viewer's own live speed first; a member that has not moved is at 0 mph, whatever the frame said
+    final List<Member> members = _cadence.apply(_stillness.apply(withSelfLive(rawMembers, _userId, selfFix.value, now), now));   // bray: the viewer's own live speed first; a member that has not moved is at 0 mph; a silent phone goes stale by its cadence
     _drives.updateAll(members, now: now);
     _groups.observe(members, inDriveFor: _inDriveFor, now: now);
     for (final Member m in members) {
