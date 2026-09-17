@@ -119,3 +119,23 @@ func TestAheadPointExtrapolatesTenSecondsCapped(t *testing.T) {
 		t.Fatalf("capped ahead distance %.1f lon %f", d, b.Lon)
 	}
 }
+
+func TestOffRoadCodesAndRecentFixes(t *testing.T) {
+	for _, c := range []int{442, 443, 444} {
+		if !offRoad(c) {
+			t.Fatalf("%d is a no-road answer", c)
+		}
+	}
+	if offRoad(400) || offRoad(500) || offRoad(0) {
+		t.Fatal("other codes are errors")
+	}
+	t0 := time.Date(2026, 9, 17, 13, 42, 25, 0, time.UTC)
+	fixes := []TracePoint{{At: t0.Add(-9 * time.Minute)}, {At: t0.Add(-7 * time.Minute)}, {At: t0.Add(-111 * time.Second)}, {At: t0.Add(-56 * time.Second)}, {At: t0}}
+	got := recentFixes(fixes)
+	if len(got) != 3 || !got[0].At.Equal(t0.Add(-111*time.Second)) {
+		t.Fatalf("recent = %v", got)
+	}
+	if len(recentFixes(fixes[:1])) != 1 {
+		t.Fatal("a single fix stays a single fix")
+	}
+}
