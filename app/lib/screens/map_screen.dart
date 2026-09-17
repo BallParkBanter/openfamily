@@ -1643,8 +1643,7 @@ class _MapScreenState extends State<MapScreen>
               bottom: controlBarReserved + fabLiftFor(_currentSheetHeight(), clear: fabClearOfColumn(media.size.width)),
               child: FloatingActionButton.small(
                 onPressed: _showAddActions,
-                tooltip: 'Add — Check In / Help Alert / Invite',
-                child: const Icon(Icons.add),
+                child: const Icon(semanticLabel: 'Add — Check In / Help Alert / Invite', Icons.add),
               ),
             ),
 
@@ -1781,8 +1780,9 @@ class _LayerToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: isSatellite ? 'Switch to standard map' : 'Switch to satellite',
+    return Semantics(
+      label: isSatellite ? 'Switch to standard map' : 'Switch to satellite',
+      button: true,
       child: Material(
         color: BrandTheme.of(context).sheet,
         shape: const CircleBorder(),
@@ -1816,8 +1816,9 @@ class _LocateButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: active ? 'Following you' : 'Follow my location',
+    return Semantics(
+      label: active ? 'Following you' : 'Follow my location',
+      button: true,
       child: Material(
         color: active
             ? BrandTheme.of(context).accentInk

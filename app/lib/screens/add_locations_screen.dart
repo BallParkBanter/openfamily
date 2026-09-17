@@ -440,8 +440,7 @@ class _PlaceCard extends StatelessWidget {
                 const SizedBox(width: 4),
                 // Bell toggle: arrive/leave notifications for this place.
                 IconButton(
-                  tooltip: p.alertsOn ? 'Alerts on' : 'Alerts off',
-                  icon: Icon(
+                  icon: Icon(semanticLabel: p.alertsOn ? 'Alerts on' : 'Alerts off', 
                     p.alertsOn
                         ? Icons.notifications_active
                         : Icons.notifications_off,
@@ -522,8 +521,7 @@ class _CustomPlaceCard extends StatelessWidget {
               const Icon(Icons.check_circle, color: AppColors.statusGreen),
               const SizedBox(width: 4),
               IconButton(
-                tooltip: place.alertsOn ? 'Alerts on' : 'Alerts off',
-                icon: Icon(
+                icon: Icon(semanticLabel: place.alertsOn ? 'Alerts on' : 'Alerts off', 
                   place.alertsOn
                       ? Icons.notifications_active
                       : Icons.notifications_off,

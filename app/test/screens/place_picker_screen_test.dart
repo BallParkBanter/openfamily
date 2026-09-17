@@ -4,6 +4,10 @@ import 'package:openfamily/models/place.dart';
 import 'package:openfamily/screens/place_picker_screen.dart';
 import 'package:openfamily/services/geocoding_service.dart';
 
+
+/// Finds a widget by the label it gives to accessibility (a Semantics wrapper or an Icon's semanticLabel) - tooltips are gone.
+Finder labeled(Pattern l) => find.byWidgetPredicate((Widget w) => (w is Semantics && w.properties.label != null && (l is String ? w.properties.label == l : (l as RegExp).hasMatch(w.properties.label!))) || (w is Icon && w.semanticLabel != null && (l is String ? w.semanticLabel == l : (l as RegExp).hasMatch(w.semanticLabel!))));
+
 void main() {
   test('geocoding is off unless a Nominatim URL is configured', () {
     expect(GeocodingService.isEnabled, isFalse);
@@ -42,7 +46,7 @@ void main() {
 
     expect(find.textContaining('Drag the map to drop a pin'), findsOneWidget);
     expect(find.text('Address (optional)'), findsOneWidget);
-    expect(find.byTooltip('Search address'), findsNothing);
+    expect(labeled('Search address'), findsNothing);
     expect(find.text('0.00000, 0.00000'), findsOneWidget);
 
     await tester.tap(find.text('Save place'));

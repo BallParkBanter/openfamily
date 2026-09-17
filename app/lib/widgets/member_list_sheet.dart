@@ -200,16 +200,14 @@ class _PeopleHeader extends StatelessWidget {
                   ),
                   IconButton(
                     onPressed: onAddPerson,
-                    tooltip: 'Invite someone to $circleName',
-                    icon: const Icon(
+                    icon: Icon(semanticLabel: 'Invite someone to $circleName', 
                       Icons.person_add_alt_1,
                       color: AppColors.purple,
                     ),
                   ),
                   IconButton(
                     onPressed: onToggle,
-                    tooltip: expanded ? 'Collapse people' : 'Expand people',
-                    icon: Icon(
+                    icon: Icon(semanticLabel: expanded ? 'Collapse people' : 'Expand people', 
                       expanded
                           ? Icons.keyboard_arrow_down_rounded
                           : Icons.keyboard_arrow_up_rounded,

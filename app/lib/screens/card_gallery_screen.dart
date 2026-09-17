@@ -256,8 +256,7 @@ class _CardGalleryScreenState extends State<CardGalleryScreen> {
                 children: [
                   IconButton(
                     onPressed: () => Navigator.of(context).maybePop(),
-                    icon: const Icon(Icons.arrow_back_rounded, color: AppColors.nightInk),
-                    tooltip: 'Back to the map',
+                    icon: const Icon(Icons.arrow_back_rounded, color: AppColors.nightInk, semanticLabel: 'Back to the map'),
                   ),
                   const SizedBox(width: 4),
                   Expanded(

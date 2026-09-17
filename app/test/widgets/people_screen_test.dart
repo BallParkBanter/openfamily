@@ -34,6 +34,10 @@ Widget _app(ValueNotifier<List<Member>> roster, {VoidCallback? onInvite}) {
   );
 }
 
+
+/// Finds a widget by the label it gives to accessibility (a Semantics wrapper or an Icon's semanticLabel) - tooltips are gone.
+Finder labeled(Pattern l) => find.byWidgetPredicate((Widget w) => (w is Semantics && w.properties.label != null && (l is String ? w.properties.label == l : (l as RegExp).hasMatch(w.properties.label!))) || (w is Icon && w.semanticLabel != null && (l is String ? w.semanticLabel == l : (l as RegExp).hasMatch(w.semanticLabel!))));
+
 void main() {
   testWidgets('renders the member roster header and each member row',
       (WidgetTester tester) async {
@@ -98,7 +102,7 @@ void main() {
     int invites = 0;
     await tester.pumpWidget(_app(roster, onInvite: () => invites++));
 
-    await tester.tap(find.byTooltip('Invite someone'));
+    await tester.tap(labeled(RegExp('Invite someone')).first);
     await tester.pump();
 
     expect(invites, 1);

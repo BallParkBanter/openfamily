@@ -295,8 +295,7 @@ class _PlaceTile extends StatelessWidget {
         children: [
           if (onToggleAlerts != null)
             IconButton(
-              tooltip: place.alertsOn ? 'Alerts on' : 'Alerts off',
-              icon: Icon(
+              icon: Icon(semanticLabel: place.alertsOn ? 'Alerts on' : 'Alerts off', 
                 place.alertsOn
                     ? Icons.notifications_active
                     : Icons.notifications_off,
@@ -306,8 +305,7 @@ class _PlaceTile extends StatelessWidget {
             ),
           if (onDelete != null)
             IconButton(
-              tooltip: 'Delete place',
-              icon: const Icon(Icons.delete_outline, color: AppColors.textMuted),
+              icon: const Icon(semanticLabel: 'Delete place', Icons.delete_outline, color: AppColors.textMuted),
               onPressed: onDelete,
             ),
         ],

@@ -265,9 +265,8 @@ class _FamiliesScreenState extends State<FamiliesScreen> {
                           subtitle: Text(_roleLabel(_family!.role)),
                           trailing: _isAdmin
                               ? IconButton(
-                                  tooltip: 'Rename',
                                   onPressed: _busy ? null : _rename,
-                                  icon: const Icon(Icons.edit_outlined),
+                                  icon: const Icon(semanticLabel: 'Rename', Icons.edit_outlined),
                                 )
                               : null,
                         ),

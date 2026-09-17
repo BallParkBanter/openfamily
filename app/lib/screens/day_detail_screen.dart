@@ -285,14 +285,12 @@ class _Header extends StatelessWidget {
             ),
           ),
           IconButton(
-            tooltip: 'Previous day',
             onPressed: canGoBack ? onBack : null,
-            icon: const Icon(Icons.chevron_left),
+            icon: const Icon(Icons.chevron_left, semanticLabel: 'Previous day'),
           ),
           IconButton(
-            tooltip: 'Next day',
             onPressed: canGoForward ? onForward : null,
-            icon: const Icon(Icons.chevron_right),
+            icon: const Icon(Icons.chevron_right, semanticLabel: 'Next day'),
           ),
         ],
       ),
@@ -492,8 +490,7 @@ class _TimelineEntry extends StatelessWidget {
                   ],
                   if (canSave)
                     IconButton(
-                      tooltip: 'Save as place',
-                      icon: const Icon(Icons.add_location_alt_outlined),
+                      icon: const Icon(Icons.add_location_alt_outlined, semanticLabel: 'Save as place'),
                       color: AppColors.purple,
                       onPressed: onSave,
                     ),

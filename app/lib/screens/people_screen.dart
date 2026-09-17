@@ -47,8 +47,7 @@ class PeopleScreen extends StatelessWidget {
         actions: [
           IconButton(
             onPressed: _invite(context),
-            tooltip: 'Invite someone',
-            icon: const Icon(
+            icon: const Icon(semanticLabel: 'Invite someone', 
               Icons.person_add_alt_1,
               color: AppColors.purple,
             ),

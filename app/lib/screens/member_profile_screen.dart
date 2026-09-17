@@ -261,15 +261,13 @@ class _ContactSectionState extends State<_ContactSection> {
                       ),
                       IconButton(
                         key: Key('profile-call-$i'),
-                        tooltip: 'Call ${linked.phones[i].label}'.trim(),
-                        icon: Icon(Icons.call, color: ink),
+                        icon: Icon(semanticLabel: 'Call ${linked.phones[i].label}'.trim(), Icons.call, color: ink),
                         onPressed: () => _intent('android.intent.action.DIAL', dialUri(linked.phones[i].number)),
                       ),
                       if (linked.phones[i] == linked.textPhone)
                         IconButton(
                           key: Key('profile-text-$i'),
-                          tooltip: 'Text',
-                          icon: Icon(Icons.sms_outlined, color: ink),
+                          icon: Icon(semanticLabel: 'Text', Icons.sms_outlined, color: ink),
                           onPressed: () => _intent('android.intent.action.SENDTO', smsUri(linked.phones[i].number)),
                         ),
                     ],
