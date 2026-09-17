@@ -28,11 +28,13 @@ enum EdgeSide { left, right }
 
 /// Life360's off-screen avatar (Bo's reference, mockups/2026-09-16-edge-chip/
 /// life360-reference-offscreen-avatar-crop.png; v3 2026-09-17 00:45): the
-/// person's round photo, ring in their colour, tucked ~40 % into the screen
-/// edge, sitting in a SOLID white flare that widens toward the edge (a
-/// rounded tail, soft drop shadow, opaque). Nothing else - no name, no
-/// distance (the smallest badge text would not fit under a 40 px face), no
-/// dark surface. The spoken label still says who, how far and which way.
+/// person's round photo with its colour ring and a white border, ENTIRELY on
+/// screen (its edge-side rim 6 px in from the screen edge - Bo 00:55: "I
+/// need to see the FULL circle icon"), sitting on a SOLID white flare that
+/// widens from the circle toward the edge and runs into it (the flare is
+/// what the screen clips, never the face). Nothing else - no name, no
+/// distance (the smallest badge text would not fit under the face), no dark
+/// surface. The spoken label still says who, how far and which way.
 class EdgeChip extends StatelessWidget {
   const EdgeChip({super.key, required this.member, required this.label, required this.metres, required this.bearingDeg, this.edge = EdgeSide.left, this.onTap});
 
@@ -51,13 +53,15 @@ class EdgeChip extends StatelessWidget {
   final EdgeSide edge;
   final VoidCallback? onTap;
 
-  static const double width = 64;         // the box, flush to the edge: the flare's reach (30) + the shadow's air
-  static const double height = 72;        // the flare at the edge (64) + 4 of air top and bottom
-  static const double face = 40;          // ~70 % of the 56 marker ring (coordinator, 2026-09-17)
-  static const double faceRing = 2;       // OPEN: chosen - the ring in the person's colour
-  static const double faceCentreIn = 6;   // the face's centre this far inside the edge: 40 % of it is off screen (the crop)
-  static const double flarePad = 5;       // white round the face's inboard side (the crop: a thin margin)
-  static const double flareEdgeHalf = 32; // the flare's half-height at the edge: 1.6 x the face (the crop widens to ~1.35-1.6 D)
+  static const double width = 72;         // the box, flush to the edge: rim air (6) + the circle (48) + the flare's cap (5) + shadow air
+  static const double height = 84;        // the flare at the edge (76) + 4 of air top and bottom
+  static const double face = 48;          // the whole circle: white border + colour ring + photo (coordinator: 40 or 48; 48 next to the flare)
+  static const double faceRing = 2;       // the ring in the person's colour
+  static const double faceBorder = 2;     // the white border outside the ring (the crop's white-rimmed photo)
+  static const double rimIn = 6;          // the circle's edge-side rim this far inside the screen edge: nothing of it is ever clipped
+  static const double faceCentreIn = rimIn + face / 2;   // 30
+  static const double flarePad = 5;       // white round the circle's inboard side (the crop: a thin margin)
+  static const double flareEdgeHalf = 38; // the flare's half-height at the edge: ~1.6 x the circle (the crop widens to ~1.35-1.6 D)
   static const double margin = 8;         // OPEN: chosen - air between the avatar and the header / bottom bar (= BrayTokens.fitAir)
 
   String get a11y => '$label, ${milesLabel(metres)} away, off screen to the ${compassWord(bearingDeg)}';
@@ -97,9 +101,12 @@ class EdgeChip extends StatelessWidget {
                   key: const Key('edge-chip-face'),
                   width: face,
                   height: face,
-                  decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: accent, width: faceRing)),
-                  clipBehavior: Clip.antiAlias,
-                  child: ClipOval(child: StatusAvatar(member: member, size: face - 2 * faceRing, ringWidth: 0)),
+                  decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: BrayTokens.badgeBg, width: faceBorder)),
+                  child: Container(
+                    decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: accent, width: faceRing)),
+                    clipBehavior: Clip.antiAlias,
+                    child: ClipOval(child: StatusAvatar(member: member, size: face - 2 * faceRing - 2 * faceBorder, ringWidth: 0)),
+                  ),
                 ),
               ),
             ],
@@ -130,9 +137,9 @@ class EdgeFlarePainter extends CustomPainter {
     final Offset bottom = Offset(cx + r * math.cos(a), cy + r * math.sin(a));
     final Path p = Path()
       ..moveTo(0, cy - edgeHalf)
-      ..cubicTo(cx + 8, cy - edgeHalf + 6, cx + 16, top.dy - 11, top.dx, top.dy)
+      ..cubicTo(cx * 0.4, cy - edgeHalf + 6, cx + r * 0.55, top.dy - 12, top.dx, top.dy)
       ..arcToPoint(bottom, radius: Radius.circular(r), clockwise: true)
-      ..cubicTo(cx + 16, bottom.dy + 11, cx + 8, cy + edgeHalf - 6, 0, cy + edgeHalf)
+      ..cubicTo(cx + r * 0.55, bottom.dy + 12, cx * 0.4, cy + edgeHalf - 6, 0, cy + edgeHalf)
       ..close();
     if (edge == EdgeSide.right) {
       return p.transform((Matrix4.identity()..translateByDouble(size.width, 0, 0, 1)..scaleByDouble(-1, 1, 1, 1)).storage);
