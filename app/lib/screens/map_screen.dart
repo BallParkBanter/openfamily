@@ -17,6 +17,7 @@ import '../services/battery_optimization_service.dart';
 import '../services/map_visibility_store.dart';
 import '../services/self_fix.dart';
 import '../services/tile_cache.dart';
+import '../services/tile_prefetch.dart';
 import '../utils/cadence.dart';
 import '../utils/stillness.dart';
 import '../utils/view_history.dart';
@@ -356,6 +357,7 @@ class _MapScreenState extends State<MapScreen>
       }
     }
     _motion.observe(members, now);   // 5b: dead reckoning + the pull (the 2 km snap rule lives there)
+    _prefetchAhead(members, now);
     setState(() {
       _members = members;
       _membersListenable.value = members;
@@ -403,6 +405,23 @@ class _MapScreenState extends State<MapScreen>
   /// frame with a straight move; the fit's centre moves as smoothly as the
   /// markers do. Off while focused / following, mid-animation, or within
   /// the 12 s after a gesture (autoFitDue - the user is panning).
+  /// bray 2026-09-17 (Bo's hotspot): every 5 s, prefetch the tiles ~3 km
+  /// ahead of the followed / focused member (else the viewer) while they move.
+  DateTime? _lastPrefetch;
+  void _prefetchAhead(List<Member> members, DateTime now) {
+    if (!_mapReady) return;
+    if (_lastPrefetch != null && now.difference(_lastPrefetch!) < const Duration(seconds: 5)) return;
+    final String? id = _focus.focusedId ?? _followId ?? _userId;
+    if (id == null) return;
+    Member? who;
+    for (final Member m in members) {
+      if (m.id == id) who = m;
+    }
+    if (who == null || who.position == null || who.headingDeg == null || who.displaySpeedAt(now) == null) return;
+    _lastPrefetch = now;
+    unawaited(TilePrefetcher.instance.ahead(from: who.position!, headingDeg: who.headingDeg!, zoom: _mapController.camera.zoom, urlTemplate: _satellite ? kSatelliteTileUrl : kTileUrl));
+  }
+
   void _trackFit(DateTime now) {
     if (!_mapReady || !_motion.activeAt(now)) return;
     if (_cameraAnim?.isAnimating ?? false) return;
@@ -893,6 +912,7 @@ class _MapScreenState extends State<MapScreen>
     final List<Member> members = _stillness.apply(withSelfLive(_members, _userId, selfFix.value, now), now);
     _drives.updateAll(members, now: now);
     _motion.observe(members, now);
+    _prefetchAhead(members, now);
     setState(() {
       _members = members;
       _membersListenable.value = members;
