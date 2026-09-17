@@ -71,12 +71,12 @@ void main() {
     expect(BrayTokens.photoAlignFor(m('Heidi Bray')).y, closeTo(0.26, 1e-9));   // center 63%
     expect(BrayTokens.photoAlignFor(m('Someone')).y, closeTo(-0.30, 1e-9));     // J:274 default center 35%
   });
-  test('"ago" wording follows app.js ago()', () {
+  test('"ago" wording is the one shared formatter (utils/time_words.dart), floored', () {
     final DateTime now = DateTime(2026, 9, 13, 12, 0);
     expect(BrayTokens.agoText(null, now), '—');
     expect(BrayTokens.agoText(now.subtract(const Duration(seconds: 50)), now), 'just now');
-    expect(BrayTokens.agoText(now.subtract(const Duration(minutes: 33)), now), '33m ago');
-    expect(BrayTokens.agoText(now.subtract(const Duration(hours: 3)), now), '3h ago');
-    expect(BrayTokens.agoText(now.subtract(const Duration(days: 2)), now), '2d ago');
+    expect(BrayTokens.agoText(now.subtract(const Duration(minutes: 33)), now), '33 min ago');
+    expect(BrayTokens.agoText(now.subtract(const Duration(hours: 3)), now), '3 hr ago');
+    expect(BrayTokens.agoText(now.subtract(const Duration(days: 2)), now), 'Sep 11, 12:00 PM');
   });
 }

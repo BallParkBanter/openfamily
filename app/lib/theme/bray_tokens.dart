@@ -5,6 +5,7 @@
 // (ssh bobray@192.168.1.103 "cat -n ~/family-viewer2/<file>"), not the charlie-phone repo copy.
 import 'package:flutter/material.dart';
 import '../models/member.dart';
+import '../utils/time_words.dart';
 import '../services/contact_link_store.dart';
 import 'app_theme.dart';
 
@@ -331,15 +332,9 @@ class BrayTokens {
   /// the forehead ... shift each photo so the face sits in the circle".
   static Offset facePointFor(Member m) => Offset(0.5, (photoAlignFor(m).y + 1) / 2);
 
-  /// J:57-64 ago(): "—" when unknown, "just now" under 2 min, then m / h / d.
-  static String agoText(DateTime? seen, DateTime now) {
-    if (seen == null) return '—';
-    final int m = (now.difference(seen).inSeconds / 60).round();
-    if (m < 2) return 'just now';
-    if (m < 60) return '${m}m ago';
-    final int h = (m / 60).round();
-    return h < 24 ? '${h}h ago' : '${(h / 24).round()}d ago';
-  }
+  /// The one relative-time formatter (utils/time_words.dart) - Bo 2026-09-17
+  /// 19:41: the badge and the card disagreed by an hour (floor vs round).
+  static String agoText(DateTime? seen, DateTime now) => relativeTime(seen, now);
 
   // ------------------------------------------------------------ mock2 redesign (2026-09-15)
   // Bo's approved mockup round, family-app docs/superpowers/mockups/2026-09-14-cards/

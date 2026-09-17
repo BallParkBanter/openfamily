@@ -54,11 +54,11 @@ void main() {
     expect(s.facts, ['🕒 Here since 4:12pm', '📏 3.0 mi away']);
     expect(s.action, CardAction.savePlace);
   });
-  test('6 stale: grey dot, the last place kept, "🕒 Updated 4h ago" and "📏 last seen 10 mi away", no speed', () {
+  test('6 stale: grey dot, the last place kept, "🕒 Updated 4 hr ago" and "📏 last seen 10 mi away", no speed', () {
     final CardState s = st(m(mph: 65, ago: const Duration(hours: 4)), place: MemberPlace(poiName: 'Hebron Christian Academy', poiKind: 'school', since: local(7, 9), homeDistanceM: tenMiles), inDrive: true);
     expect(s.live, isFalse);
     expect(s.placeLine, '🏫 Near Hebron Christian Academy');
-    expect(s.facts, ['🕒 Updated 4h ago', '📏 last seen 10 mi away']);
+    expect(s.facts, ['🕒 Updated 4 hr ago', '📏 last seen 10 mi away']);
     expect(s.facts.join(), isNot(contains('mph')));
   });
   test('precedence: parked at Home is not a drive - the CALLER decides (utils/drive_state.dart inDriveVerdict) and the card obeys inDrive; moving inside the geofence is still Driving', () {
@@ -86,10 +86,10 @@ void main() {
     expect(s.placeLine, startsWith('🚗 Driving'));
     expect(s.facts.first, '🚗 0 mph');
   });
-  test('stale at Home: "🕒 Updated 4h ago" alone - no distance at home (state 1 rule)', () {
+  test('stale at Home: "🕒 Updated 4 hr ago" alone - no distance at home (state 1 rule)', () {
     final CardState s = st(m(mph: 65, ago: const Duration(hours: 4)), place: MemberPlace(atHome: true, placeName: 'Home', since: local(7, 9), homeDistanceM: 5), inDrive: true);
     expect(s.placeLine, '🏠 Home');
-    expect(s.facts, ['🕒 Updated 4h ago']);
+    expect(s.facts, ['🕒 Updated 4 hr ago']);
   });
   test('7 charging: "⚡ 100"; 8 low: "🪫 12" red; normal: "🔋 96"; unknown: "—"', () {
     expect(st(m(batt: 100), charging: true).battery, '⚡ 100');

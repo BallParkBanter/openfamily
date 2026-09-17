@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 
 import '../models/member.dart';
 import '../theme/bray_tokens.dart';
+import '../utils/time_words.dart';
 import 'capsule_callout.dart' show arrivedAgo, hereFor;
 import 'glyphs.dart';
 
@@ -53,7 +54,7 @@ SlotBadgeSpec? slotBadgeFor(Member m, {required DateTime now, bool? inDrive}) {
   final Color accent = BrayTokens.accentFor(m);
   if (m.isStaleAt(now) && m.lastSeen != null) {
     return SlotBadgeSpec(
-        kind: SlotBadgeKind.updated, label: 'updated', value: arrivedAgo(now.difference(m.lastSeen!)),
+        kind: SlotBadgeKind.updated, label: 'updated', value: relativeTime(m.lastSeen, now),
         glyphColor: BrayTokens.staleGrey, valueColor: BrayTokens.staleValueGrey);
   }
   final bool driving = inDrive ?? (m.displaySpeedAt(now) != null);

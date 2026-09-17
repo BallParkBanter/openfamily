@@ -5,7 +5,7 @@
 // mapper (MemberStatus.stopped) or whose last fix is older than kStaleAfter
 // (member_mapper's 10 min, now in member.dart) has no live speed to show -
 // no speed pill, no cone, no capsule speed, no "Driving" state; the card's
-// facts say "updated 3h ago", the last known place and street still show.
+// facts say "updated 3 hr ago", the last known place and street still show.
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -96,16 +96,16 @@ void main() {
     expect(find.text('65'), findsNothing);
   });
 
-  testWidgets('card: a stale driver says "🕒 Updated 3h ago" in the chips, keeps the last place, and never "Driving"', (t) async {
+  testWidgets('card: a stale driver says "🕒 Updated 3 hr ago" in the chips, keeps the last place, and never "Driving"', (t) async {
     final Member stale = m('Heidi Bray', ago: const Duration(hours: 3));
     // Stale: the place line is the last known place (non-driving wording,
-    // the full street), the chips say "Updated 3h ago" and "last seen N mi
+    // the full street), the chips say "Updated 3 hr ago" and "last seen N mi
     // away" where the speed and the live distance would be (card state 6).
     await t.pumpWidget(host(PersonCard(member: stale, label: 'Heidi', charging: false, now: now, place: hwy)));
     expect(find.textContaining('Driving'), findsNothing);
     expect(find.textContaining('mph'), findsNothing);
     expect(t.widget<Text>(find.byKey(const Key('card-place'))).data, '📍 Near Loganville Highway');
-    expect(find.text('🕒 Updated 3h ago'), findsOneWidget);
+    expect(find.text('🕒 Updated 3 hr ago'), findsOneWidget);
     expect(find.text('📏 last seen 12 mi away'), findsOneWidget);
     // Fresh again: the driving place line (the map abbreviation), the speed
     // as a chip, no full street.
@@ -119,7 +119,7 @@ void main() {
   testWidgets('card: the mapper\'s stopped status alone is stale too', (t) async {
     await t.pumpWidget(host(PersonCard(member: m('Heidi Bray', st: MemberStatus.stopped), label: 'Heidi', charging: false, now: now, place: hwy)));
     expect(find.textContaining('Driving'), findsNothing);
-    expect(find.text('🕒 Updated 2m ago'), findsOneWidget);
+    expect(find.text('🕒 Updated 2 min ago'), findsOneWidget);
     // The dot stays but goes grey (states.html .dot.grey).
     expect((t.widget<Container>(find.byKey(const Key('card-dot'))).decoration as BoxDecoration).color, BrayTokens.cardDotStale);
   });
