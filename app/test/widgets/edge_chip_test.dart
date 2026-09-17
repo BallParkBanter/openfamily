@@ -59,7 +59,7 @@ void main() {
     final Rect r = t.getRect(find.byKey(const Key('edge-chip')));
     expect(r.left, 0);                                                // the box is flush to the left edge
     expect(chip.edge, EdgeSide.left);
-    // v5 (Bo 01:00): the whole circle on screen, uniform white border, one flat tail into the edge, shadow + colour hairline.
+    // v7 (Bo 01:12): the whole circle on screen 3 in from the edge, uniform white border, a straight-edged wedge into the edge, shadow + colour hairline.
     final Rect face = t.getRect(find.byKey(const Key('edge-chip-face')));
     expect(face.width, EdgeChip.inner);
     expect(face.center.dx, EdgeChip.faceCentreIn);
@@ -73,7 +73,7 @@ void main() {
     final Rect bounds = flare.flare(const Size(EdgeChip.width, EdgeChip.height)).getBounds();
     expect(bounds.left, lessThan(0));                                                 // the flare runs into the screen edge...
     expect(bounds.right, closeTo(EdgeChip.faceCentreIn + EdgeChip.face / 2, 1.0));    // ...and nothing sits on the map side of the circle
-    // v6: widest AT the edge (1.5 x the circle), no taller than the circle where it leaves it, nothing above/below the circle on the map side.
+    // widest AT the edge (1.5 x the circle), no taller than the circle where it leaves it, nothing above/below the circle on the map side.
     final ui.Path sil = flare.flare(const Size(EdgeChip.width, EdgeChip.height));
     const double cx = EdgeChip.faceCentreIn, cy = EdgeChip.height / 2, rad = EdgeChip.face / 2;
     expect(EdgeChip.flareEdgeHalf, closeTo(1.5 * rad, 0.01));
@@ -97,6 +97,22 @@ void main() {
     expect(widthAt(0.5), greaterThan(widthAt(12)));                                        // widening toward the edge...
     expect(widthAt(12), greaterThanOrEqualTo(widthAt(22) - 0.5));                          // ...from the circle outward (monotone)
     expect(widthAt(0.5), greaterThan(2 * rad + 12));                                        // clearly wider than the circle at the edge
+    // v7: the top edge is a STRAIGHT line from the edge to its tangent point on the circle - no dip, no hump.
+    double topAt(double x) {
+      double top = cy;
+      for (double y = cy; y > 0; y -= 0.25) {
+        if (!sil.contains(Offset(x, y))) break;
+        top = y;
+      }
+      return top;
+    }
+    final double t0 = topAt(0.5), t1 = topAt(8), t2 = topAt(15.5);                          // three points on the wedge's top edge, left of the tangent point
+    expect(t1 - t0, closeTo(t2 - t1, 0.6));                                                 // equal slopes = collinear (0.25 px sampling)
+    expect(t2, greaterThan(t0));                                                            // and diverging toward the edge (screen y grows downward)
+    final Offset tangent = EdgeFlarePainter.tangentPoint(const Offset(-4.75, cy - EdgeChip.flareEdgeHalf), const Offset(cx, cy), rad - 0.75, top: true);
+    expect((tangent - const Offset(cx, cy)).distance, closeTo(rad - 0.75, 0.01));           // the join point is ON the circle...
+    expect(tangent.dy, lessThan(cy));                                                       // ...on its upper half
+    expect(tangent.dx, lessThan(cx + rad * 0.4));                                           // ...near its top (the diverging line touches just past the top point)
     expect(find.text('Heidi'), findsNothing);                          // no name, no distance, no pill, no beam
     expect(find.textContaining('mi'), findsNothing);
     expect(find.byKey(const Key('edge-chip-pill')), findsNothing);
