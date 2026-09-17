@@ -153,9 +153,9 @@ class MemberAvatarBubble extends StatelessWidget {
     final SlotBadgeSpec? badge = slotBadgeFor(member, now: now, inDrive: inDrive);
     final BatteryBadgeSpec? batt = batteryBadgeFor(percent: member.batteryPercent, charging: member.charging == true);
 
-    return Tooltip(
-      message: tooltip,
-      child: Semantics(
+    // bray 2026-09-17 (Bo, live): no visual tooltip on a marker - the label is
+    // for TalkBack and the rig only; long-press = details.
+    return Semantics(
         label: tooltip,
         button: true,
         child: GestureDetector(
@@ -249,7 +249,6 @@ class MemberAvatarBubble extends StatelessWidget {
             ),
           ),
         ),
-      ),
     );
   }
 
@@ -556,9 +555,9 @@ class ClusterBubble extends StatelessWidget {
         preview.where((m) => m.movement != MovementType.none).toList();
     final String label = _label();
 
-    return Tooltip(
-      message: label,
-      child: Semantics(
+    // bray 2026-09-17 (Bo, live): no visual tooltip on a marker - the label is
+    // for TalkBack and the rig only; long-press = details.
+    return Semantics(
         label: label,
         button: true,
         child: GestureDetector(
@@ -619,7 +618,6 @@ class ClusterBubble extends StatelessWidget {
             ],
           ),
         ),
-      ),
     );
   }
 
