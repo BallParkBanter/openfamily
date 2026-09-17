@@ -83,12 +83,12 @@ type traceResponse struct {
 		EndShapeIndex   int     `json:"end_shape_index"`
 	} `json:"edges"`
 	MatchedPoints []struct {
-		Lat                    float64 `json:"lat"`
-		Lon                    float64 `json:"lon"`
-		Type                   string  `json:"type"`
-		EdgeIndex              int     `json:"edge_index"`
-		DistanceFromTracePoint float64 `json:"distance_from_trace_point"`
-		DistanceAlongEdge      float64 `json:"distance_along_edge"`
+		Lat                    float64   `json:"lat"`
+		Lon                    float64   `json:"lon"`
+		Type                   string    `json:"type"`
+		EdgeIndex              edgeIndex `json:"edge_index"`
+		DistanceFromTracePoint float64   `json:"distance_from_trace_point"`
+		DistanceAlongEdge      float64   `json:"distance_along_edge"`
 	} `json:"matched_points"`
 }
 
@@ -114,6 +114,28 @@ func recentFixes(fixes []TracePoint) []TracePoint {
 		i++
 	}
 	return fixes[i:]
+}
+
+// edgeIndex is Valhalla's matched_points[].edge_index: a small integer for
+// a placed point, and kInvalidEdgeIndex = 2^64-1 for one it could not place
+// on a road (2026-09-17 20:43Z: that number does not fit a Go int, the whole
+// response was discarded and Bo's trail fell back to raw lines). Any value
+// that is not a plausible edge index decodes to -1 = unplaced.
+type edgeIndex int64
+
+func (e *edgeIndex) UnmarshalJSON(b []byte) error {
+	var n json.Number
+	if err := json.Unmarshal(b, &n); err != nil {
+		*e = -1
+		return nil
+	}
+	v, err := n.Int64()
+	if err != nil || v < 0 || v > 1<<31 {
+		*e = -1
+		return nil
+	}
+	*e = edgeIndex(v)
+	return nil
 }
 
 // aheadPoint extrapolates the newest fix along its heading for
@@ -193,8 +215,8 @@ func snapFromTrace(tr *traceResponse, newest int) (*models.RoadSnap, error) {
 	if mp.Type == "unmatched" || mp.DistanceFromTracePoint > snapMaxMeters {
 		return nil, nil // not on a road: raw
 	}
-	if mp.EdgeIndex < 0 || mp.EdgeIndex >= len(tr.Edges) {
-		return nil, nil
+	if mp.EdgeIndex < 0 || int(mp.EdgeIndex) >= len(tr.Edges) {
+		return nil, nil // the newest fix was not placed on a road: raw
 	}
 	edge := tr.Edges[mp.EdgeIndex]
 	shape, err := decodePolyline6(tr.Shape)
