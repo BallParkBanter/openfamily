@@ -83,4 +83,28 @@ void main() {
     expect(find.byType(PolylineLayer), findsNothing);
     expect(t.takeException(), isNull);
   });
+
+  testWidgets('live tail: the marker 300 m past the polyline head - the trail ends exactly at the marker; a newer polyline replaces the tail up to its head', (t) async {
+    final LatLng head = driveHome.points.last;
+    final LatLng marker = d.offset(head, 300, 90);
+    final Member bo = Member(id: 'Bo Bray', name: 'Bo Bray', status: MemberStatus.normal, position: marker, batteryPercent: 85, address: '');
+    await t.pumpWidget(host(FocusTrailLayer(member: bo, fetch: (_, __) async => [drivingNow], now: now)));
+    await t.pumpAndSettle();
+    PolylineLayer layer = t.widget(find.byType(PolylineLayer));
+    expect(layer.polylines[1].points.last, marker);                 // ends at the marker's dot
+    expect(layer.polylines[1].points.length, 42);                   // 41 matched + the live tail point
+    expect(layer.polylines[0].points.last, marker);                 // the halo too
+    // the matched polyline catches up to 100 m short of the marker: the tail shrinks to that
+    final LatLng newHead = d.offset(head, 200, 90);
+    final Trip longer = Trip(startedAt: drivingNow.startedAt, endedAt: null, matched: true, points: [...driveHome.points, newHead]);
+    await t.pumpWidget(host(FocusTrailLayer(key: const Key('newer'), member: bo, fetch: (_, __) async => [longer], now: now)));
+    await t.pumpAndSettle();
+    layer = t.widget(find.byType(PolylineLayer));
+    expect(layer.polylines[1].points.length, 43);
+    expect(layer.polylines[1].points[41], newHead);
+    expect(layer.polylines[1].points.last, marker);
+    // pure helper: nothing to extend, or the marker already at the head, is unchanged
+    expect(FocusTrailLayer.withLiveTail(const [], marker), isEmpty);
+    expect(FocusTrailLayer.withLiveTail([[head]], head).single.length, 1);
+  });
 }
