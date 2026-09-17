@@ -35,6 +35,7 @@ const (
 	tripChunk       = 100  // trace_route points per request
 	tripRefresh     = 60 * time.Second
 	tripLookback    = 6 * time.Hour
+	tripBackfill    = 30 * 24 * time.Hour // a member with no trips yet gets their last 30 days built once
 	tripMinFixes    = 3
 	tripMinSpanM    = 60.0 // a "drive" whose fixes never got this far from its first fix never left the house (phantom speed at rest)
 	tripMatchTimout = 8 * time.Second
@@ -331,27 +332,47 @@ func (s *Server) upsertTrip(ctx context.Context, userID string, fixes []tripFix,
 	return err
 }
 
-// rebuildTripsFor recomputes a user's trips over the lookback window: closed
-// drives are (re)written when new, the open drive every pass.
+// rebuildTripsFor builds a user's trips from where the last closed trip
+// ended (or the lookback window - 30 days when they have none yet): new
+// closed drives are written once, the open drive is rewritten every pass. A
+// drive already underway at the window's start is skipped rather than
+// stored truncated (it would grow a new row every pass as the window slid).
 func (s *Server) rebuildTripsFor(ctx context.Context, userID string, now time.Time) error {
-	fixes, err := s.loadTripFixes(ctx, userID, now.Add(-tripLookback))
+	var lastEnd *time.Time
+	var count int
+	if err := s.Pool.QueryRow(ctx, `SELECT MAX(ended_at), COUNT(*) FROM trips WHERE user_id = $1 AND ended_at IS NOT NULL`, userID).Scan(&lastEnd, &count); err != nil {
+		return err
+	}
+	from := now.Add(-tripLookback)
+	if count == 0 {
+		from = now.Add(-tripBackfill)
+	}
+	edge := true // the window starts at an arbitrary moment: a drive underway there is skipped
+	if lastEnd != nil && lastEnd.After(from) {
+		from = *lastEnd
+		edge = false // it starts where a drive ended: still by definition
+	}
+	fixes, err := s.loadTripFixes(ctx, userID, from)
 	if err != nil || len(fixes) < tripMinFixes {
 		return err
 	}
 	closed, open := segmentDrives(fixes, now)
+	if edge && len(closed) > 0 && closed[0][0].At.Sub(fixes[0].At) < tripStillGap {
+		closed = closed[1:] // underway at the window edge: not a whole drive
+	}
+	if edge && open != nil && len(closed) == 0 && open[0].At.Sub(fixes[0].At) < tripStillGap {
+		open = nil
+	}
 	for _, d := range closed {
-		var exists bool
-		if err := s.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM trips WHERE user_id = $1 AND started_at = $2 AND ended_at IS NOT NULL)`, userID, d[0].At).Scan(&exists); err != nil {
-			return err
-		}
-		if exists {
-			continue
-		}
 		if err := s.upsertTrip(ctx, userID, d, false); err != nil {
 			return err
 		}
 	}
 	if open != nil {
+		// one open row at a time: an earlier open row that never closed is replaced
+		if _, err := s.Pool.Exec(ctx, `DELETE FROM trips WHERE user_id = $1 AND ended_at IS NULL AND started_at <> $2`, userID, open[0].At); err != nil {
+			return err
+		}
 		return s.upsertTrip(ctx, userID, open, true)
 	}
 	return nil
@@ -390,7 +411,7 @@ func (s *Server) rebuildTripsOnce(ctx context.Context) {
 	}
 	rows.Close()
 	for _, u := range users {
-		uctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+		uctx, cancel := context.WithTimeout(ctx, 5*time.Minute) // a 30-day backfill matches every drive once
 		if err := s.rebuildTripsFor(uctx, u, now); err != nil {
 			slog.Warn("trips: rebuild failed", "err", err, "user_id", u)
 		}
