@@ -12,6 +12,8 @@
 // chip; every other number is OPEN: chosen.
 
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 
@@ -29,11 +31,11 @@ enum EdgeSide { left, right }
 /// life360-reference-offscreen-avatar-crop.png; v5 2026-09-17 01:00): the
 /// person's round photo with its colour ring and a uniform white border,
 /// ENTIRELY on screen (its edge-side rim 6 px in from the screen edge), and
-/// ONE flare from the circle's edge side into the screen edge - no taller
-/// than the circle where it leaves it (concave sides, the Life360 crop),
-/// widening to ~1.5 x the circle at the edge, cut flat by the edge; nothing
-/// above/below the circle on the map side (v6, Bo 01:05: "it should get
-/// WIDER the closer it gets to the edge"). The white silhouette
+/// ONE flare from the circle's edge side into the screen edge - a wedge
+/// whose top and bottom edges leave the circle as STRAIGHT lines tangent to
+/// its outline and run straight, diverging, to the screen edge (~1.5 x the
+/// circle tall there, cut flat by the edge); no curve, no dip, no hump;
+/// nothing above/below the circle on the map side (v7, Bo 01:12). The white silhouette
 /// (circle + tail) carries the marker's drop shadow and a 1.5 px hairline in
 /// the person's colour so it reads on a white/beige map. Nothing else - no
 /// name, no distance, no dark surface. The spoken label still says who, how
@@ -62,8 +64,8 @@ class EdgeChip extends StatelessWidget {
   static const double hairline = 1.5;     // the person's colour round the white silhouette (circle + tail)
   static const double whiteBorder = BrayTokens.ringSolo;   // the uniform white border = the marker ring's width (3)
   static const double faceRing = 2;       // the ring in the person's colour, inside the white
-  static const double rimIn = 6;          // the circle's edge-side rim this far inside the screen edge: nothing of it is ever clipped
-  static const double faceCentreIn = rimIn + face / 2;   // 30
+  static const double rimIn = 3;          // the circle's edge-side rim this far inside the screen edge (v7: was 6): nothing of it is ever clipped
+  static const double faceCentreIn = rimIn + face / 2;   // 27
   static const double flareEdgeHalf = 36; // the flare's half-height at the screen edge: 1.5 x the circle (Bo: 1.4-1.6 x)
   static const double margin = 8;         // OPEN: chosen - air between the avatar and the header / bottom bar (= BrayTokens.fitAir)
 
@@ -122,11 +124,11 @@ class EdgeChip extends StatelessWidget {
 }
 
 /// The white silhouette: the circle ([faceRadius] round [faceCentre]) plus
-/// one flare from the circle's edge side into the screen edge - it leaves
-/// the circle at the circle's own height with concave sides and widens to
-/// 2 x [edgeHalf] at the edge. Drawn with the marker's drop shadow, filled
-/// with the badge white, outlined with a 1.5 px hairline in [accent].
-/// Nothing above/below the circle on the map side.
+/// one wedge from the circle into the screen edge - its top and bottom
+/// edges are the straight tangents from the edge points (2 x [edgeHalf]
+/// apart, just past the edge) to the circle. Drawn with the marker's drop
+/// shadow, filled with the badge white, outlined with a 1.5 px hairline in
+/// [accent]. Nothing above/below the circle on the map side.
 class EdgeFlarePainter extends CustomPainter {
   const EdgeFlarePainter({required this.edge, required this.faceCentre, required this.faceRadius, required this.edgeHalf, required this.accent});
   final EdgeSide edge;
@@ -141,22 +143,36 @@ class EdgeFlarePainter extends CustomPainter {
     final double r = faceRadius - inset;
     // Drawn for the LEFT edge (x = 0 is the screen edge), mirrored for the right.
     final Path circle = Path()..addOval(Rect.fromCircle(center: Offset(cx, cy), radius: r));
-    // The flare leaves the circle's top/bottom points heading toward the edge
-    // (tangent-ish: no taller than the circle there), bends outward (concave
-    // sides) and meets the edge 2 x edgeHalf tall, 4 px past it so the screen
-    // cuts it flat and its outline never closes on screen.
+    // The wedge: from each edge point (4 px past the edge, so the screen cuts
+    // it flat and its outline never closes on screen) a straight line tangent
+    // to the circle - the join is smooth, the edges are straight (v7).
     const double past = 4;
+    final Offset c = Offset(cx, cy);
+    final Offset pTop = Offset(-inset - past, cy - edgeHalf), pBottom = Offset(-inset - past, cy + edgeHalf);
+    final Offset tTop = tangentPoint(pTop, c, r, top: true), tBottom = tangentPoint(pBottom, c, r, top: false);
     final Path tail = Path()
-      ..moveTo(cx, cy - r)
-      ..cubicTo(cx - r * 0.6, cy - r + 2, r * 0.35, cy - edgeHalf + 2, -inset - past, cy - edgeHalf)
-      ..lineTo(-inset - past, cy + edgeHalf)
-      ..cubicTo(r * 0.35, cy + edgeHalf - 2, cx - r * 0.6, cy + r - 2, cx, cy + r)
+      ..moveTo(tTop.dx, tTop.dy)
+      ..lineTo(pTop.dx, pTop.dy)
+      ..lineTo(pBottom.dx, pBottom.dy)
+      ..lineTo(tBottom.dx, tBottom.dy)
+      ..lineTo(c.dx, c.dy)
       ..close();
     final Path p = Path.combine(PathOperation.union, circle, tail);
     if (edge == EdgeSide.right) {
       return p.transform((Matrix4.identity()..translateByDouble(size.width, 0, 0, 1)..scaleByDouble(-1, 1, 1, 1)).storage);
     }
     return p;
+  }
+
+  /// The point on the circle ([c], [r]) where the tangent from the outside
+  /// point [p] touches it - the upper one for [top], else the lower.
+  static Offset tangentPoint(Offset p, Offset c, double r, {required bool top}) {
+    final Offset v = p - c;
+    final double d = v.distance;
+    final double alpha = math.atan2(v.dy, v.dx), beta = math.acos((r / d).clamp(-1.0, 1.0));
+    final Offset t1 = c + Offset(r * math.cos(alpha + beta), r * math.sin(alpha + beta));
+    final Offset t2 = c + Offset(r * math.cos(alpha - beta), r * math.sin(alpha - beta));
+    return top ? (t1.dy < t2.dy ? t1 : t2) : (t1.dy > t2.dy ? t1 : t2);
   }
 
   @override
