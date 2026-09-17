@@ -76,13 +76,16 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2"/>
-        <!-- background_locator_2: restarts tracking after a device reboot. -->
+        <!-- background_locator_2: restarts tracking after a device reboot and
+             after the app is updated in place (bray 2026-09-17: an install
+             kills the location foreground service and nothing restarted it). -->
         <receiver
             android:name="yukams.app.background_locator_2.BootBroadcastReceiver"
             android:enabled="true"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
             </intent-filter>
         </receiver>
         <!-- background_locator_2: foreground service hosting the background isolate. -->

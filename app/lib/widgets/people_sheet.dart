@@ -33,6 +33,7 @@ class PeopleSheet extends StatelessWidget {
     this.onSavePlace,
     this.onNoShow,
     this.onCheckIn,
+    this.onDrives,
     this.bottomInset = 0,
     this.now,
     this.onLevelChanged,
@@ -56,6 +57,7 @@ class PeopleSheet extends StatelessWidget {
   final ValueChanged<Member>? onSavePlace;
   final ValueChanged<Member>? onNoShow;
   final ValueChanged<Member>? onCheckIn;
+  final ValueChanged<Member>? onDrives;
   final double bottomInset;
   final DateTime? now;
   final ValueChanged<SheetLevel>? onLevelChanged;
@@ -155,6 +157,7 @@ class PeopleSheet extends StatelessWidget {
                                 onSavePlace: onSavePlace == null ? null : () => onSavePlace!(f),
                                 onNoShow: onNoShow == null ? null : () => onNoShow!(f),
                                 onCheckIn: onCheckIn == null ? null : () => onCheckIn!(f),
+                                onDrives: onDrives == null ? null : () => onDrives!(f),
                                 now: now,
                                 onTap: onCardTap == null ? null : () => onCardTap!(f),
                                 onLongPress: onCardHold == null ? null : () => onCardHold!(f),

@@ -48,10 +48,28 @@ class SessionExpiredException implements Exception {
 /// from [TokenStorage]. On a 401 it attempts a single token refresh and retries
 /// the original request once; if that fails it clears tokens and throws
 /// [SessionExpiredException].
+/// What a token refresh attempt established.
+enum RefreshOutcome {
+  /// A new pair is stored.
+  refreshed,
+
+  /// The server rejected the refresh token and nothing newer exists: the
+  /// session is dead and the tokens are cleared.
+  dead,
+
+  /// The refresh could not be completed (network, timeout, 5xx, 429): the
+  /// session is untouched.
+  transient,
+}
+
 class ApiClient {
   ApiClient._();
 
   static const Duration _timeout = Duration(seconds: 15);
+
+  /// Tests inject an [http.Client] (package:http's MockClient); null = the
+  /// top-level http functions.
+  static http.Client? client;
 
   /// Maximum number of bytes accepted by the profile-avatar endpoint.
   ///
@@ -73,7 +91,7 @@ class ApiClient {
 
   /// Single-flight guard for token refresh: concurrent 401s share one refresh
   /// call instead of each issuing their own.
-  static Future<bool>? _refreshInFlight;
+  static Future<RefreshOutcome>? _refreshInFlight;
 
   // ---------------------------------------------------------------------------
   // Typed helpers
@@ -460,7 +478,15 @@ class ApiClient {
     );
 
     if (response.statusCode == 401 && auth) {
-      final bool refreshed = await _tryRefresh();
+      final RefreshOutcome outcome = await _tryRefresh();
+      if (outcome == RefreshOutcome.transient) {
+        // bray 2026-09-17 (Bo signed out at 13:48 ET with no server-side
+        // rejection): the refresh could not be COMPLETED - network, timeout,
+        // 5xx, 429 - which says nothing about the session. Keep the tokens,
+        // fail this one request; the next 401 tries again.
+        throw const ApiException(0, 'Could not reach the server. Check your connection.');
+      }
+      final bool refreshed = outcome == RefreshOutcome.refreshed;
       if (refreshed) {
         final http.Response retry = await _rawSend(
           method,
@@ -525,23 +551,15 @@ class ApiClient {
     try {
       switch (method) {
         case 'GET':
-          return await http.get(uri, headers: headers).timeout(_timeout);
+          return await (client?.get(uri, headers: headers) ?? http.get(uri, headers: headers)).timeout(_timeout);
         case 'POST':
-          return await http
-              .post(uri, headers: headers, body: encoded)
-              .timeout(_timeout);
+          return await (client?.post(uri, headers: headers, body: encoded) ?? http.post(uri, headers: headers, body: encoded)).timeout(_timeout);
         case 'PATCH':
-          return await http
-              .patch(uri, headers: headers, body: encoded)
-              .timeout(_timeout);
+          return await (client?.patch(uri, headers: headers, body: encoded) ?? http.patch(uri, headers: headers, body: encoded)).timeout(_timeout);
         case 'PUT':
-          return await http
-              .put(uri, headers: headers, body: encoded)
-              .timeout(_timeout);
+          return await (client?.put(uri, headers: headers, body: encoded) ?? http.put(uri, headers: headers, body: encoded)).timeout(_timeout);
         case 'DELETE':
-          return await http
-              .delete(uri, headers: headers, body: encoded)
-              .timeout(_timeout);
+          return await (client?.delete(uri, headers: headers, body: encoded) ?? http.delete(uri, headers: headers, body: encoded)).timeout(_timeout);
         default:
           throw ArgumentError.value(
               method, 'method', 'Unsupported HTTP method');
@@ -557,13 +575,14 @@ class ApiClient {
   }
 
   /// Attempts a single token refresh, single-flighted so concurrent 401s share
-  /// one refresh call. Returns true and persists the new pair on success;
-  /// otherwise clears tokens (and the device id) and returns false.
-  static Future<bool> _tryRefresh() {
-    final Future<bool>? inFlight = _refreshInFlight;
+  /// one refresh call. [RefreshOutcome.refreshed] persists the new pair;
+  /// [RefreshOutcome.dead] clears the tokens; [RefreshOutcome.transient]
+  /// touches nothing (the refresh could not be completed).
+  static Future<RefreshOutcome> _tryRefresh() {
+    final Future<RefreshOutcome>? inFlight = _refreshInFlight;
     if (inFlight != null) return inFlight;
 
-    final Future<bool> future = _performRefresh();
+    final Future<RefreshOutcome> future = _performRefresh();
     _refreshInFlight = future;
     future.whenComplete(() {
       if (identical(_refreshInFlight, future)) {
@@ -573,31 +592,57 @@ class ApiClient {
     return future;
   }
 
-  static Future<bool> _performRefresh() async {
+  static Future<RefreshOutcome> _performRefresh() async {
+    final String? failedAccess = await _readAccessOrNull();
+    final String? refreshToken = await _readRefreshOrNull();
+    if (refreshToken == null) {
+      return _recoverOrClear(failedAccess);
+    }
+    final http.Response response;
     try {
-      final String? refreshToken = await TokenStorage.readRefreshToken();
-      if (refreshToken == null) {
-        return await _recoverOrClear();
-      }
-      final http.Response response = await _rawSend(
+      response = await _rawSend(
         'POST',
         _uri('/auth/refresh'),
         body: <String, dynamic>{'refresh_token': refreshToken},
         auth: false,
       );
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> data =
-            jsonDecode(response.body) as Map<String, dynamic>;
-        await TokenStorage.saveTokens(
-          access: data['access_token'] as String,
-          refresh: data['refresh_token'] as String,
-        );
-        return true;
-      }
     } catch (_) {
-      // Fall through to recovery below.
+      // Unreachable server, timeout, no URL: nothing is known about the
+      // session. Never sign the user out for that.
+      return RefreshOutcome.transient;
     }
-    return _recoverOrClear();
+    if (response.statusCode == 200) {
+      try {
+        final Map<String, dynamic> data = jsonDecode(response.body) as Map<String, dynamic>;
+        await TokenStorage.saveTokens(access: data['access_token'] as String, refresh: data['refresh_token'] as String);
+        return RefreshOutcome.refreshed;
+      } catch (_) {
+        return RefreshOutcome.transient;
+      }
+    }
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      // The server said no to THIS refresh token: rotated by the background
+      // isolate (recoverable) or truly dead.
+      return _recoverOrClear(failedAccess);
+    }
+    // 429 / 5xx / anything else: the server could not answer - transient.
+    return RefreshOutcome.transient;
+  }
+
+  static Future<String?> _readAccessOrNull() async {
+    try {
+      return await TokenStorage.readAccessToken();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<String?> _readRefreshOrNull() async {
+    try {
+      return await TokenStorage.readRefreshToken();
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Handles a failed foreground refresh.
@@ -607,13 +652,16 @@ class ApiClient {
   /// token. Before destroying everything, try to recover the tokens the
   /// background wrote to shared_preferences. If found, return true so the
   /// caller retries with the recovered token; otherwise clear and return false.
-  static Future<bool> _recoverOrClear() async {
+  /// [failedAccess] is the access token that just 401'd: a "recovered" token
+  /// equal to it is no recovery at all (the old code took it as one, retried
+  /// with the same dead token, got the same 401 and wiped the session).
+  static Future<RefreshOutcome> _recoverOrClear(String? failedAccess) async {
     try {
       await TokenStorage.syncFromBackgroundStore();
       final String? recoveredAccess = await TokenStorage.readAccessToken();
-      if (recoveredAccess != null && recoveredAccess.isNotEmpty) {
+      if (recoveredAccess != null && recoveredAccess.isNotEmpty && recoveredAccess != failedAccess) {
         // The background isolate refreshed; use its tokens.
-        return true;
+        return RefreshOutcome.refreshed;
       }
     } catch (_) {
       // syncFromBackgroundStore or readAccessToken threw (platform-channel
@@ -621,7 +669,7 @@ class ApiClient {
       // rather than leaving a dead session with no redirect.
     }
     await TokenStorage.clear();
-    return false;
+    return RefreshOutcome.dead;
   }
 
   /// Notifies the app root that the session expired so it can redirect to

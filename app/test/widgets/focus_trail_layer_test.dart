@@ -1,53 +1,86 @@
 // app/test/widgets/focus_trail_layer_test.dart
+// bray 2026-09-17 (Bo): the trail is the OPEN drive only - live, on-road,
+// gone when it closes (history lives in Drives); nothing for a stationary
+// period; raw fixes (thinned) only for an unmatched open drive.
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:openfamily/models/member.dart';
-import 'package:openfamily/services/history_service.dart';
+import 'package:openfamily/services/trips_service.dart';
 import 'package:openfamily/theme/bray_tokens.dart';
 import 'package:openfamily/widgets/focus_trail_layer.dart';
 
-final DateTime now = DateTime(2026, 9, 13, 12, 0);
-// history_service.dart:6-16 - position, ts, motionState (check the constructor: if motionState is not a named
-// parameter there, drop it here; do not change the service).
-HistoryTrailPoint p(double lat, double lon, int minsAgo) =>
-    HistoryTrailPoint(position: LatLng(lat, lon), ts: now.subtract(Duration(minutes: minsAgo)), motionState: 'moving');
-Member m(String name) => Member(id: name, name: name, position: const LatLng(33.9, -84.4), status: MemberStatus.normal, batteryPercent: 50, address: '');
+final DateTime now = DateTime(2026, 9, 17, 13, 3);
+const LatLng home = LatLng(33.8922, -83.8033);
+const Distance d = Distance(roundResult: false);
 
+Member m(String name) => Member(id: name, name: name, status: MemberStatus.normal, position: home, batteryPercent: 85, address: '');
 Widget host(Widget layer) => MaterialApp(home: SizedBox(width: 400, height: 600,
-    child: FlutterMap(options: const MapOptions(initialCenter: LatLng(33.9, -84.4), initialZoom: 15), children: [layer])));
+    child: FlutterMap(options: const MapOptions(initialCenter: home, initialZoom: 14), children: [layer])));
+
+/// The drive home as Valhalla matched it: a curve of 40 on-road points.
+final Trip driveHome = Trip(
+  startedAt: now.subtract(const Duration(hours: 2)), endedAt: now.subtract(const Duration(hours: 1, minutes: 36)), matched: true, fixes: 105, distanceM: 17834,
+  points: [for (int i = 0; i <= 40; i++) LatLng(home.latitude + 0.05 * (1 - i / 40), home.longitude + 0.02 * (i / 40) * (1 - i / 40))],   // a bulging curve that ends at home
+);
 
 void main() {
-  test('trailPoints: last 6 h only, thinned to 25 m, oldest first', () {
-    final raw = [p(33.9000, -84.4000, 400), p(33.9000, -84.4000, 100), p(33.9001, -84.4000, 90), p(33.9010, -84.4000, 80), p(33.9020, -84.4000, 10)];
-    final out = FocusTrailLayer.trailPoints(raw, now);
-    expect(out.length, 3);                                  // 400-min point is older than 6 h; 33.9001 is 11 m from 33.9000
-    expect(out.first.latitude, 33.9000); expect(out.last.latitude, 33.9020);
+  test('tripLines: the open drive only - closed trips (recent or old) draw nothing', () {
+    final Trip old = Trip(startedAt: now.subtract(const Duration(hours: 9)), endedAt: now.subtract(const Duration(hours: 8)), matched: true, points: driveHome.points);
+    final Trip open = Trip(startedAt: now.subtract(const Duration(minutes: 5)), endedAt: null, matched: true, points: driveHome.points.take(5).toList());
+    final List<List<LatLng>> lines = FocusTrailLayer.tripLines([open, old, driveHome], now);
+    expect(lines.length, 1);
+    expect(lines.single.length, 5);          // the open drive
+    expect(FocusTrailLayer.tripLines([old, driveHome], now), isEmpty);   // closed = history = Drives
   });
-  test('daysCovering: only crosses local midnight when the 6 h window does', () {
-    expect(FocusTrailLayer.daysCovering(DateTime(2026, 9, 13, 12, 0)), [DateTime(2026, 9, 13)]);
-    expect(FocusTrailLayer.daysCovering(DateTime(2026, 9, 13, 0, 30)), [DateTime(2026, 9, 12), DateTime(2026, 9, 13)]);
-    expect(FocusTrailLayer.daysCovering(DateTime(2026, 9, 13, 6, 0)), [DateTime(2026, 9, 13)]); // window starts exactly at 00:00 - same day
+
+  test('an unmatched trip falls back to its raw fixes, with no segment between fixes within 25 m; a matched one is drawn as stored', () {
+    final List<LatLng> raw = [home, d.offset(home, 8, 45), d.offset(home, 12, 90), d.offset(home, 300, 0), d.offset(home, 310, 0), d.offset(home, 900, 0)];
+    final Trip unmatched = Trip(startedAt: now.subtract(const Duration(hours: 1)), endedAt: null, matched: false, points: raw);
+    final List<List<LatLng>> lines = FocusTrailLayer.tripLines([unmatched], now);
+    expect(lines.single.length, 3);          // home, +300 m, +900 m: the 8 m / 12 m / 10 m wobbles are gone
+    expect(FocusTrailLayer.thinRaw(raw, accuracy: 400).length, 2);   // a 400 m accuracy circle forgives 300 m
+    final Trip matchedWobble = Trip(startedAt: now, endedAt: null, matched: true, points: raw);
+    expect(FocusTrailLayer.tripLines([matchedWobble], now).single.length, 6);   // stored as the road says
   });
-  testWidgets('draws halo + accent line + start dot for the focused member (J:166-168)', (t) async {
-    final raw = [p(33.900, -84.400, 30), p(33.902, -84.400, 20), p(33.904, -84.400, 10)];
-    await t.pumpWidget(host(FocusTrailLayer(member: m('Heidi Bray'), fetch: (_) async => raw, now: now)));
+
+  final Trip drivingNow = Trip(startedAt: now.subtract(const Duration(minutes: 20)), endedAt: null, matched: true, fixes: 60, points: driveHome.points);
+
+  testWidgets('focused while driving: the open drive is the road so far (halo + accent + start dot); once it closes the trail clears', (t) async {
+    await t.pumpWidget(host(FocusTrailLayer(member: m('Bo Bray'), fetch: (_, __) async => [drivingNow], now: now)));
     await t.pumpAndSettle();
     final PolylineLayer layer = t.widget(find.byType(PolylineLayer));
-    expect(layer.polylines.length, 2);
-    expect(layer.polylines[0].strokeWidth, 7); expect(layer.polylines[0].color, BrayTokens.ink.withValues(alpha: 0.35));
-    expect(layer.polylines[1].strokeWidth, 3.5); expect(layer.polylines[1].color, BrayTokens.accentHeidi.withValues(alpha: 0.95));
+    expect(layer.polylines.length, 2);                                   // halo + accent for the one trip
+    expect(layer.polylines[0].points.length, 41);
+    expect(layer.polylines[0].strokeWidth, 7);
+    expect(layer.polylines[1].color, BrayTokens.accentBo.withValues(alpha: 0.95));
+    expect(layer.polylines[1].strokeWidth, 3.5);
+    // no segment touches the house: the drive's last point is where it ended, nothing after it
+    final LatLng last = layer.polylines[1].points.last;
+    expect(d.as(LengthUnit.Meter, last, home), lessThan(50));
+    expect(layer.polylines.every((p) => p.points.length == 41), isTrue);   // no extra scribble polyline
     final CircleLayer dots = t.widget(find.byType(CircleLayer));
-    expect(dots.circles.single.point, const LatLng(33.900, -84.400));
-    expect(dots.circles.single.borderColor, BrayTokens.accentHeidi);
+    expect(dots.circles.single.point, driveHome.points.first);           // the dot at the start of the drive
+    // the drive closes (the next fetch returns it with ended_at): nothing is drawn
+    await t.pumpWidget(host(FocusTrailLayer(key: const Key('after'), member: m('Bo Bray'), fetch: (_, __) async => [driveHome], now: now)));
+    await t.pumpAndSettle();
+    expect(find.byType(PolylineLayer), findsNothing);
   });
-  testWidgets('nothing without a member; nothing with fewer than 2 points (J:163)', (t) async {
-    await t.pumpWidget(host(const FocusTrailLayer(member: null)));
+
+  testWidgets('a stationary window (no trips) draws nothing; nothing without a member', (t) async {
+    await t.pumpWidget(host(FocusTrailLayer(member: m('Bo Bray'), fetch: (_, __) async => <Trip>[], now: now)));
     await t.pumpAndSettle();
     expect(find.byType(PolylineLayer), findsNothing);
-    await t.pumpWidget(host(FocusTrailLayer(member: m('Bo Bray'), fetch: (_) async => [p(33.9, -84.4, 5)], now: now)));
+    await t.pumpWidget(host(FocusTrailLayer(member: null, fetch: (_, __) async => [driveHome], now: now)));
     await t.pumpAndSettle();
     expect(find.byType(PolylineLayer), findsNothing);
+  });
+
+  testWidgets('a failing fetch never breaks the map', (t) async {
+    await t.pumpWidget(host(FocusTrailLayer(member: m('Bo Bray'), fetch: (_, __) async => throw Exception('offline'), now: now)));
+    await t.pumpAndSettle();
+    expect(find.byType(PolylineLayer), findsNothing);
+    expect(t.takeException(), isNull);
   });
 }
