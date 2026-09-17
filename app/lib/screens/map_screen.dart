@@ -15,7 +15,10 @@ import '../services/app_config.dart';
 import '../services/background_location_service.dart';
 import '../services/battery_optimization_service.dart';
 import '../services/map_visibility_store.dart';
+import '../services/self_fix.dart';
 import '../services/tile_cache.dart';
+import '../services/tile_prefetch.dart';
+import '../utils/cadence.dart';
 import '../utils/stillness.dart';
 import '../utils/view_history.dart';
 import '../utils/visibility_change.dart';
@@ -154,6 +157,9 @@ class _MapScreenState extends State<MapScreen>
 
   /// bray 2026-09-17: phantom speed at rest reads 0 (utils/stillness.dart).
   final StillnessTracker _stillness = StillnessTracker();
+
+  /// bray 2026-09-17: a phone that stops reporting goes stale after max(2 min, 3 x its cadence) (utils/cadence.dart).
+  final CadenceTracker _cadence = CadenceTracker();
 
   /// bray: the cached tile provider, one per screen (its Dio client lives with it).
   final TileProvider _tiles = TileCache.instance.provider();
@@ -319,6 +325,7 @@ class _MapScreenState extends State<MapScreen>
       if (v != null && _mapReady && mounted) _restoreView(v);
     }));
     MapVisibilityStore.instance.addListener(_onMapVisibilityChanged);
+    selfFix.addListener(_onSelfFix);   // bray: the device's own GPS drives the viewer's badge with zero lag
     // One-time Android battery-optimization guidance (keeps background
     // updates alive when the app is closed). No-op elsewhere. Runs after the
     // first frame so the activity is visible.
@@ -330,7 +337,7 @@ class _MapScreenState extends State<MapScreen>
   void _onMembersChanged(List<Member> rawMembers) {
     if (!mounted) return;
     final DateTime now = DateTime.now();
-    final List<Member> members = _stillness.apply(rawMembers, now);   // bray: a member that has not moved is at 0 mph, whatever the frame said
+    final List<Member> members = _cadence.apply(_stillness.apply(withSelfLive(rawMembers, _userId, selfFix.value, now), now));   // bray: the viewer's own live speed first; a member that has not moved is at 0 mph; a silent phone goes stale by its cadence
     _drives.updateAll(members, now: now);
     _groups.observe(members, inDriveFor: _inDriveFor, now: now);
     for (final Member m in members) {
@@ -350,6 +357,7 @@ class _MapScreenState extends State<MapScreen>
       }
     }
     _motion.observe(members, now);   // 5b: dead reckoning + the pull (the 2 km snap rule lives there)
+    _prefetchAhead(members, now);
     setState(() {
       _members = members;
       _membersListenable.value = members;
@@ -397,6 +405,23 @@ class _MapScreenState extends State<MapScreen>
   /// frame with a straight move; the fit's centre moves as smoothly as the
   /// markers do. Off while focused / following, mid-animation, or within
   /// the 12 s after a gesture (autoFitDue - the user is panning).
+  /// bray 2026-09-17 (Bo's hotspot): every 5 s, prefetch the tiles ~3 km
+  /// ahead of the followed / focused member (else the viewer) while they move.
+  DateTime? _lastPrefetch;
+  void _prefetchAhead(List<Member> members, DateTime now) {
+    if (!_mapReady) return;
+    if (_lastPrefetch != null && now.difference(_lastPrefetch!) < const Duration(seconds: 5)) return;
+    final String? id = _focus.focusedId ?? _followId ?? _userId;
+    if (id == null) return;
+    Member? who;
+    for (final Member m in members) {
+      if (m.id == id) who = m;
+    }
+    if (who == null || who.position == null || who.headingDeg == null || who.displaySpeedAt(now) == null) return;
+    _lastPrefetch = now;
+    unawaited(TilePrefetcher.instance.ahead(from: who.position!, headingDeg: who.headingDeg!, zoom: _mapController.camera.zoom, urlTemplate: _satellite ? kSatelliteTileUrl : kTileUrl));
+  }
+
   void _trackFit(DateTime now) {
     if (!_mapReady || !_motion.activeAt(now)) return;
     if (_cameraAnim?.isAnimating ?? false) return;
@@ -879,6 +904,21 @@ class _MapScreenState extends State<MapScreen>
     if (v != null) _restoreView(v);
   }
 
+  /// A new device fix: the viewer's speed / heading / drive state update now,
+  /// from the device, not the next server frame (Bo driving, 15:38).
+  void _onSelfFix() {
+    if (!mounted || _userId == null || _members.isEmpty) return;
+    final DateTime now = DateTime.now();
+    final List<Member> members = _stillness.apply(withSelfLive(_members, _userId, selfFix.value, now), now);
+    _drives.updateAll(members, now: now);
+    _motion.observe(members, now);
+    _prefetchAhead(members, now);
+    setState(() {
+      _members = members;
+      _membersListenable.value = members;
+    });
+  }
+
   /// The map's list: everyone not hidden on this device. Counts, cards and
   /// the People screen keep the full list.
   List<Member> _onMap(List<Member> members) => MapVisibilityStore.instance.shown(members);
@@ -891,6 +931,7 @@ class _MapScreenState extends State<MapScreen>
   @override
   void dispose() {
     MapVisibilityStore.instance.removeListener(_onMapVisibilityChanged);
+    selfFix.removeListener(_onSelfFix);
     _viewSaveTimer?.cancel();
     _idleTimer?.cancel();
     _driveTick?.cancel();

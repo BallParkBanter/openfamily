@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:battery_plus/battery_plus.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:latlong2/latlong.dart';
 
 import 'api_client.dart';
 import 'device_service.dart';
 import 'location_outbox.dart';
+import 'self_fix.dart';
 
 /// Periodically reports the device's foreground GPS position to the backend
 /// (`POST /locations`) so the family can see where the user is.
@@ -82,6 +84,9 @@ class LocationReporter {
   /// Minimum interval between POST attempts (safety net against flooding).
   /// Shortened while an SOS is active so family sees fresher points.
   static Duration minPostInterval = const Duration(seconds: 5);
+
+  /// The interval while the device is moving (speed >= driveStillMph).
+  static const Duration movingPostInterval = Duration(seconds: 2);
 
   static Timer? _sosBurstTimer;
 
@@ -244,6 +249,17 @@ class LocationReporter {
   /// completes, so a slow POST doesn't lose a fix. The backfill bypasses the
   /// rate limiter so the user's final position is always reported.
   Future<void> _onPosition(Position position, {bool bypassRateLimit = false}) async {
+    // bray 2026-09-17: every fix the device produces goes to the map first
+    // (self_fix.dart) - the viewer's own badge never waits for the server.
+    final SelfFix fix = SelfFix(
+      position: LatLng(position.latitude, position.longitude),
+      at: position.timestamp.toUtc(),
+      speedMps: position.speed,
+      headingDeg: position.heading >= 0 ? position.heading : null,
+      accuracy: position.accuracy,
+    );
+    selfFix.value = fix;
+
     // Serialize: if a POST is in flight, remember this position as the latest
     // pending one and return; it is processed when the current POST completes.
     if (_posting) {
@@ -259,8 +275,11 @@ class LocationReporter {
     // a backfill, which should always go through).
     if (!bypassRateLimit) {
       final DateTime now = DateTime.now().toUtc();
+      // bray 2026-09-17: on the move the family sees this device every 2 s /
+      // 10 m (the stream's distance filter); parked, the usual interval.
+      final Duration interval = fix.moving && minPostInterval > movingPostInterval ? movingPostInterval : minPostInterval;
       if (_lastPostTime != null &&
-          now.difference(_lastPostTime!) < minPostInterval) {
+          now.difference(_lastPostTime!) < interval) {
         return;
       }
     }

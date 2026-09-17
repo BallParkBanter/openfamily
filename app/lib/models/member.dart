@@ -122,6 +122,7 @@ class Member {
     this.road,
     this.primaryDeviceId,
     this.devices = const <MemberDevice>[],
+    this.staleAfter,
   });
 
   final String id;
@@ -212,6 +213,11 @@ class Member {
   final String? primaryDeviceId;
   final List<MemberDevice> devices;
 
+  /// bray 2026-09-17: how long this member may stay silent before the stale
+  /// look - max(2 min, 3 x their reporting cadence) once a cadence is known
+  /// (utils/cadence.dart); null = [kStaleAfter].
+  final Duration? staleAfter;
+
   /// Whether this member is driving fast enough to show as "speeding".
   bool get isSpeeding =>
       movement == MovementType.car &&
@@ -244,7 +250,7 @@ class Member {
   /// the card's driving chip and the capsule's one speed all read this.
   bool isStaleAt(DateTime now) =>
       status == MemberStatus.stopped ||
-      (lastSeen != null && now.difference(lastSeen!) > kStaleAfter);
+      (lastSeen != null && now.difference(lastSeen!) > (staleAfter ?? kStaleAfter));
 
   /// [isStaleAt] the wall clock.
   bool get isStale => isStaleAt(DateTime.now());
@@ -299,6 +305,7 @@ class Member {
     RoadSnap? road,
     String? primaryDeviceId,
     List<MemberDevice>? devices,
+    Duration? staleAfter,
     bool clearRoad = false,   // bray 5b: a location frame with no `road` means raw - drop the old snap
   }) {
     return Member(
@@ -325,6 +332,7 @@ class Member {
       road: clearRoad ? null : (road ?? this.road),
       primaryDeviceId: primaryDeviceId ?? this.primaryDeviceId,
       devices: devices ?? this.devices,
+      staleAfter: staleAfter ?? this.staleAfter,
     );
   }
 
