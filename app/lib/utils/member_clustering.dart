@@ -63,6 +63,7 @@ class MemberCluster {
     required this.id,
     required this.centroid,
     required this.members,
+    this.forced = false,
   });
 
   /// Stable identifier (sorted member ids) so an expanded cluster can be
@@ -76,6 +77,11 @@ class MemberCluster {
   final LatLng centroid;
 
   final List<Member> members;
+
+  /// True when at least one member joined by [mustGroup] (riding together,
+  /// rig run 1028). 5b (Bo live 17:50): such a capsule never expands on a
+  /// tap - each face is its own hit target.
+  final bool forced;
 }
 
 /// A single bubble to render on the map: either a lone member, a fanned-out
@@ -88,6 +94,7 @@ class BubblePlacement {
     this.clusterId,
     this.clusterMembers = const [],
     this.anchor,
+    this.forced = false,
   });
 
   /// Where to pin the bubble.
@@ -108,6 +115,10 @@ class BubblePlacement {
   /// preview (stacked avatars) instead of a bare count. Empty for member
   /// bubbles.
   final List<Member> clusterMembers;
+
+  /// 5b: a riding-together capsule (MemberCluster.forced) - faces are hit
+  /// targets, the capsule never expands.
+  final bool forced;
 
   /// 5b step 3: the member's TRUE spot when this solo bubble was fanned
   /// away from an overlapping neighbour ([position] is the fanned point);
@@ -190,6 +201,7 @@ List<MemberCluster> clusterMembers(
         id: _clusterId(group),
         centroid: forced ? forcedAnchor(group, at) : _centroid(group),
         members: group,
+        forced: forced,
       ),
     );
   }
@@ -258,6 +270,7 @@ List<BubblePlacement> placeBubbles(
           clusterCount: cluster.members.length,
           clusterId: cluster.id,
           clusterMembers: cluster.members,
+          forced: cluster.forced,
         ),
       );
     }

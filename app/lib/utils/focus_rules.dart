@@ -44,10 +44,13 @@ class FocusRules {
     return _clock().difference(_lastTouch!) >= BrayTokens.idleBack;
   }
 
-  List<Member> visible(List<Member> all) {
+  /// Who the map draws: everyone, or - focused - the focused member and
+  /// their capsule-mates ([keep]; 5b, Bo live 17:50: a riding-together
+  /// capsule stays whole while one of its faces is focused).
+  List<Member> visible(List<Member> all, {Set<String> keep = const <String>{}}) {
     final String? id = _focusedId;
     if (id == null) return all;
-    return all.where((Member m) => m.id == id).toList();
+    return all.where((Member m) => m.id == id || keep.contains(m.id)).toList();
   }
 
   double zoomFor(Member m, double currentZoom) {
