@@ -432,10 +432,11 @@ class BrayTokens {
   static const int capsuleMaxFaces = 3;                       // DECISIONS "Groups": up to 3 faces, then a dark "+N" circle (markers-22.html: 3 <img> + .more "+3")
   static const Color groupMoreBg = Color(0xFF141B36);         // mock2 markers-22.html .cap .more background:#141b36
   static const double groupMoreFont = 20;                     // mock2 markers-22.html .cap .more font:800 20px
-  /// The badge's centre sits this far below the capsule's top edge: .gspd
-  /// top:559 with the capsule's top at 623 - 66 = 557 (its bottom is at 623,
-  /// height 58 + 2 x 3 + 2 x 1). "a slight overlay" (DECISIONS "Groups").
-  static const double groupBadgeCentreBelowTop = 2;           // mock2 markers-22.html .gspd top:559px vs .cap top 557px
+  /// The badge's BOTTOM sits this far below the capsule's top edge - it
+  /// overlaps only the pill's top edge, the faces stay clear (Bo, 2026-09-17
+  /// 00:20: "sits too low - covers too much of the faces"; was centred 2 px
+  /// under the top per markers-22.html .gspd top:559px, i.e. ~19 px over the faces).
+  static const double groupBadgeBottomBelowTop = 6;           // OPEN: chosen (Bo: "roughly badge bottom at the capsule's top edge + ~6 px")
   static const EdgeInsets groupBadgePad = EdgeInsets.fromLTRB(8, 4, 10, 4);          // mock2 markers-24.html .gcall padding:4px 10px 4px 8px
   static const EdgeInsets groupSpeedPad = EdgeInsets.symmetric(horizontal: 10, vertical: 4);   // mock2 markers-22.html .gspd padding:4px 10px
   static const double groupSpeedGap = 6;                      // mock2 markers-22.html .gspd gap:6px
