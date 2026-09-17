@@ -11,6 +11,8 @@
 // the dark pill with the accent outline) - there is no mockup for this
 // chip; every other number is OPEN: chosen.
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 
@@ -18,85 +20,55 @@ import '../models/member.dart';
 import '../theme/bray_tokens.dart';
 import '../utils/member_clustering.dart' show groundMetres;
 import '../utils/near_fit.dart';
-import 'heading_beam.dart' show HeadingBeamPainter;
 import 'member_avatar_bubble.dart' show StatusAvatar;
 
-/// Which screen edge a chip rides. Left/right chips run flush to that edge
-/// with the face on the edge side and the fan spreading past it (Life360's
-/// off-screen indicator; Bo 2026-09-16/17). Top/bottom chips keep the
-/// header/bar clear and put the face at the end nearest the person.
-enum EdgeSide { left, right, top, bottom }
+/// Which screen edge the avatar rides: always left or right (a steep bearing
+/// sits at the top or bottom of that edge, never on the header or the bar).
+enum EdgeSide { left, right }
 
+/// Life360's off-screen avatar (Bo's reference, mockups/2026-09-16-edge-chip/
+/// life360-reference-offscreen-avatar-crop.png; v3 2026-09-17 00:45): the
+/// person's round photo, ring in their colour, tucked ~40 % into the screen
+/// edge, sitting in a SOLID white flare that widens toward the edge (a
+/// rounded tail, soft drop shadow, opaque). Nothing else - no name, no
+/// distance (the smallest badge text would not fit under a 40 px face), no
+/// dark surface. The spoken label still says who, how far and which way.
 class EdgeChip extends StatelessWidget {
   const EdgeChip({super.key, required this.member, required this.label, required this.metres, required this.bearingDeg, this.edge = EdgeSide.left, this.onTap});
 
   final Member member;
 
-  /// The name as the viewer knows them (BrayTokens.labelFor).
+  /// The name as the viewer knows them (BrayTokens.labelFor) - spoken only.
   final String label;
 
-  /// Ground distance from the viewer's fix.
+  /// Ground distance from the viewer's fix - spoken only.
   final double metres;
 
-  /// Screen bearing to the member, 0 = up, clockwise.
+  /// Screen bearing to the member, 0 = up, clockwise - spoken only.
   final double bearingDeg;
 
-  /// The edge the chip is pinned to (decides which end the face is on).
+  /// The edge the avatar is tucked into.
   final EdgeSide edge;
   final VoidCallback? onTap;
 
-  // Life360-style v2 (Bo 2026-09-17 00:20, mockups/2026-09-16-edge-chip/
-  // edge-chip-2.html): a small face in the person's colour, a small name +
-  // distance pill beside it, and a soft fan in their colour from the face
-  // toward the screen edge in their bearing. No big pill: lighter than the
-  // focused people on the map.
-  static const double width = 150;        // OPEN: chosen - face + "Grandmother" / "1,973 mi" pill
-  static const double height = 44;        // OPEN: chosen - the 36 face with 4 of air
-  static const double face = 36;          // OPEN: chosen - ~60 % of the 56 marker ring
-  static const double faceRing = 2;       // OPEN: chosen
-  static const double faceInset = 18;     // OPEN: chosen - the face's near edge from the screen edge; its centre is 36 in, the fan spreads past it
-  static const double fanDisc = 170;      // OPEN: chosen - the fan's disc (the beam's 230 scaled down); reach = 85 x sqrt2 x .56 = 67
-  static const double fanWedgeDeg = 35;   // coordinator: ~35 degree wedge
-  static const double fanAlpha = 0.6;     // OPEN: chosen - the beam's 85 % dimmed (mockup edge-chip-2 color-mix 60 %)
-  static const double margin = 8;         // OPEN: chosen - air between the chip and the header / bottom bar (= BrayTokens.fitAir); none on the edge side
+  static const double width = 64;         // the box, flush to the edge: the flare's reach (30) + the shadow's air
+  static const double height = 72;        // the flare at the edge (64) + 4 of air top and bottom
+  static const double face = 40;          // ~70 % of the 56 marker ring (coordinator, 2026-09-17)
+  static const double faceRing = 2;       // OPEN: chosen - the ring in the person's colour
+  static const double faceCentreIn = 6;   // the face's centre this far inside the edge: 40 % of it is off screen (the crop)
+  static const double flarePad = 5;       // white round the face's inboard side (the crop: a thin margin)
+  static const double flareEdgeHalf = 32; // the flare's half-height at the edge: 1.6 x the face (the crop widens to ~1.35-1.6 D)
+  static const double margin = 8;         // OPEN: chosen - air between the avatar and the header / bottom bar (= BrayTokens.fitAir)
 
   String get a11y => '$label, ${milesLabel(metres)} away, off screen to the ${compassWord(bearingDeg)}';
 
-  /// The face sits at the left end for a left-edge chip, the right end for a
-  /// right-edge chip; a top/bottom chip puts it at the end the person is on
-  /// (westerly bearing = left).
-  bool get faceOnLeft => switch (edge) {
-        EdgeSide.left => true,
-        EdgeSide.right => false,
-        _ => bearingDeg % 360 > 180,
-      };
-
-  /// The face's centre inside the chip box.
-  Offset get faceCentre => Offset(faceOnLeft ? faceInset + face / 2 : width - faceInset - face / 2, height / 2);
+  /// The face's centre inside the box.
+  Offset get faceCentre => Offset(edge == EdgeSide.left ? faceCentreIn : width - faceCentreIn, height / 2);
 
   @override
   Widget build(BuildContext context) {
     final Color accent = BrayTokens.accentFor(member);
     final Offset fc = faceCentre;
-    final Widget pill = Container(
-      key: const Key('edge-chip-pill'),
-      padding: const EdgeInsets.fromLTRB(9, 3, 9, 3),
-      decoration: BoxDecoration(
-        color: BrayTokens.nameBadgeBg,                                   // the marker name pill's surface (markers-13.html .nm)
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: accent, width: 1),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: faceOnLeft ? CrossAxisAlignment.start : CrossAxisAlignment.end,
-        children: [
-          Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 12, fontWeight: BrayTokens.nameBadgeWeight, height: 1.1, color: Colors.white)),
-          Text(milesLabel(metres), maxLines: 1, overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, height: 1.1, color: Color(0xFFC8CFDA))),   // OPEN: chosen - the card's meta grey
-        ],
-      ),
-    );
     return Semantics(
       container: true,
       button: true,
@@ -112,16 +84,10 @@ class EdgeChip extends StatelessWidget {
           child: Stack(
             clipBehavior: Clip.none,
             children: [
-              // The fan, under everything, centred on the face, aimed at the person.
-              Positioned(
-                left: fc.dx - fanDisc / 2,
-                top: fc.dy - fanDisc / 2,
-                child: IgnorePointer(
-                  child: CustomPaint(
-                    key: const Key('edge-chip-fan'),
-                    size: const Size(fanDisc, fanDisc),
-                    painter: HeadingBeamPainter(headingDeg: bearingDeg, accent: accent, wedgeDeg: fanWedgeDeg, alpha: fanAlpha),
-                  ),
+              Positioned.fill(
+                child: CustomPaint(
+                  key: const Key('edge-chip-flare'),
+                  painter: EdgeFlarePainter(edge: edge, faceCentre: fc, faceRadius: face / 2 + flarePad, edgeHalf: flareEdgeHalf),
                 ),
               ),
               Positioned(
@@ -131,21 +97,10 @@ class EdgeChip extends StatelessWidget {
                   key: const Key('edge-chip-face'),
                   width: face,
                   height: face,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: accent, width: faceRing),
-                    boxShadow: const [BoxShadow(color: BrayTokens.badgeShadow, blurRadius: BrayTokens.badgeShadowBlur, offset: Offset(0, BrayTokens.badgeShadowDy))],
-                  ),
+                  decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: accent, width: faceRing)),
                   clipBehavior: Clip.antiAlias,
                   child: ClipOval(child: StatusAvatar(member: member, size: face - 2 * faceRing, ringWidth: 0)),
                 ),
-              ),
-              Positioned(
-                left: faceOnLeft ? faceInset + face + 6 : null,
-                right: faceOnLeft ? null : faceInset + face + 6,
-                top: 0,
-                bottom: 0,
-                child: Center(child: pill),
               ),
             ],
           ),
@@ -153,6 +108,47 @@ class EdgeChip extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The white flare: from the screen edge (a 2 x [edgeHalf] tall base) it
+/// narrows inboard to a round cap round the face ([faceRadius] round
+/// [faceCentre]), filled with the badge white and a soft drop shadow -
+/// the crop's tail shape (mockup edge-chip-3.html's path).
+class EdgeFlarePainter extends CustomPainter {
+  const EdgeFlarePainter({required this.edge, required this.faceCentre, required this.faceRadius, required this.edgeHalf});
+  final EdgeSide edge;
+  final Offset faceCentre;
+  final double faceRadius, edgeHalf;
+
+  Path flare(Size size) {
+    // Drawn for the LEFT edge (x = 0 is the screen edge), mirrored for the right.
+    final double cx = faceCentre.dx, cy = faceCentre.dy;
+    final double r = faceRadius;
+    // the cap's tangent points, +-16 degrees off the inboard axis (the mockup's arc: 25 wide, 14 tall)
+    const double a = 16 * math.pi / 180;
+    final Offset top = Offset(cx + r * math.cos(a), cy - r * math.sin(a));
+    final Offset bottom = Offset(cx + r * math.cos(a), cy + r * math.sin(a));
+    final Path p = Path()
+      ..moveTo(0, cy - edgeHalf)
+      ..cubicTo(cx + 8, cy - edgeHalf + 6, cx + 16, top.dy - 11, top.dx, top.dy)
+      ..arcToPoint(bottom, radius: Radius.circular(r), clockwise: true)
+      ..cubicTo(cx + 16, bottom.dy + 11, cx + 8, cy + edgeHalf - 6, 0, cy + edgeHalf)
+      ..close();
+    if (edge == EdgeSide.right) {
+      return p.transform((Matrix4.identity()..translateByDouble(size.width, 0, 0, 1)..scaleByDouble(-1, 1, 1, 1)).storage);
+    }
+    return p;
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Path p = flare(edge == EdgeSide.left ? size : Size(size.width, size.height));
+    canvas.drawShadow(p, const Color(0xFF000000), 3, true);                                   // the crop's soft drop shadow
+    canvas.drawPath(p, Paint()..color = BrayTokens.badgeBg..style = PaintingStyle.fill);      // the badges' white (markers-13.html .age #fff)
+  }
+
+  @override
+  bool shouldRepaint(EdgeFlarePainter old) => old.edge != edge || old.faceCentre != faceCentre || old.faceRadius != faceRadius || old.edgeHalf != edgeHalf;
 }
 
 /// A FlutterMap child: one [EdgeChip] per far member whose marker is not on
@@ -185,8 +181,8 @@ class EdgeChipLayer extends StatelessWidget {
     final MapCamera camera = MapCamera.of(context);
     final Size size = Size(camera.nonRotatedSize.x, camera.nonRotatedSize.y);
     final Rect screen = Offset.zero & size;
-    // Flush to the left/right screen edge (no air); the header and the bar
-    // keep their air above and below.
+    // The avatar box is flush to the left/right screen edge; along that edge
+    // its centre stays between the header and the bar (plus 8 of air).
     final Rect band = Rect.fromLTRB(
       EdgeChip.width / 2,
       chromeTop + EdgeChip.margin + EdgeChip.height / 2,
@@ -200,9 +196,9 @@ class EdgeChipLayer extends StatelessWidget {
       final p = camera.latLngToScreenPoint(m.position!);
       final Offset target = Offset(p.x, p.y);
       if (screen.contains(target)) continue;   // panned onto the map: the marker is the chip
-      final Offset at = edgePoint(centre: centre, target: target, bounds: band);
       final double metres = viewer == null ? 0 : groundMetres(viewer.position!, m.position!);
-      final EdgeSide edge = edgeSideOf(at, band);
+      final EdgeSide edge = target.dx < centre.dx ? EdgeSide.left : EdgeSide.right;
+      final Offset at = edgeAvatarPoint(centre: centre, target: target, band: band, edge: edge);
       chips.add(Positioned(
         left: at.dx - EdgeChip.width / 2,
         top: at.dy - EdgeChip.height / 2,
@@ -213,11 +209,13 @@ class EdgeChipLayer extends StatelessWidget {
   }
 }
 
-/// Which side of [band] the chip centre [at] landed on - left/right win over
-/// top/bottom (they are the flush edges).
-EdgeSide edgeSideOf(Offset at, Rect band) {
-  if (at.dx <= band.left + 0.5) return EdgeSide.left;
-  if (at.dx >= band.right - 0.5) return EdgeSide.right;
-  if (at.dy <= band.top + 0.5) return EdgeSide.top;
-  return EdgeSide.bottom;
+/// Where the avatar's centre sits: on the band's left or right edge line
+/// (by [edge]), where the ray from the screen centre to [target] crosses
+/// it - clamped to the band's top/bottom for a steep bearing (Life360: a
+/// person far to the north-west sits at the top of the left edge).
+Offset edgeAvatarPoint({required Offset centre, required Offset target, required Rect band, required EdgeSide edge}) {
+  final double x = edge == EdgeSide.left ? band.left : band.right;
+  final Offset d = target - centre;
+  final double y = d.dx.abs() > 1e-6 ? centre.dy + d.dy * (x - centre.dx) / d.dx : (d.dy < 0 ? band.top : band.bottom);
+  return Offset(x, y.clamp(band.top, band.bottom));
 }
