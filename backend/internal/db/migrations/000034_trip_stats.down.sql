@@ -1,0 +1,1 @@
+ALTER TABLE trips DROP COLUMN IF EXISTS top_speed_mps, DROP COLUMN IF EXISTS from_place, DROP COLUMN IF EXISTS to_place;

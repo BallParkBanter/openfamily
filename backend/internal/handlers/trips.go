@@ -58,6 +58,37 @@ type Trip struct {
 	DistanceM float64      `json:"distance_m"`
 	Matched   bool         `json:"matched"`
 	Fixes     int          `json:"fixes"`
+	// Drives screen (2026-09-17): the fastest fix, and the saved place (if
+	// any) at each end - the app fills in streets with its own geocoder.
+	TopSpeedMPS *float64 `json:"top_speed_mps,omitempty"`
+	FromPlace   *string  `json:"from_place,omitempty"`
+	ToPlace     *string  `json:"to_place,omitempty"`
+}
+
+// topSpeed is the fastest fix of a drive (nil when no fix carried a speed).
+func topSpeed(fixes []tripFix) *float64 {
+	var best *float64
+	for _, f := range fixes {
+		if f.SpeedMPS != nil && (best == nil || *f.SpeedMPS > *best) {
+			v := *f.SpeedMPS
+			best = &v
+		}
+	}
+	return best
+}
+
+// placeNameAt is the family's saved place containing the point, or nil.
+func (s *Server) placeNameAt(ctx context.Context, userID string, lat, lon float64) *string {
+	var name string
+	err := s.Pool.QueryRow(ctx, `
+		SELECT p.name FROM places p JOIN users u ON u.family_id = p.family_id
+		WHERE u.id = $1 AND p.geom IS NOT NULL
+		  AND ST_DWithin(p.geom::geography, ST_SetSRID(ST_MakePoint($3, $2), 4326)::geography, COALESCE(p.radius_meters, 100))
+		ORDER BY ST_Distance(p.geom::geography, ST_SetSRID(ST_MakePoint($3, $2), 4326)::geography) LIMIT 1`, userID, lat, lon).Scan(&name)
+	if err != nil {
+		return nil
+	}
+	return &name
 }
 
 // moving says whether fix i counts as moving: by its speed when it has one,
@@ -287,13 +318,16 @@ func (s *Server) upsertTrip(ctx context.Context, userID string, fixes []tripFix,
 		t := fixes[len(fixes)-1].At
 		ended = &t
 	}
+	first, last := fixes[0], fixes[len(fixes)-1]
 	_, err = s.Pool.Exec(ctx, `
-		INSERT INTO trips (user_id, started_at, ended_at, polyline, distance_m, matched, fixes, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+		INSERT INTO trips (user_id, started_at, ended_at, polyline, distance_m, matched, fixes, top_speed_mps, from_place, to_place, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
 		ON CONFLICT (user_id, started_at) DO UPDATE SET
 			ended_at = EXCLUDED.ended_at, polyline = EXCLUDED.polyline, distance_m = EXCLUDED.distance_m,
-			matched = EXCLUDED.matched, fixes = EXCLUDED.fixes, updated_at = now()`,
-		userID, fixes[0].At, ended, raw, dist, matched, len(fixes))
+			matched = EXCLUDED.matched, fixes = EXCLUDED.fixes, top_speed_mps = EXCLUDED.top_speed_mps,
+			from_place = EXCLUDED.from_place, to_place = EXCLUDED.to_place, updated_at = now()`,
+		userID, first.At, ended, raw, dist, matched, len(fixes), topSpeed(fixes),
+		s.placeNameAt(ctx, userID, first.Lat, first.Lon), s.placeNameAt(ctx, userID, last.Lat, last.Lon))
 	return err
 }
 
@@ -395,7 +429,7 @@ func (s *Server) ListMemberTrips(w http.ResponseWriter, r *http.Request) {
 		slog.Debug("trips: rebuild on read failed", "err", err)
 	}
 	rows, err := s.Pool.Query(r.Context(), `
-		SELECT id, user_id, started_at, ended_at, polyline, distance_m, matched, fixes
+		SELECT id, user_id, started_at, ended_at, polyline, distance_m, matched, fixes, top_speed_mps, from_place, to_place
 		FROM trips WHERE user_id = $1 AND (ended_at IS NULL OR ended_at >= $2)
 		ORDER BY started_at`, memberID, since)
 	if err != nil {
@@ -407,7 +441,7 @@ func (s *Server) ListMemberTrips(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var t Trip
 		var raw []byte
-		if err := rows.Scan(&t.ID, &t.UserID, &t.StartedAt, &t.EndedAt, &raw, &t.DistanceM, &t.Matched, &t.Fixes); err != nil {
+		if err := rows.Scan(&t.ID, &t.UserID, &t.StartedAt, &t.EndedAt, &raw, &t.DistanceM, &t.Matched, &t.Fixes, &t.TopSpeedMPS, &t.FromPlace, &t.ToPlace); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to scan trip")
 			return
 		}

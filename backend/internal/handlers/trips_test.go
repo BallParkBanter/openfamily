@@ -57,6 +57,9 @@ func TestSegmentDrivesHomeThenWobble(t *testing.T) {
 	if c, o := segmentDrives(phantom, t0.Add(7*time.Hour)); len(c) != 0 || o != nil {
 		t.Fatalf("a drive that never left the house is not a trip: closed %d open %v", len(c), o != nil)
 	}
+	if ts := topSpeed(d); ts == nil || *ts < 40*0.44704-0.01 {
+		t.Fatalf("top speed is the fastest fix (40 mph), got %v", ts)
+	}
 	// the raw fallback of the wobble alone would be nothing but the ends
 	poly, dist := rawPolyline(fixes[60:])
 	if len(poly) > 2 || dist > 30 {
