@@ -65,6 +65,7 @@ void main() {
     expect(face.center.dx, EdgeChip.faceCentreIn);
     expect(face.left, EdgeChip.rimIn + EdgeChip.hairline + EdgeChip.whiteBorder);   // the circle's rim (hairline + white) is 6 in from the edge, on screen
     expect(EdgeChip.whiteBorder, BrayTokens.ringSolo);                              // = the marker ring's width, uniform all round
+    expect(EdgeFlarePainter.fill, BrayTokens.capsuleGrey);                          // the capsule's padding/ring grey, not white (Bo 08:40)
     final BoxDecoration ring = t.widget<Container>(find.byKey(const Key('edge-chip-face'))).decoration as BoxDecoration;
     expect(ring.border!.top.color, BrayTokens.accentHeidi);
     final EdgeFlarePainter flare = t.widget<CustomPaint>(find.byKey(const Key('edge-chip-flare'))).painter as EdgeFlarePainter;
