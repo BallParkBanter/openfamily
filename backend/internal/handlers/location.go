@@ -261,6 +261,13 @@ func (s *Server) IngestLocation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to update member stay")
 		return
 	}
+	// bray 5b: road snapping for a driving fix (handlers/mapmatch.go); raw
+	// (NULL) when still, off-road, or the matcher is down / slow.
+	road := s.snapRoad(r.Context(), tx, ownerID, req.SpeedMPS, req.HeadingDeg)
+	if _, err := tx.Exec(r.Context(), `UPDATE member_positions SET road_snap = $2 WHERE user_id = $1 AND ts = $3`, ownerID, road, ts); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to store road snap")
+		return
+	}
 
 	if _, err := tx.Exec(r.Context(), `
 		UPDATE devices SET last_seen = now() WHERE id = $1`, req.DeviceID); err != nil {
@@ -315,6 +322,7 @@ func (s *Server) IngestLocation(w http.ResponseWriter, r *http.Request) {
 			MotionState:    motionState,
 			AccuracyMeters: req.AccuracyMeters,
 			HeadingDeg:     req.HeadingDeg,
+			Road:           road,
 			Place:          place,
 		})
 	}()

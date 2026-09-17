@@ -250,7 +250,7 @@ List<BubblePlacement> placeBubbles(
   for (final MemberCluster cluster in clusters) {
     if (cluster.members.length == 1) {
       solos.add(cluster.members.first);
-    } else if (expandedClusterIds.contains(cluster.id)) {
+    } else if (expandedClusterIds.contains(cluster.id) && !cluster.forced) {   // 5b: a riding-together capsule is never fanned out, whatever an old tap left in the set
       final Offset centroid = _screenCentroid(cluster.members, toScreenOffset);
       for (int i = 0; i < cluster.members.length; i++) {
         final double angle = (2 * math.pi * i) / cluster.members.length;

@@ -67,6 +67,7 @@ func main() {
 	srv := handlers.New(pool, tm, dispatcher)
 	srv.VerbosePush = cfg.VerbosePush
 	srv.NtfyBaseURL = cfg.NtfyBaseURL
+	srv.Matcher = handlers.NewMatcher(os.Getenv("VALHALLA_URL")) // bray 5b: road snapping; empty = raw only
 	srv.TileURL = cfg.TileURL
 	srv.SatelliteTileURL = cfg.SatelliteTileURL
 	srv.APNsConfigured = cfg.APNsKeyFile != ""
