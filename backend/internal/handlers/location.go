@@ -348,23 +348,10 @@ func (s *Server) IngestLocation(w http.ResponseWriter, r *http.Request) {
 		placeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		place := s.loadMemberPlace(placeCtx, ownerID)
 		cancel()
-		s.broadcastLocation(ownerID, wsLocation{
-			Type:           "location",
-			UserID:         ownerID,
-			Lat:            req.Lat,
-			Lon:            req.Lon,
-			TS:             ts,
-			LastSeenAt:     time.Now().UTC(),
-			BatteryPct:     req.BatteryPct,
-			Charging:       req.Charging,
-			SpeedMPS:       req.SpeedMPS,
-			MotionState:    motionState,
-			AccuracyMeters: req.AccuracyMeters,
-			HeadingDeg:     req.HeadingDeg,
-			DeviceID:       req.DeviceID,
-			Road:           road,
-			Place:          place,
-		})
+		frame := liveLocationFrame(ownerID, req.Lat, req.Lon, ts, req.BatteryPct, req.Charging, storedSpeed, motionState, req.AccuracyMeters, req.HeadingDeg, req.DeviceID)
+		frame.Road = road
+		frame.Place = place
+		s.broadcastLocation(ownerID, frame)
 	}()
 
 	writeJSON(w, http.StatusCreated, models.Location{
@@ -374,7 +361,7 @@ func (s *Server) IngestLocation(w http.ResponseWriter, r *http.Request) {
 		Lon:            req.Lon,
 		AccuracyMeters: req.AccuracyMeters,
 		AltitudeMeters: req.AltitudeMeters,
-		SpeedMPS:       req.SpeedMPS,
+		SpeedMPS:       storedSpeed, // the cleaned speed, same as the row and the frame
 		HeadingDeg:     req.HeadingDeg,
 		BatteryPct:     req.BatteryPct,
 		Charging:       req.Charging,
@@ -404,4 +391,27 @@ func nullIfEmpty(s string) any {
 		return nil
 	}
 	return s
+}
+
+// liveLocationFrame is the WS `location` frame for a stored fix. Its speed
+// is the CLEANED value written to member_positions (parkedSpeed), never the
+// request's raw one - bray (2026-09-17 07:26 ET, Bo and Charlie at a red
+// light): the row said 0 while the frame still carried the tablet's 10-15
+// mph phantom, so the badge read 10 mph at rest.
+func liveLocationFrame(ownerID string, lat, lon float64, ts time.Time, batteryPct *float64, charging *bool, cleanedSpeed *float64, motionState *string, accuracy, heading *float64, deviceID string) wsLocation {
+	return wsLocation{
+		Type:           "location",
+		UserID:         ownerID,
+		Lat:            lat,
+		Lon:            lon,
+		TS:             ts,
+		LastSeenAt:     time.Now().UTC(),
+		BatteryPct:     batteryPct,
+		Charging:       charging,
+		SpeedMPS:       cleanedSpeed,
+		MotionState:    motionState,
+		AccuracyMeters: accuracy,
+		HeadingDeg:     heading,
+		DeviceID:       deviceID,
+	}
 }
