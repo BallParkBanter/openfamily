@@ -7,11 +7,12 @@
 // bray 2026-09-17 (Bo, focused on himself at home: "straight green lines
 // between raw fixes ... plus a star-shaped scribble at the house"): the
 // trail is the member's TRIPS (services/trips_service.dart) - each drive as
-// the on-road polyline the backend map-matched with Valhalla - drawn one
-// polyline per trip. Nothing is drawn for a stationary period (a stop is not
-// a trip; a wobble at the house never becomes a line). An unmatched trip
-// falls back to its raw fixes, thinned so no segment joins two fixes within
-// max(accuracy, 25 m). The open drive is refetched every minute.
+// the on-road polyline the backend map-matched with Valhalla. Since the
+// Drives screen holds the history (Bo, 13:3x): the trail is the OPEN drive
+// only - the trip with ended_at null, live, refetched every minute - and
+// clears when it closes. Nothing is drawn for a stationary period. An
+// unmatched open drive falls back to its raw fixes, thinned so no segment
+// joins two fixes within max(accuracy, 25 m).
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -38,15 +39,13 @@ class FocusTrailLayer extends StatefulWidget {
   static const Duration window = Duration(hours: 6);     // J:159 hours=6
   static const double minStepMeters = 25;                // the raw fallback: a step under max(accuracy, 25 m) is wobble
 
-  /// The polylines to draw: one per trip inside the window, oldest first.
-  /// A matched trip is drawn as stored; an unmatched one as its raw fixes,
-  /// thinned to [minStepMeters]. A trip with fewer than two points is nothing.
+  /// The polylines to draw: the OPEN drive only (ended_at null); a closed
+  /// trip lives in Drives. A matched drive is drawn as stored; an unmatched
+  /// one as its raw fixes thinned to [minStepMeters]. Fewer than two points
+  /// is nothing.
   static List<List<LatLng>> tripLines(List<Trip> trips, DateTime now) {
-    final DateTime cutoff = now.subtract(window);
-    final List<Trip> inWindow = trips.where((Trip t) => t.open || !t.endedAt!.isBefore(cutoff)).toList()
-      ..sort((Trip a, Trip b) => a.startedAt.compareTo(b.startedAt));
     final List<List<LatLng>> out = <List<LatLng>>[];
-    for (final Trip t in inWindow) {
+    for (final Trip t in trips.where((Trip t) => t.open)) {
       final List<LatLng> pts = t.matched ? t.points : thinRaw(t.points);
       if (pts.length >= 2) out.add(pts);
     }
@@ -101,7 +100,7 @@ class _FocusTrailLayerState extends State<FocusTrailLayer> {
     }
     final String id = m.id;
     final DateTime now = widget.now ?? DateTime.now();
-    final DateTime since = now.subtract(FocusTrailLayer.window);
+    final DateTime since = now.subtract(FocusTrailLayer.window);   // the open drive is served whatever `since` says; the window keeps the answer small
     try {
       final List<Trip> trips = widget.fetch != null
           ? await widget.fetch!(id, since)
