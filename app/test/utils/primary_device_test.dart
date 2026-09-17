@@ -57,8 +57,10 @@ void main() {
       ],
     };
     expect(memberFromJson(c, now: now).charging, isTrue);           // the relay's bolt survives
-    c['devices'][1]['ts'] = iso(now.subtract(const Duration(minutes: 30)));
-    expect(memberFromJson(c, now: now).charging, isNull);           // a stale relay does not
+    c['devices'][1]['ts'] = iso(now.subtract(const Duration(minutes: 25)));
+    expect(memberFromJson(c, now: now).charging, isTrue);           // a parked relay posts every 15-30 min: still counts
+    c['devices'][1]['ts'] = iso(now.subtract(const Duration(hours: 2)));
+    expect(memberFromJson(c, now: now).charging, isNull);           // two hours old does not
   });
 
   test('a location frame from the tablet while the phone is fresh moves nothing but the tablet\'s entry; a frame from the phone moves the face', () {
