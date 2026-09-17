@@ -148,6 +148,7 @@ class _MapScreenState extends State<MapScreen>
   /// the Back stack (utils/view_history.dart).
   final ViewHistory _history = ViewHistory();
   MapView? _restoredView;
+  bool _launchRestored = false;   // a saved view was put back at launch: the first-welcome re-fit must not undo it
   Timer? _viewSaveTimer;
 
   /// bray 2026-09-17: phantom speed at rest reads 0 (utils/stillness.dart).
@@ -637,7 +638,15 @@ class _MapScreenState extends State<MapScreen>
 
   void _onUserId(String userId) {
     if (!mounted) return;
+    final bool first = _userId == null;
     setState(() => _userId = userId);
+    // The viewer's id arrives with the WS welcome frame, AFTER _load()'s first
+    // fit - which therefore framed everyone (no viewer = nobody near). Once
+    // the viewer is known, and nothing has been touched or restored, fit the
+    // near cluster the way every later fit does (bray 2026-09-17).
+    if (first && _mapReady && !_launchRestored && _lastGesture == null && _focus.focusedId == null && _followId == null && !_history.canGoBack) {
+      _fitToMembers();
+    }
   }
 
   /// Retries the initial family load automatically when the network returns
@@ -858,6 +867,7 @@ class _MapScreenState extends State<MapScreen>
       });
     }
     _lastGesture = DateTime.now();   // the auto-fit waits its 12 s, as after a gesture
+    _launchRestored = true;
     _mapController.move(v.center, v.zoom);
     _saveView();
   }
