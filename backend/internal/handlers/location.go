@@ -218,7 +218,7 @@ func (s *Server) IngestLocation(w http.ResponseWriter, r *http.Request) {
 		}()
 		// Presence is liveness, so use server receipt time rather than the GPS
 		// fix timestamp. A delayed fix must never move "last seen" backwards.
-		go s.broadcastPresence(ownerID, time.Now().UTC(), req.BatteryPct, req.Charging)
+		go s.broadcastPresence(ownerID, time.Now().UTC(), req.BatteryPct, req.Charging, req.DeviceID)
 		// The presence frame carries no place, so a parked phone would never
 		// tell a live tablet it is now at a newly created place. Announce it.
 		go s.broadcastPlace(ownerID)
@@ -322,6 +322,7 @@ func (s *Server) IngestLocation(w http.ResponseWriter, r *http.Request) {
 			MotionState:    motionState,
 			AccuracyMeters: req.AccuracyMeters,
 			HeadingDeg:     req.HeadingDeg,
+			DeviceID:       req.DeviceID,
 			Road:           road,
 			Place:          place,
 		})

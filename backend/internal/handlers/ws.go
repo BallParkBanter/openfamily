@@ -42,6 +42,9 @@ type wsMember struct {
 	// the pin.
 	LastSeenAt *time.Time          `json:"last_seen_at,omitempty"`
 	Place      *models.MemberPlace `json:"place,omitempty"`
+	// bray 2026-09-17: the primary device and every device's newest fix (member_devices.go).
+	PrimaryDeviceID *string               `json:"primary_device_id,omitempty"`
+	Devices         []models.MemberDevice `json:"devices,omitempty"`
 }
 
 // wsLocation is a live location update broadcast to a family.
@@ -58,7 +61,9 @@ type wsLocation struct {
 	MotionState    *string   `json:"motion_state"`
 	AccuracyMeters *float64  `json:"accuracy_meters"`
 	HeadingDeg     *float64  `json:"heading_deg"`
-	Road           *models.RoadSnap `json:"road,omitempty"`
+	// DeviceID (bray 2026-09-17): which of the member's devices posted this fix (the app's primary-device rule).
+	DeviceID string           `json:"device_id,omitempty"`
+	Road     *models.RoadSnap `json:"road,omitempty"`
 	// Place: where the member is in words (Bray piece 4); omitted when unknown.
 	Place *models.MemberPlace `json:"place,omitempty"`
 }
@@ -74,6 +79,8 @@ type wsPresence struct {
 	TS         time.Time `json:"ts"`
 	BatteryPct *float64  `json:"battery_pct,omitempty"`
 	Charging   *bool     `json:"charging,omitempty"`
+	// DeviceID (bray 2026-09-17): the device that heartbeat / posted the deduped fix.
+	DeviceID string `json:"device_id,omitempty"`
 }
 
 // wsAvatarUpdate tells already-connected clients to fetch or clear a changed
@@ -308,6 +315,16 @@ func (s *Server) familyMembersSnapshot(ctx context.Context, familyID, callerID s
 	if rows.Err() != nil {
 		return nil, rows.Err()
 	}
+	ids := make([]string, 0, len(members))
+	for _, m := range members {
+		ids = append(ids, m.ID)
+	}
+	if devices, err := s.memberDevices(ctx, ids); err == nil {
+		for i := range members {
+			members[i].Devices = devices[members[i].ID]
+			members[i].PrimaryDeviceID = primaryOf(members[i].Devices)
+		}
+	}
 	return members, nil
 }
 
@@ -347,7 +364,7 @@ func (s *Server) broadcastLocation(ownerID string, loc wsLocation) {
 // broadcastLocation, it resolves the family under a background context so a
 // client disconnect cannot cancel the broadcast; callers should invoke it in a
 // goroutine.
-func (s *Server) broadcastPresence(ownerID string, ts time.Time, batteryPct *float64, charging *bool) {
+func (s *Server) broadcastPresence(ownerID string, ts time.Time, batteryPct *float64, charging *bool, deviceID string) {
 	// Nobody listening: skip the family lookup entirely, matching
 	// broadcastLocation's idle fast path.
 	if !s.hub.hasAny() && !s.hub.hasAdminClients() {
@@ -366,6 +383,7 @@ func (s *Server) broadcastPresence(ownerID string, ts time.Time, batteryPct *flo
 		TS:         ts,
 		BatteryPct: batteryPct,
 		Charging:   charging,
+		DeviceID:   deviceID,
 	})
 	if err != nil {
 		slog.Warn("presence broadcast: marshal failed", "err", err)
