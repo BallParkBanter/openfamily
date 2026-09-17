@@ -97,7 +97,7 @@ void main() {
     expect(BrayTokens.groupMoreBg, const Color(0xFF141B36));
     expect(BrayTokens.groupMoreFont, 20);
     expect(BrayTokens.capsuleLift, 17);
-    expect(BrayTokens.groupBadgeCentreBelowTop, 2);
+    expect(BrayTokens.groupBadgeBottomBelowTop, 6);
     expect(BrayTokens.groupBadgePad, const EdgeInsets.fromLTRB(8, 4, 10, 4));
     expect(BrayTokens.groupSpeedPad, const EdgeInsets.symmetric(horizontal: 10, vertical: 4));
     expect(BrayTokens.groupSpeedGap, 6);
