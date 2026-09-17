@@ -10,6 +10,7 @@
 // last changed for that member.
 import '../models/member.dart';
 import '../theme/bray_tokens.dart';
+import '../utils/time_words.dart';
 
 /// Two arrivals closer than this are "together" (design list: "when everyone
 /// has been at this spot together"). OPEN: chosen - 15 min.
@@ -62,14 +63,9 @@ String hereFor(Duration d) {
   return '$m min';
 }
 
-/// "41 min ago", "2 hr ago", "3 d ago" - the one largest unit, floored.
-/// OPEN: chosen - under a minute reads "just now" (J:57-64 ago() does the
-/// same under 2 min).
+/// "41 min ago", "2 hr, 37 min ago" - the one shared formatter
+/// (utils/time_words.dart relativeTime), given the age.
 String arrivedAgo(Duration d) {
-  final int mins = d.isNegative ? 0 : d.inMinutes;
-  if (mins < 1) return 'just now';
-  if (mins < 60) return '$mins min ago';
-  final int hrs = mins ~/ 60;
-  if (hrs < 24) return '$hrs hr ago';
-  return '${hrs ~/ 24} d ago';
+  final DateTime now = DateTime(2000);
+  return relativeTime(now.subtract(d.isNegative ? Duration.zero : d), now);
 }

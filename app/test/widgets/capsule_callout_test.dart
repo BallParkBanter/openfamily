@@ -43,7 +43,7 @@ void main() {
       expect(capsuleCallout([m('Bo Bray', ago: const Duration(minutes: 41)), m('Charlie', ago: const Duration(hours: 3))], now),
           'Bo arrived 41 min ago');
       expect(capsuleCallout([m('Charlie Bray', ago: const Duration(hours: 2, minutes: 20)), m('Heidi', ago: const Duration(hours: 9))], now),
-          'Charlie arrived 2 hr ago');
+          'Charlie arrived 2 hr, 20 min ago');
       // Exactly 15 min apart is a late joiner (the rule is "< 15 min" for together).
       expect(capsuleCallout([m('Bo', ago: const Duration(minutes: 1)), m('Charlie', ago: const Duration(minutes: 16))], now),
           'Bo arrived 1 min ago');

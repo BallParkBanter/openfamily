@@ -303,7 +303,7 @@ void main() {
       final Member refreshed = refreshStaleness(aged);
 
       expect(refreshed.status, MemberStatus.stopped);
-      expect(refreshed.address, 'Position from 8h ago');
+      expect(refreshed.address, 'Position from 8 hr ago');
       expect(isStaleAddress(refreshed.address), isTrue);
     });
   });

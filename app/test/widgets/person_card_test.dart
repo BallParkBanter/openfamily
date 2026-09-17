@@ -87,7 +87,7 @@ void main() {
   });
   testWidgets('row 2: each chip hugs its own text - the long stale chip is never capped at half the row while its sibling has room', (t) async {
     await t.pumpWidget(host(card(m('Charlie', mph: 65, ago: const Duration(hours: 4)), place: school)));
-    expect(find.text('🕒 Updated 4h ago'), findsOneWidget);
+    expect(find.text('🕒 Updated 4 hr ago'), findsOneWidget);
     expect(find.text('📏 last seen 10 mi away'), findsOneWidget);
     for (final String k in ['card-fact-0', 'card-fact-1']) {
       final Text chip = t.widget<Text>(find.descendant(of: find.byKey(Key(k)), matching: find.byType(Text)));
@@ -137,7 +137,7 @@ void main() {
     expect(find.text('🏠 Home'), findsOneWidget);
     await t.pumpWidget(host(card(m('Charlie', mph: 65, ago: const Duration(hours: 4)), place: school)));
     expect((t.widget<Container>(find.byKey(const Key('card-dot'))).decoration as BoxDecoration).color, BrayTokens.cardDotStale);
-    expect(find.text('🕒 Updated 4h ago'), findsOneWidget);
+    expect(find.text('🕒 Updated 4 hr ago'), findsOneWidget);
     expect(find.textContaining('mph'), findsNothing);
     await t.pumpWidget(host(card(m('Heidi', batt: 100), charging: true)));
     expect(find.text('⚡'), findsOneWidget);
@@ -165,7 +165,7 @@ void main() {
   testWidgets('semantics label names the card for the rig: "<label> card · battery N% · <ago>"', (t) async {
     final SemanticsHandle handle = t.ensureSemantics();
     await t.pumpWidget(host(card(m('Charlie'), place: school)));
-    expect(find.bySemanticsLabel(RegExp(r'^Charlie card · battery 96% · 3m ago')), findsOneWidget);
+    expect(find.bySemanticsLabel(RegExp(r'^Charlie card · battery 96% · 3 min ago')), findsOneWidget);
     handle.dispose();
   });
 }

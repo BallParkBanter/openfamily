@@ -44,7 +44,7 @@ Future<void> walkAll(WidgetTester t) async {
     // The driving row: a speed with its street; the stale row: the age.
     expect(find.text('61 mph'), findsOneWidget, reason: v.name);
     expect(find.text('Loganville Hwy'), findsOneWidget, reason: v.name);
-    expect(find.text('updated 4h ago'), findsNWidgets(3), reason: v.name);
+    expect(find.text('updated 4 hr ago'), findsNWidgets(3), reason: v.name);
     // The home row: three house chips, no dots under them.
     expect(find.byKey(const Key('home-chip')), findsNWidgets(3), reason: v.name);
     expect(find.byKey(const Key('bray-heading-cone')), findsNWidgets(3), reason: '${v.name}: a cone per driver');

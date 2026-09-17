@@ -6,6 +6,7 @@ import '../models/member_place.dart';
 import '../models/road_snap.dart';
 import '../models/place.dart';
 import '../utils/primary_device.dart';
+import '../utils/time_words.dart';
 
 export '../models/member.dart' show kStaleAfter;
 
@@ -291,7 +292,7 @@ String _addressFrom({
   if (movement == MovementType.bike) return 'Biking';
   if (lastSeen == null) return 'No location yet';
   final Duration age = DateTime.now().toUtc().difference(lastSeen);
-  if (age > kStaleAfter) return 'Position from ${_formatAgo(age)} ago';
+  if (age > kStaleAfter) return 'Position from ${relativeTimeInSentence(lastSeen, DateTime.now().toUtc())}';
   return 'Stationary';
 }
 
@@ -409,14 +410,6 @@ int? _parseAvatarVersion(dynamic value) {
   return null;
 }
 
-/// Compact "Xm ago" / "Xh ago" / "Xd ago" label for a stale location.
-String _formatAgo(Duration d) {
-  if (d.inMinutes < 1) return 'just now';
-  if (d.inMinutes < 60) return '${d.inMinutes}m';
-  if (d.inHours < 24) return '${d.inHours}h';
-  return '${d.inDays}d';
-}
-
 /// Re-evaluates [member]'s staleness from [Member.lastSeen], returning a new
 /// [Member] with the grey "stopped" status (and a "Position from Xm ago"
 /// address) once their last report is older than [kStaleAfter]. Returns
@@ -431,7 +424,7 @@ Member refreshStaleness(Member member) {
   if (member.position == null || lastSeen == null) return member;
   final Duration age = DateTime.now().toUtc().difference(lastSeen);
   if (age <= (member.staleAfter ?? kStaleAfter)) return member;   // bray: the member's own cadence-based threshold when known
-  final String label = 'Position from ${_formatAgo(age)} ago';
+  final String label = 'Position from ${relativeTimeInSentence(lastSeen, DateTime.now().toUtc())}';
   // Already stopped with the current label and no movement badge — no change,
   // so the staleness timer does not fire a spurious `onMembersChanged`. The
   // label still advances ("10m" → "1h" → "1d") on later ticks because it is

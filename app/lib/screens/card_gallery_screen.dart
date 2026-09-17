@@ -156,7 +156,7 @@ class CardFacts {
       battery: m.batteryPercent > 0 ? '${m.batteryPercent}' : '—',
       low: m.batteryPercent > 0 && m.batteryPercent <= BrayTokens.battLowAt,
       live: m.status == MemberStatus.normal,
-      ago: BrayTokens.agoText(m.lastSeen, now),
+      ago: _compactAgo(m.lastSeen, now),   // the 2026-09-14 gallery's own short form (its 20 old layouts were drawn for it)
       where: where,
       whereIcon: icon,
       distance: distance,
@@ -1625,4 +1625,15 @@ class _FocusTall extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The gallery's original compact "2m ago" wording (J:57-64); the live app
+/// uses the one shared formatter (utils/time_words.dart).
+String _compactAgo(DateTime? seen, DateTime now) {
+  if (seen == null) return '—';
+  final int m = (now.difference(seen).inSeconds / 60).round();
+  if (m < 2) return 'just now';
+  if (m < 60) return '${m}m ago';
+  final int h = (m / 60).round();
+  return h < 24 ? '${h}h ago' : '${(h / 24).round()}d ago';
 }
