@@ -15,6 +15,7 @@ import '../services/app_config.dart';
 import '../services/background_location_service.dart';
 import '../services/battery_optimization_service.dart';
 import '../services/map_visibility_store.dart';
+import '../services/self_fix.dart';
 import '../services/tile_cache.dart';
 import '../utils/stillness.dart';
 import '../utils/view_history.dart';
@@ -319,6 +320,7 @@ class _MapScreenState extends State<MapScreen>
       if (v != null && _mapReady && mounted) _restoreView(v);
     }));
     MapVisibilityStore.instance.addListener(_onMapVisibilityChanged);
+    selfFix.addListener(_onSelfFix);   // bray: the device's own GPS drives the viewer's badge with zero lag
     // One-time Android battery-optimization guidance (keeps background
     // updates alive when the app is closed). No-op elsewhere. Runs after the
     // first frame so the activity is visible.
@@ -330,7 +332,7 @@ class _MapScreenState extends State<MapScreen>
   void _onMembersChanged(List<Member> rawMembers) {
     if (!mounted) return;
     final DateTime now = DateTime.now();
-    final List<Member> members = _stillness.apply(rawMembers, now);   // bray: a member that has not moved is at 0 mph, whatever the frame said
+    final List<Member> members = _stillness.apply(withSelfLive(rawMembers, _userId, selfFix.value, now), now);   // bray: the viewer's own live speed first; a member that has not moved is at 0 mph, whatever the frame said
     _drives.updateAll(members, now: now);
     _groups.observe(members, inDriveFor: _inDriveFor, now: now);
     for (final Member m in members) {
@@ -879,6 +881,20 @@ class _MapScreenState extends State<MapScreen>
     if (v != null) _restoreView(v);
   }
 
+  /// A new device fix: the viewer's speed / heading / drive state update now,
+  /// from the device, not the next server frame (Bo driving, 15:38).
+  void _onSelfFix() {
+    if (!mounted || _userId == null || _members.isEmpty) return;
+    final DateTime now = DateTime.now();
+    final List<Member> members = _stillness.apply(withSelfLive(_members, _userId, selfFix.value, now), now);
+    _drives.updateAll(members, now: now);
+    _motion.observe(members, now);
+    setState(() {
+      _members = members;
+      _membersListenable.value = members;
+    });
+  }
+
   /// The map's list: everyone not hidden on this device. Counts, cards and
   /// the People screen keep the full list.
   List<Member> _onMap(List<Member> members) => MapVisibilityStore.instance.shown(members);
@@ -891,6 +907,7 @@ class _MapScreenState extends State<MapScreen>
   @override
   void dispose() {
     MapVisibilityStore.instance.removeListener(_onMapVisibilityChanged);
+    selfFix.removeListener(_onSelfFix);
     _viewSaveTimer?.cancel();
     _idleTimer?.cancel();
     _driveTick?.cancel();
