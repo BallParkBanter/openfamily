@@ -339,13 +339,15 @@ func (s *Server) upsertTrip(ctx context.Context, userID string, fixes []tripFix,
 // stored truncated (it would grow a new row every pass as the window slid).
 func (s *Server) rebuildTripsFor(ctx context.Context, userID string, now time.Time) error {
 	var lastEnd *time.Time
-	var count int
-	if err := s.Pool.QueryRow(ctx, `SELECT MAX(ended_at), COUNT(*) FROM trips WHERE user_id = $1 AND ended_at IS NOT NULL`, userID).Scan(&lastEnd, &count); err != nil {
+	var older int // closed trips older than the lookback window: none = the history was never built
+	if err := s.Pool.QueryRow(ctx, `SELECT MAX(ended_at), COUNT(*) FILTER (WHERE started_at < $2) FROM trips WHERE user_id = $1 AND ended_at IS NOT NULL`,
+		userID, now.Add(-tripLookback)).Scan(&lastEnd, &older); err != nil {
 		return err
 	}
 	from := now.Add(-tripLookback)
-	if count == 0 {
+	if older == 0 {
 		from = now.Add(-tripBackfill)
+		lastEnd = nil // rebuild from the far edge; existing rows are upserted in place
 	}
 	edge := true // the window starts at an arbitrary moment: a drive underway there is skipped
 	if lastEnd != nil && lastEnd.After(from) {
@@ -395,9 +397,12 @@ func (s *Server) RebuildTrips(ctx context.Context) {
 
 func (s *Server) rebuildTripsOnce(ctx context.Context) {
 	now := time.Now().UTC()
+	// Every user with a fix in the lookback window - a parked phone's fixes
+	// are deduped into heartbeats, so "posted in the last minute" would skip
+	// exactly the people whose last drive needs closing.
 	rows, err := s.Pool.Query(ctx, `
 		SELECT DISTINCT d.user_id FROM locations l JOIN devices d ON d.id = l.device_id
-		WHERE l.ts > $1`, now.Add(-tripRefresh-tripStillGap-time.Minute))
+		WHERE l.ts > $1`, now.Add(-tripLookback))
 	if err != nil {
 		slog.Warn("trips: list users failed", "err", err)
 		return
