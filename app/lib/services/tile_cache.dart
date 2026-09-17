@@ -52,7 +52,10 @@ class TileCache {
         store: store,
         maxStale: ttl,
         cachePolicy: CachePolicy.forceCache,
-        headers: const <String, String>{'User-Agent': userAgent},
+        // A MUTABLE map: TileLayer's constructor putIfAbsent()s the User-Agent
+        // into it (flutter_map 7 tile_layer.dart:299) - a const map threw
+        // "Cannot modify unmodifiable map" on every build (live, 01:47).
+        headers: <String, String>{'User-Agent': userAgent},
       );
 
   /// A Dio client wired exactly like [provider]'s (tests exercise this one).

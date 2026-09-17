@@ -7,6 +7,7 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:dio_cache_interceptor/dio_cache_interceptor.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:openfamily/services/tile_cache.dart';
 
@@ -25,6 +26,12 @@ class _CountingAdapter implements HttpClientAdapter {
 }
 
 void main() {
+  test('a TileLayer can be constructed on the cached provider (its constructor mutates the headers map - a const map threw live)', () {
+    final TileProvider tiles = TileCache.forTesting(MemCacheStore()).provider();
+    final TileLayer layer = TileLayer(urlTemplate: 'https://example.invalid/{z}/{x}/{y}.png', userAgentPackageName: 'app.openfamily', tileProvider: tiles);
+    expect(layer.tileProvider.headers['User-Agent'], contains('app.openfamily'));
+  });
+
   test('the second load of the same tile hits the cache: one network request, the same bytes', () async {
     final TileCache cache = TileCache.forTesting(MemCacheStore());
     final Dio dio = cache.dio();
