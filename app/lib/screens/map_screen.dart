@@ -42,6 +42,7 @@ import '../widgets/circle_switcher.dart';
 import '../widgets/contact_link_sheet.dart';
 import '../widgets/edge_chip.dart';
 import '../widgets/family_header.dart';
+import '../widgets/map_top_chrome.dart';
 import '../widgets/focus_trail_layer.dart';
 import '../widgets/following_pill.dart';
 import '../widgets/home_chip.dart';
@@ -1321,43 +1322,59 @@ class _MapScreenState extends State<MapScreen>
 
             const Positioned(top: 0, left: 0, right: 0, child: FamilyHeaderScrim()),   // S:37
 
-            // Top: family name, with a location-off re-prompt banner below it
-            // when the user skipped location during onboarding.
+            // Top chrome, one column (bray 2026-09-16): family chip + summary
+            // chip on the first row; the location-off banner (when the user
+            // skipped location during onboarding) full width under it; the
+            // circle buttons under whatever is showing, so a banner is never
+            // under a button - they slide down as it appears (MapTopChrome).
             Positioned(
               top: 0,
               left: 0,
               right: 0,
               child: SafeArea(
                 bottom: false,
-                child: Column(
-                  children: [
-                    // OPEN: S:38 .brand 21px 800 - theirs shows the family name in a chip; left as is, remove nothing
-                    // bray: a long press on the family chip opens the hidden
-                    // card gallery (ten card designs for Bo to pick from).
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8, left: 12, right: 76),
-                      child: GestureDetector(
-                        key: const Key('family-chip-hold'),
-                        behavior: HitTestBehavior.opaque,
-                        onLongPress: _openCardGallery,
-                        child: CircleSwitcher(
-                          circles: [_familyName],
-                          selectedIndex: 0,
-                          onSelected: (_) {},
-                          onJoinCircle: _hasFamily ? null : _openJoinCircle,
-                          alignment: Alignment.centerLeft,
-                        ),
-                      ),
+                child: MapTopChrome(
+                  // OPEN: S:38 .brand 21px 800 - theirs shows the family name in a chip; left as is, remove nothing
+                  // bray: a long press on the family chip opens the hidden
+                  // card gallery (ten card designs for Bo to pick from).
+                  leading: GestureDetector(
+                    key: const Key('family-chip-hold'),
+                    behavior: HitTestBehavior.opaque,
+                    onLongPress: _openCardGallery,
+                    child: CircleSwitcher(
+                      circles: [_familyName],
+                      selectedIndex: 0,
+                      onSelected: (_) {},
+                      onJoinCircle: _hasFamily ? null : _openJoinCircle,
+                      alignment: Alignment.centerLeft,
                     ),
-                    if (_locationOff)
-                      Padding(
-                        padding: const EdgeInsets.only(
-                          top: 8,
-                          left: 12,
-                          right: 12,
-                        ),
-                        child: _LocationOffBanner(onEnable: _enableLocation),
-                      ),
+                  ),
+                  // The "N home · M out" summary - a summary only (Round 4:
+                  // no Everyone view); long press = the marker gallery.
+                  // Always shown - "Everyone" when there is no count yet.
+                  summary: Builder(builder: (BuildContext context) {
+                    final Member? f = _followedMember;
+                    final String? s = summaryText(
+                      following: f,
+                      followingLabel: f == null ? null : _labelFor(f),
+                      homeCount: _homeCountOf(members), outCount: _outCountOf(members),
+                    );
+                    return FamilySummaryChip(
+                      text: everyoneChipText(s),
+                      semanticsLabel: everyoneChipLabel(s),
+                      onLongPress: _openMarkerGallery,
+                    );
+                  }),
+                  notice: _locationOff ? _LocationOffBanner(onEnable: _enableLocation) : null,
+                  controls: [
+                    _LayerToggle(
+                      isSatellite: _satellite,
+                      onToggle: _toggleSatellite,
+                    ),
+                    _LocateButton(
+                      onTap: _centerOnUser,
+                      active: _followId != null && _followId == _userId,
+                    ),
                   ],
                 ),
               ),
@@ -1390,51 +1407,6 @@ class _MapScreenState extends State<MapScreen>
                   ),
                 ),
               ),
-
-            // Top-right: satellite / standard layer toggle, with a "center on
-            // me" button stacked beneath it.
-            Positioned(
-              top: 0,
-              right: 12,
-              child: SafeArea(
-                bottom: false,
-                child: Column(
-                  children: [
-                    // The "N home · M out" summary - a summary only (Round 4:
-                    // no Everyone view); long press = the marker gallery.
-                    // Always shown - "Everyone" when there is no count yet.
-                    Builder(builder: (BuildContext context) {
-                      final Member? f = _followedMember;
-                      final String? s = summaryText(
-                        following: f,
-                        followingLabel: f == null ? null : _labelFor(f),
-                        homeCount: _homeCountOf(members), outCount: _outCountOf(members),
-                      );
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: FamilySummaryChip(
-                          text: everyoneChipText(s),
-                          semanticsLabel: everyoneChipLabel(s),
-                          onLongPress: _openMarkerGallery,
-                        ),
-                      );
-                    }),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: _LayerToggle(
-                        isSatellite: _satellite,
-                        onToggle: _toggleSatellite,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    _LocateButton(
-                      onTap: _centerOnUser,
-                      active: _followId != null && _followId == _userId,
-                    ),
-                  ],
-                ),
-              ),
-            ),
 
             // The people sheet (piece 3) sits on the fixed bottom bar; their `+`
             // FAB now rides the sheet's top-right edge so the sheet never covers it.
