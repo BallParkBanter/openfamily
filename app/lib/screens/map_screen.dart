@@ -1454,7 +1454,7 @@ class _MapScreenState extends State<MapScreen>
                 FocusTrailLayer(member: focusedMember),
                 // Member bubbles, clustered by on-screen proximity at
                 // the current zoom (rebuilds as the camera moves).
-                _MemberMarkerLayer(
+                MemberMarkerLayer(
                   members: _visible(onMap),                 // focus: others hidden (J:175-181), capsule-mates kept (5b); hidden people off (accordion)
                   selectedId: _followId,                    // J:101: the ringed face inside a capsule
                   labelFor: _labelFor,                      // every pill: You / contact name / first name (was the focused one only)
@@ -1527,7 +1527,12 @@ class _MapScreenState extends State<MapScreen>
                     key: const Key('family-chip-hold'),
                     onLongPress: _openCardGallery,
                     child: _hasFamily
-                        ? FamilyChip(label: _familyName, expanded: _familyOpen, onTap: _toggleFamilyOpen)
+                        ? FamilyChip(
+                            label: _familyName,
+                            expanded: _familyOpen,
+                            onTap: _toggleFamilyOpen,
+                            minWidth: FamilyAccordionPanel.widthFor(members, _labelFor),   // Bo 2026-09-17 19:55: the pill widens to the open panel
+                          )
                         : CircleSwitcher(
                             circles: [_familyName],
                             selectedIndex: 0,
@@ -1842,8 +1847,10 @@ class _FitEveryoneButton extends StatelessWidget {
 /// Lives inside [FlutterMap]'s children so it can read the camera via
 /// [MapCamera.of], which also subscribes it to camera changes (it rebuilds on
 /// every pan/zoom).
-class _MemberMarkerLayer extends StatelessWidget {
-  const _MemberMarkerLayer({
+/// The people on the map: capsules and solo markers. Public for the widget
+/// test that checks the edge mirror against a real camera.
+class MemberMarkerLayer extends StatelessWidget {
+  const MemberMarkerLayer({
     required this.members,
     required this.onMemberTap,
     required this.onMemberHold,
@@ -1923,17 +1930,8 @@ class _MemberMarkerLayer extends StatelessWidget {
     LatLng capsuleAt(BubblePlacement p) => anchorFor == null ? p.position : anchorFor!(p.clusterId!, p.position, now);
     onCapsulesDrawn?.call(placements.where((BubblePlacement p) => p.isCluster).map((BubblePlacement p) => p.clusterId!).toSet(), now);
 
-    // 5b step 3: a fanned solo marker keeps a thin leader line in the
-    // person's colour from its dot to its true spot. OPEN: chosen - 1.5 px.
-    final List<Polyline> leaders = <Polyline>[
-      for (final BubblePlacement p in placements)
-        if (p.anchor != null)
-          Polyline(points: <LatLng>[p.position, p.anchor!], color: MemberAvatarBubble.ringColourFor(p.member!, now), strokeWidth: 1.5),
-    ];
-
-    return Stack(children: [
-      if (leaders.isNotEmpty) PolylineLayer(polylines: leaders),
-      MarkerLayer(
+    // Bo 2026-09-17 19:45 ("what is that line for?"): no leader lines - a fanned pair just sits side by side.
+    return MarkerLayer(
       markers: [
         for (final BubblePlacement p in placements)
           if (p.isCluster)
@@ -1961,34 +1959,53 @@ class _MemberMarkerLayer extends StatelessWidget {
               ),
             )
           else
-            Marker(
-              point: p.position,
-              width: MemberAvatarBubble.markerWidth,
-              height: MemberAvatarBubble.markerSizeFor(p.member!, now: now).height,
-              alignment: MemberAvatarBubble.markerAlignmentFor(p.member!, now: now),
-              child: MemberAvatarBubble(
-                member: p.member!,
-                label: labelFor(p.member!),
-                now: now,
-                inDrive: inDriveFor(p.member!),
-                mirrored: p.mirrored ?? _mirrored(camera, p, now),
-                onTap: () => onMemberTap(p.member!),
-                onLongPress: () => onMemberHold(p.member!),
-              ),
-            ),
+            _soloMarker(camera, p, now),
       ],
-      ),
-    ]);
+    );
   }
 
-  /// 5b (Bo: "nothing cut off, ever"): a marker within its badges' width of
-  /// a screen edge - after any pan - mirrors them to the side that is cut
-  /// less (marker_extents.dart mirrorMarker; the extents come from the
-  /// marker's constants and the measured name / badge text).
-  bool _mirrored(MapCamera camera, BubblePlacement p, DateTime now) {
+  /// 5b (Bo: "nothing cut off, ever") + 2026-09-17 19:50 ("runs on EVERY
+  /// camera change for EVERY marker"): this layer rebuilds with the camera
+  /// (MapCamera.of), and every solo marker's badges take the side that is cut
+  /// less at THIS camera - the right-hand badge flips left at the right edge,
+  /// the name mirrors at the left edge - a fanned pair's outward side only
+  /// breaks a tie; a badge that fits on neither side is hidden
+  /// (marker_extents.dart markerLayoutFor). Until today the pair's side won
+  /// outright, so a fanned marker at the edge kept its badge cut off.
+  Marker _soloMarker(MapCamera camera, BubblePlacement p, DateTime now) {
     final Member m = p.member!;
-    final MarkerExtents e = soloExtents(m, label: labelFor(m), now: now, inDrive: inDriveFor(m));
-    return mirrorMarker(x: camera.latLngToScreenPoint(p.position).x, screenWidth: camera.nonRotatedSize.x, extents: e);
+    final MarkerLayout layout = _layout(camera, p, now);
+    return Marker(
+      point: p.position,
+      width: MemberAvatarBubble.markerWidth,
+      height: MemberAvatarBubble.markerSizeFor(m, now: now).height,
+      alignment: MemberAvatarBubble.markerAlignmentFor(m, now: now),
+      child: MemberAvatarBubble(
+        member: m,
+        label: labelFor(m),
+        now: now,
+        inDrive: inDriveFor(m),
+        mirrored: layout.mirrored,
+        hideName: layout.hideName,
+        hideSlot: layout.hideSlot,
+        hideBattery: layout.hideBattery,
+        onTap: () => onMemberTap(m),
+        onLongPress: () => onMemberHold(m),
+      ),
+    );
+  }
+
+  MarkerLayout _layout(MapCamera camera, BubblePlacement p, DateTime now) {
+    final Member m = p.member!;
+    return markerLayoutFor(
+      x: camera.latLngToScreenPoint(p.position).x,
+      screenWidth: camera.nonRotatedSize.x,
+      m: m,
+      label: labelFor(m),
+      now: now,
+      inDrive: inDriveFor(m),
+      prefer: p.mirrored ?? false,
+    );
   }
 }
 

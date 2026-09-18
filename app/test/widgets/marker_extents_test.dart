@@ -64,7 +64,7 @@ void main() {
       final stale = soloExtents(m('Bo', heading: 90, seen: now.subtract(const Duration(hours: 4))), label: 'Bo', now: now);
       expect(stale.bottom, BrayTokens.dotSize / 2);
     });
-    test('at home: the house chip is the mark (20 below) and the pin lifts 9', () {
+    test('at home: the house chip is the mark (22 below) and the pin lifts 11', () {
       final e = soloExtents(m('Bo', place: const MemberPlace(atHome: true, placeName: 'Home', homeDistanceM: 3)), label: 'You', now: now);
       expect(e.bottom, HomeChip.size / 2);
       expect(e.top, closeTo(92.1 + MemberAvatarBubble.atHomeLift, 0.01));

@@ -94,6 +94,8 @@ class CapsuleBubble extends StatelessWidget {
     final List<Member> faces = members.take(BrayTokens.capsuleMaxFaces).toList();
     final int more = members.length - faces.length;
     final SlotBadgeSpec? badge = groupBadgeFor(members, now: at, inDriveFor: (m) => _driving(m, at), labelFor: _labelFor);
+    final bool allStale = members.every((Member m) => m.isStaleAt(at));   // Bo 2026-09-17: a still pair stays a capsule; all stale = the stale look
+    final Color pillGrey = allStale ? BrayTokens.staleGrey : BrayTokens.capsuleGrey;
     final String label = _label(badge, at);
     const double step = BrayTokens.capsuleAvatar - BrayTokens.capsuleOverlap;         // .cap img + img margin-left:-18px -> each next circle 40 on
     final int circles = faces.length + (more > 0 ? 1 : 0);
@@ -122,7 +124,7 @@ class CapsuleBubble extends StatelessWidget {
                       key: const Key('capsule-pill'),
                       padding: const EdgeInsets.all(BrayTokens.capsulePad),                     // .cap padding:3px
                       decoration: BoxDecoration(
-                        color: BrayTokens.capsuleGrey,                                           // .cap background:#d5d9e2
+                        color: pillGrey,                                                         // .cap background:#d5d9e2 (staleGrey when every member is stale)
                         border: Border.all(color: BrayTokens.capsuleBorder, width: _pillBorder), // .cap border:1px solid rgba(20,27,54,.18)
                         borderRadius: BorderRadius.circular(999),                                // .cap border-radius:999px
                         boxShadow: const [BoxShadow(color: Color(0x59000000), blurRadius: 16, offset: Offset(0, 5))],   // .cap box-shadow:0 5px 16px rgba(0,0,0,.35)
@@ -158,6 +160,7 @@ class CapsuleBubble extends StatelessWidget {
                                       member: faces[i],
                                       size: BrayTokens.capsuleAvatar - 2 * (_selected(faces[i]) ? BrayTokens.focusRing : BrayTokens.capsuleAvatarBorder),
                                       ringWidth: 0,
+                                      desaturate: allStale,
                                     ),
                                   ),
                                 ),
@@ -192,7 +195,7 @@ class CapsuleBubble extends StatelessWidget {
                   top: badgeZone + _pillH,
                   left: markerWidth / 2 - BrayTokens.tailW / 2,
                   // .ctail: the same downward triangle as the solo pointer (marker_pointer.dart), in the capsule grey, no shadow.
-                  child: const CustomPaint(size: Size(BrayTokens.tailW, BrayTokens.tailH), painter: MarkerPointerPainter(BrayTokens.capsuleGrey)),
+                  child: CustomPaint(size: const Size(BrayTokens.tailW, BrayTokens.tailH), painter: MarkerPointerPainter(pillGrey)),
                 ),
                 if (!members.every((m) => m.place?.nearHome == true))
                   Positioned(

@@ -42,6 +42,7 @@ import 'package:latlong2/latlong.dart';
 
 import '../models/member.dart';
 import '../theme/bray_tokens.dart';
+import 'time_words.dart';
 import '../widgets/capsule_callout.dart' show arrivedAgo, calloutSubject, hereFor, kCalloutTogether;
 import '../widgets/slot_badge.dart';
 import 'member_clustering.dart' show groundMetres, groupAllowanceMetres;
@@ -243,15 +244,18 @@ class GroupTracker {
   /// The clustering predicate: may [a] and [b] share a capsule as of now?
   bool together(Member a, Member b, {required bool Function(Member) inDriveFor, DateTime? now}) {
     final DateTime at = now ?? _clock();
-    if (a.isStaleAt(at) || b.isStaleAt(at)) return false;
     final bool da = inDriveFor(a), db = inDriveFor(b);
+    // Bo 2026-09-17 19:45 ("what is that line for?"): people standing still
+    // together stay ONE capsule, stale or not (the capsule takes the stale
+    // look when all are stale); staleness only breaks a DRIVING pair.
+    if (!da && !db) return true;                // both still: the distance rules decide (120 m / the same place)
+    if (a.isStaleAt(at) || b.isStaleAt(at)) return false;
     if (da != db) {
       // A FORMED pair rides through the mixed moment (rig run 1028); 5b:
       // observe() already applied the split hysteresis, so formed is the
       // answer. An unformed pair splits.
       return _formed(_key(a, b), at);
     }
-    if (!da) return true;                       // both still: the distance rules decide (120 m / overlapping bubbles)
     return _formed(_key(a, b), at);
   }
 
@@ -279,6 +283,11 @@ class GroupTracker {
 /// <since the newest arrival>" (OPEN: chosen - after the hour everyone has
 /// been there together since then). Nobody dated -> null.
 SlotBadgeSpec? groupBadgeFor(List<Member> members, {required DateTime now, required bool Function(Member) inDriveFor, String Function(Member)? labelFor}) {
+  if (members.isNotEmpty && members.every((m) => m.isStaleAt(now))) {
+    // every member stale: the capsule reads like a stale solo - the freshest fix's age
+    final Member freshest = members.reduce((a, b) => (a.lastSeen ?? DateTime(2000)).isAfter(b.lastSeen ?? DateTime(2000)) ? a : b);
+    return SlotBadgeSpec(kind: SlotBadgeKind.updated, label: 'updated', value: relativeTime(freshest.lastSeen, now), glyphColor: BrayTokens.staleGrey);
+  }
   final List<Member> drivers = members.where((m) => !m.isStaleAt(now) && inDriveFor(m)).toList();
   if (drivers.isNotEmpty) {
     final int mph = drivers.map((m) => m.speedMph ?? 0).reduce(math.max);

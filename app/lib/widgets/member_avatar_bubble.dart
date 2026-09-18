@@ -38,9 +38,16 @@ class MemberAvatarBubble extends StatelessWidget {
     this.now,
     this.inDrive,
     this.mirrored = false,
+    this.hideName = false,
+    this.hideSlot = false,
+    this.hideBattery = false,
   });
 
   final Member member;
+
+  /// Bo 2026-09-17 19:50: a badge that fits on neither side of the ring at
+  /// this camera is not drawn (marker_extents.dart markerLayoutFor).
+  final bool hideName, hideSlot, hideBattery;
 
   /// 5b (2026-09-16, Bo: "nothing cut off, ever"): the badges mirrored about
   /// the ring - name underlay top-RIGHT, slot badge top-LEFT, battery
@@ -179,13 +186,14 @@ class MemberAvatarBubble extends StatelessWidget {
                     child: HeadingBeam(headingDeg: member.headingDeg!, accent: BrayTokens.accentFor(member)),
                   ),
                 const Positioned(left: ringLeft, top: topZone, child: RingShadowDisc()),
-                _sided(
-                  mirrored: mirrored,
-                  fromLeft: false,
-                  near: markerWidth - (ringLeft + BrayTokens.soloFace - BrayTokens.nameBadgeRight),     // .nm right:38px
-                  bottom: avatarBox - (topZone + BrayTokens.soloFace - BrayTokens.nameBadgeBottom),      // .nm bottom:44px
-                  child: NameBadge(text: pillText, accent: colour),
-                ),
+                if (!hideName)
+                  _sided(
+                    mirrored: mirrored,
+                    fromLeft: false,
+                    near: markerWidth - (ringLeft + BrayTokens.soloFace - BrayTokens.nameBadgeRight),     // .nm right:38px
+                    bottom: avatarBox - (topZone + BrayTokens.soloFace - BrayTokens.nameBadgeBottom),      // .nm bottom:44px
+                    child: NameBadge(text: pillText, accent: colour),
+                  ),
                 Positioned(
                   left: markerWidth / 2 - BrayTokens.pointerW / 2,                                       // .tail left:50%; translateX(-50%)
                   top: topZone + BrayTokens.pointerTop,                                                  // .tail top:50px
@@ -213,7 +221,7 @@ class MemberAvatarBubble extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (batt != null)
+                if (batt != null && !hideBattery)
                   _sided(
                     mirrored: mirrored,
                     fromLeft: true,
@@ -221,7 +229,7 @@ class MemberAvatarBubble extends StatelessWidget {
                     top: topZone + BrayTokens.soloFace - BrayTokens.battBadgeBottom - BrayTokens.battBadgeH,  // .chg bottom:-4px
                     child: BatteryBadge(spec: batt),
                   ),
-                if (badge != null)
+                if (badge != null && !hideSlot)
                   _sided(
                     mirrored: mirrored,
                     fromLeft: true,

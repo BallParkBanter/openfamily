@@ -120,11 +120,14 @@ void main() {
       }
       expect(g.together(mk('a', mph: 30, heading: 90), mk('b', pos: north(20), mph: 30), inDriveFor: driving), isFalse);
     });
-    test('a stale member is never together with anyone (drops out of the group)', () {
+    test('a stale STILL member stays in the capsule (Bo 2026-09-17: a still pair is one capsule, stale or not); a stale DRIVER drops out', () {
       final GroupTracker g = GroupTracker(clock: () => t0);
       final Member a = mk('a'), b = mk('b', pos: north(10), ago: const Duration(hours: 1));
       g.observe([a, b], inDriveFor: driving);
-      expect(g.together(a, b, inDriveFor: driving), isFalse);
+      expect(g.together(a, b, inDriveFor: driving), isTrue);
+      final Member c = mk('c', mph: 40, heading: 90), d = mk('d', pos: north(10), mph: 40, heading: 90, ago: const Duration(hours: 1));
+      g.observe([c, d], inDriveFor: driving);
+      expect(g.together(c, d, inDriveFor: driving), isFalse);
     });
     test('a still-together pair (parked, 20 m apart) seeds pre-formed the moment they both start driving: no 60 s re-proof', () {
       DateTime now = t0;

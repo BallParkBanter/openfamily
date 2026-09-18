@@ -10,6 +10,7 @@ import 'package:openfamily/models/member.dart';
 import 'package:openfamily/services/map_visibility_store.dart';
 import 'package:openfamily/utils/visibility_change.dart';
 import 'package:openfamily/widgets/family_accordion.dart';
+import 'package:openfamily/widgets/member_avatar_bubble.dart' show StatusAvatar;
 import 'package:shared_preferences/shared_preferences.dart';
 
 Member mk(String id, String name) => Member(id: id, name: name, status: MemberStatus.normal, position: const LatLng(33.9, -84.2), batteryPercent: 90, address: '');
@@ -29,7 +30,7 @@ class _HostState extends State<_Host> {
   Widget build(BuildContext context) => MaterialApp(
         home: Scaffold(
           body: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            FamilyChip(label: 'Bray Family', expanded: expanded, onTap: () => setState(() => expanded = !expanded)),
+            FamilyChip(label: 'Bray Family', expanded: expanded, onTap: () => setState(() => expanded = !expanded), minWidth: FamilyAccordionPanel.widthFor(family, (m) => m.id == 'b' ? 'You' : m.name.split(' ').first)),
             FamilyAccordionPanel(expanded: expanded, members: family, labelFor: (m) => m.id == 'b' ? 'You' : m.name.split(' ').first, hiddenIds: widget.hidden, onToggle: widget.onToggle),
           ]),
         ),
@@ -37,22 +38,27 @@ class _HostState extends State<_Host> {
 }
 
 void main() {
-  testWidgets('chevron down when collapsed, up when expanded; the panel grows straight down over ~250 ms and lists everyone', (t) async {
+  testWidgets('a drawer: the height grows from 0 over 280 ms easeOutCubic with the rows clipped, the chevron turning in step; easeInCubic back', (t) async {
     await t.pumpWidget(_Host(hidden: const {}, onToggle: (_, __) {}));
     expect(t.getSize(find.byKey(const Key('family-chip'))).height, FamilyChip.height);
     expect(t.widget<AnimatedRotation>(find.byKey(const Key('family-chevron'))).turns, 0);
-    expect(t.getSize(find.byKey(const Key('family-panel-size'))).height, 0);
+    expect(t.getSize(find.byKey(const Key('family-panel-clip'))).height, 0);
+    final double fullHeight = t.getSize(find.byKey(const Key('family-panel'))).height;   // laid out at its real size even while shut
+    expect(fullHeight, greaterThan(3 * FamilyAccordionPanel.rowHeight));
 
     await t.tap(find.byKey(const Key('family-chip')));
     await t.pump();
-    await t.pump(const Duration(milliseconds: 120));
-    final double mid = t.getSize(find.byKey(const Key('family-panel-size'))).height;
-    expect(mid, greaterThan(0));
+    await t.pump(const Duration(milliseconds: 140));   // half way
+    final double mid = t.getSize(find.byKey(const Key('family-panel-clip'))).height;
+    expect(mid / fullHeight, closeTo(Curves.easeOutCubic.transform(0.5), 0.02));                 // 0.875 of the way: the ease-out drawer
+    expect(t.getSize(find.byKey(const Key('family-panel'))).height, fullHeight);                  // the content does not squash: it is clipped
+    expect(t.getRect(find.byKey(const Key('family-row-c'))).bottom, greaterThan(t.getRect(find.byKey(const Key('family-panel-clip'))).bottom));   // the last row is still under the clip
+    final RotationTransition chevron = t.widget<RotationTransition>(find.descendant(of: find.byKey(const Key('family-chevron')), matching: find.byType(RotationTransition)));
+    expect(chevron.turns.value, closeTo(0.5 * Curves.easeOutCubic.transform(0.5), 0.02));       // the chevron is at the same point of the same curve
     await t.pumpAndSettle();
     final Rect panel = t.getRect(find.byKey(const Key('family-panel')));
-    expect(panel.height, greaterThan(mid));                                   // it was still growing at 120 ms
+    expect(t.getSize(find.byKey(const Key('family-panel-clip'))).height, fullHeight);
     expect(panel.top, t.getRect(find.byKey(const Key('family-chip'))).bottom); // straight down from the chip
-    expect(panel.left, t.getRect(find.byKey(const Key('family-chip'))).left);
     expect(t.widget<AnimatedRotation>(find.byKey(const Key('family-chevron'))).turns, 0.5);
     expect(find.text('You'), findsOneWidget);
     expect(find.text('Heidi'), findsOneWidget);
@@ -60,9 +66,36 @@ void main() {
     expect(find.byType(Switch), findsNWidgets(3));
 
     await t.tap(find.byKey(const Key('family-chip')));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 140));
+    expect(t.getSize(find.byKey(const Key('family-panel-clip'))).height / fullHeight, closeTo(1 - Curves.easeInCubic.transform(0.5), 0.02));   // 0.875 still showing: the ease-in close
     await t.pumpAndSettle();
-    expect(t.getSize(find.byKey(const Key('family-panel-size'))).height, 0);
+    expect(t.getSize(find.byKey(const Key('family-panel-clip'))).height, 0);
     expect(t.widget<AnimatedRotation>(find.byKey(const Key('family-chevron'))).turns, 0);
+  });
+
+  testWidgets('the panel is exactly its longest row wide: 12 + face 32 + 12 + the longest name + 12 + the 52 toggle + 12; rows 44; toggle at the trailing edge; the pill widens to it while open', (t) async {
+    await t.pumpWidget(_Host(hidden: const {}, onToggle: (_, __) {}));
+    final double before = t.getSize(find.byKey(const Key('family-chip'))).width;
+    await t.tap(find.byKey(const Key('family-chip')));
+    await t.pumpAndSettle();
+    final Rect panel = t.getRect(find.byKey(const Key('family-panel')));
+    final double longest = ['You', 'Heidi', 'Charlie'].map((String n) => t.getSize(find.text(n)).width).reduce((double a, double b) => a > b ? a : b);
+    expect(panel.width, closeTo(12 + 32 + 12 + longest + 12 + 52 + 12, 0.5));
+    expect(panel.width, FamilyAccordionPanel.widthFor(family, (m) => m.id == 'b' ? 'You' : m.name.split(' ').first));
+    expect(t.getSize(find.byKey(const Key('family-switch-c'))).width, FamilyAccordionPanel.switchWidth);   // the toggle really is 52 wide
+    expect(t.getRect(find.byKey(const Key('family-switch-c'))).right, panel.right - 12);                  // trailing edge, 12 in
+    final Rect row = t.getRect(find.byKey(const Key('family-row-c')));
+    expect(row.height, 44);
+    expect(row.width, panel.width);
+    expect(t.getSize(find.byType(StatusAvatar).first).width, 32);
+    expect(t.getRect(find.byType(StatusAvatar).first).left, panel.left + 12);
+    final Rect chip = t.getRect(find.byKey(const Key('family-chip')));
+    expect(chip.width, greaterThan(before));
+    expect(chip.width, closeTo(panel.width, 0.5));   // the pill matches the open panel
+    await t.tap(find.byKey(const Key('family-chip')));
+    await t.pumpAndSettle();
+    expect(t.getSize(find.byKey(const Key('family-chip'))).width, before);
   });
 
   testWidgets('a switch hands back (id, shown); a hidden person is still listed, switch off', (t) async {

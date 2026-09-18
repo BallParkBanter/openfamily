@@ -19,7 +19,7 @@ Widget host({Widget? notice, bool back = false, bool following = false, bool ope
             top: 0, left: 0, right: 0,
             child: MapTopChrome(
               leading: back ? BackPill(onBack: () {}) : null,
-              center: FamilyChip(label: 'Bray Family', expanded: open, onTap: () {}),
+              center: FamilyChip(label: 'Bray Family', expanded: open, onTap: () {}, minWidth: 320),
               summary: const SizedBox(key: Key('summary'), width: 100, height: 30),
               notice: notice,
               centerPanel: SizedBox(key: const Key('panel-slot'), width: 320, height: open ? 180 : 0),
@@ -71,6 +71,7 @@ void main() {
     final Rect pill = t.getRect(find.byKey(const Key('following-pill')));
     expect(panel.center.dx, closeTo(400, 0.5));
     expect(panel.top, greaterThanOrEqualTo(family.bottom));
+    expect(family.width, closeTo(320, 0.5));                              // Bo 2026-09-17 19:55: the pill widens to the open panel
     expect(panel.width, greaterThanOrEqualTo(family.width));
     expect(pill.top, greaterThanOrEqualTo(panel.bottom + MapTopChrome.gap - 0.5));
     expect(t.widget<AnimatedRotation>(find.byKey(const Key('family-chevron'))).turns, 0.5);

@@ -134,3 +134,101 @@ bool mirrorMarker({required double x, required double screenWidth, required Mark
   double overflow(double l, double r) => math.max(0, x + r - screenWidth) + math.max(0, l - x);
   return overflow(extents.right, extents.left) < overflow(extents.left, extents.right);
 }
+
+/// How far one badge reaches left and right of the marker's point in the
+/// normal (unmirrored) layout; a negative reach means the badge's edge is on
+/// the other side of the point. Mirrored, the two swap.
+class BadgeReach {
+  const BadgeReach(this.left, this.right);
+  final double left, right;
+
+  bool fits({required double x, required double screenWidth, required bool mirrored}) {
+    final double l = mirrored ? right : left;
+    final double r = mirrored ? left : right;
+    return x - l >= 0 && x + r <= screenWidth;
+  }
+
+  double cut({required double x, required double screenWidth, required bool mirrored}) {
+    final double l = mirrored ? right : left;
+    final double r = mirrored ? left : right;
+    return math.max(0, l - x) + math.max(0, x + r - screenWidth);
+  }
+}
+
+/// The name badge's reach (markers-13.html .nm right:38px): its right edge
+/// 10 left of the point, its width further left.
+BadgeReach nameBadgeReach(String label) {
+  const double half = MemberAvatarBubble.markerWidth / 2;
+  const double nameRightEdge = MemberAvatarBubble.ringLeft + BrayTokens.soloFace - BrayTokens.nameBadgeRight;
+  return BadgeReach(half - (nameRightEdge - nameBadgeWidth(label)), nameRightEdge - half);
+}
+
+/// The top-right slot badge's reach (markers-13.html .age left:44px).
+BadgeReach slotBadgeReach(SlotBadgeSpec spec) {
+  const double half = MemberAvatarBubble.markerWidth / 2;
+  const double badgeLeftEdge = MemberAvatarBubble.ringLeft + BrayTokens.badgeLeft;
+  return BadgeReach(half - badgeLeftEdge, badgeLeftEdge + slotBadgeWidth(spec) - half);
+}
+
+/// The battery badge's reach (markers-13.html .chg left:-5px, 13 wide).
+const BadgeReach batteryBadgeReach = BadgeReach(
+    MemberAvatarBubble.markerWidth / 2 - (MemberAvatarBubble.ringLeft + BrayTokens.battBadgeLeft),
+    MemberAvatarBubble.ringLeft + BrayTokens.battBadgeLeft + BrayTokens.battBadgeW - MemberAvatarBubble.markerWidth / 2);
+
+/// One marker's badge layout for this camera (Bo 2026-09-17 19:50: "the
+/// edge mirror runs on EVERY camera change for EVERY marker"): whether the
+/// badges sit mirrored, and which of them are hidden because they fit on
+/// neither side of the ring.
+class MarkerLayout {
+  const MarkerLayout({this.mirrored = false, this.hideName = false, this.hideSlot = false, this.hideBattery = false});
+
+  static const MarkerLayout normal = MarkerLayout();
+
+  /// Name underlay top-right, slot badge top-left, battery bottom-right.
+  final bool mirrored;
+
+  /// A badge cut at the screen edge whichever side it takes is not drawn.
+  final bool hideName, hideSlot, hideBattery;
+
+  @override
+  bool operator ==(Object other) =>
+      other is MarkerLayout && other.mirrored == mirrored && other.hideName == hideName && other.hideSlot == hideSlot && other.hideBattery == hideBattery;
+  @override
+  int get hashCode => Object.hash(mirrored, hideName, hideSlot, hideBattery);
+  @override
+  String toString() => 'MarkerLayout(mirrored $mirrored, hide name $hideName slot $hideSlot battery $hideBattery)';
+}
+
+/// The badge layout for a marker whose point is at screen [x]. The name and
+/// slot badges share the band above the ring, so they always take opposite
+/// sides and swap together: the right-hand slot badge flips left at the
+/// right edge, the name badge mirrors to the right at the left edge - the
+/// side that cuts less wins, [prefer] (a fanned pair's outward side) only
+/// breaks a tie. A badge that fits on neither side is hidden.
+MarkerLayout markerLayoutFor({
+  required double x,
+  required double screenWidth,
+  required Member m,
+  required String label,
+  required DateTime now,
+  bool? inDrive,
+  bool prefer = false,
+}) {
+  final SlotBadgeSpec? badge = slotBadgeFor(m, now: now, inDrive: inDrive);
+  final bool battery = batteryBadgeFor(percent: m.batteryPercent, charging: m.charging == true) != null;
+  final List<BadgeReach> reaches = <BadgeReach>[
+    nameBadgeReach(label),
+    if (badge != null) slotBadgeReach(badge),
+    if (battery) batteryBadgeReach,
+  ];
+  double cut(bool mirrored) => reaches.fold(0, (double sum, BadgeReach r) => sum + r.cut(x: x, screenWidth: screenWidth, mirrored: mirrored));
+  final double normal = cut(false), flipped = cut(true);
+  final bool mirrored = flipped < normal || (flipped == normal && prefer);
+  bool neither(BadgeReach r) => !r.fits(x: x, screenWidth: screenWidth, mirrored: false) && !r.fits(x: x, screenWidth: screenWidth, mirrored: true);
+  return MarkerLayout(
+    mirrored: mirrored,
+    hideName: neither(nameBadgeReach(label)),
+    hideSlot: badge != null && neither(slotBadgeReach(badge)),
+    hideBattery: battery && neither(batteryBadgeReach),
+  );
+}

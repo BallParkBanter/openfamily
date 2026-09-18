@@ -1,7 +1,7 @@
 // app/lib/widgets/edge_chip.dart
-// 5b step 2 (Bo, 2026-09-16): a family member too far to fit (utils/
-// near_fit.dart farMembers) is an EDGE CHIP pinned to the screen edge in
-// their bearing - their face in their ring colour, their name, the distance
+// 5b step 2 (Bo, 2026-09-16): a family member whose point is off the screen
+// (since 2026-09-17 ANY member outside the viewport, not only the far
+// cluster) is an EDGE CHIP pinned to the screen edge in their bearing - their face in their ring colour, their name, the distance
 // from the viewer ("Heidi · 1,973 mi"), a soft fan in their colour aimed
 // their way. Life360 style v2 since 2026-09-17 (Bo): small face, small
 // pill, fan toward the edge (mockups/2026-09-16-edge-chip/edge-chip-2).
@@ -20,7 +20,7 @@ import 'package:flutter_map/flutter_map.dart';
 import '../models/member.dart';
 import '../theme/bray_tokens.dart';
 import '../utils/member_clustering.dart' show groundMetres;
-import '../utils/near_fit.dart';
+import '../utils/near_fit.dart' show compassWord, milesLabel, screenBearingDeg;
 import 'member_avatar_bubble.dart' show StatusAvatar;
 
 /// Which screen edge the avatar rides: always left or right (a steep bearing
@@ -204,7 +204,6 @@ class EdgeChipLayer extends StatelessWidget {
     required this.onTap,
     this.chromeTop = BrayTokens.fitChromeTop,
     this.chromeBottom = BrayTokens.fitChromeBottom,
-    this.radiusMetres = kNearFitMetres,
   });
 
   final List<Member> members;
@@ -214,7 +213,6 @@ class EdgeChipLayer extends StatelessWidget {
 
   /// The header row and the bottom bar (plus the safe inset) the chips stay clear of.
   final double chromeTop, chromeBottom;
-  final double radiusMetres;
 
   @override
   Widget build(BuildContext context) {
@@ -232,10 +230,16 @@ class EdgeChipLayer extends StatelessWidget {
     final Offset centre = screen.center;
     final Member? viewer = members.cast<Member?>().firstWhere((Member? m) => m!.id == viewerId && m.position != null, orElse: () => null);
     final List<Widget> chips = <Widget>[];
-    for (final Member m in farMembers(members, viewerId: viewerId, radiusMetres: radiusMetres)) {
+    // Bo 2026-09-17 19:50: a chip for ANY member whose point is outside the
+    // viewport at THIS camera - not only the far cluster (near_fit.dart) -
+    // recomputed on every camera change (MapCamera.of rebuilds this layer),
+    // gone the moment they are in view. The caller leaves hidden members
+    // out; a capsule off screen is one chip per person in it.
+    for (final Member m in members) {
+      if (m.position == null) continue;
       final p = camera.latLngToScreenPoint(m.position!);
       final Offset target = Offset(p.x, p.y);
-      if (screen.contains(target)) continue;   // panned onto the map: the marker is the chip
+      if (screen.contains(target)) continue;   // in view: the marker is the chip
       final double metres = viewer == null ? 0 : groundMetres(viewer.position!, m.position!);
       final EdgeSide edge = target.dx < centre.dx ? EdgeSide.left : EdgeSide.right;
       final Offset at = edgeAvatarPoint(centre: centre, target: target, band: band, edge: edge);

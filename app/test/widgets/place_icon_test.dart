@@ -10,6 +10,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:openfamily/models/place.dart';
+import 'package:openfamily/widgets/home_chip.dart';
 import 'package:openfamily/widgets/place_icon.dart';
 import 'package:openfamily/widgets/place_icon_sheet.dart';
 
@@ -52,7 +53,9 @@ void main() {
     expect(find.byKey(const Key('place-chip-home')), findsNothing);
     expect(find.byKey(const Key('place-chip-plain')), findsNothing);
     expect(find.text('⚾'), findsOneWidget);
-    expect(t.getSize(find.byKey(const Key('place-chip-ecb'))).width, 40);
+    expect(t.getSize(find.byKey(const Key('place-chip-ecb'))).width, HomeChip.size);
+    final BoxDecoration d = t.widget<Container>(find.byKey(const Key('place-chip-ecb'))).decoration! as BoxDecoration;
+    expect(d.shape, BoxShape.circle);   // Bo 2026-09-17: round chips
   });
 
   test('the picture cache fetches once per place + version', () async {
