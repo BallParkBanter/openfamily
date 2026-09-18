@@ -71,7 +71,7 @@ void main() {
     expect(dot.center.dy, closeTo(box.top + MemberAvatarBubble.pointFromTop, 0.5));
     expect(MemberAvatarBubble.avatarBox, 100);
     expect(MemberAvatarBubble.pointFromTop, 95);
-    expect(MemberAvatarBubble.atHomeLift, 9);
+    expect(MemberAvatarBubble.atHomeLift, 11);   // HomeChip.size / 2 - (74 + 5 - 68): the 44 round chip since 2026-09-17 (was 9 on the 40 tile)
     expect(t.takeException(), isNull);
   });
   testWidgets('stale: grey ring, grey pointer, grey badge outline, desaturated photo', (t) async {

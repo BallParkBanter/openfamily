@@ -137,12 +137,14 @@ void main() {
     h.dispose();
   });
 
-  testWidgets('panned onto the map, the far member\'s chip goes (her marker is the chip)', (t) async {
+  testWidgets('panned onto the map, the far member\'s chip goes (her marker is the chip) - and the two now off screen get theirs', (t) async {
     final c = MapController();
     await pump(t, app(c, [heidi, charlie, bo]));
     c.move(elSegundo, 11);
     await t.pump(const Duration(seconds: 1));
-    expect(find.byType(EdgeChip), findsNothing);
+    final Iterable<EdgeChip> chips = t.widgetList<EdgeChip>(find.byType(EdgeChip));
+    expect(chips.map((EdgeChip e) => e.member.id).toSet(), {'c', 'b'});   // Bo 2026-09-17: anyone off screen, even the viewer
+    expect(chips.every((EdgeChip e) => e.edge == EdgeSide.right), isTrue); // Georgia is east of El Segundo
   });
 
   testWidgets('a far member to the north-east rides the right edge (hit first on that ray), high up, arrow turned that way', (t) async {
@@ -160,5 +162,38 @@ void main() {
     expect(flare.flare(const Size(EdgeChip.width, EdgeChip.height)).getBounds().right, greaterThan(EdgeChip.width));   // mirrored: the tail runs into the right edge
     expect(r.center.dy, lessThan(640));
     expect(r.top, greaterThanOrEqualTo(80 + EdgeChip.margin));
+  });
+  edgeForAnyoneTests();
+}
+
+// Bo 2026-09-17 19:50: ANY member outside the viewport gets a chip, at every
+// camera change, and loses it the moment they are back in view.
+void edgeForAnyoneTests() {
+  Future<void> pump(WidgetTester t, Widget w) async {
+    t.view.physicalSize = const Size(1600, 2560);
+    t.view.devicePixelRatio = 2.0;
+    addTearDown(t.view.reset);
+    await t.pumpWidget(w);
+    await t.pump(const Duration(seconds: 1));
+  }
+
+  testWidgets('zoom in: Charlie, only 15 mi away, leaves the viewport and gets a chip; zoom out: it goes again', (t) async {
+    final c = MapController();
+    await pump(t, app(c, [heidi, charlie, bo]));
+    expect(t.widgetList<EdgeChip>(find.byType(EdgeChip)).map((EdgeChip e) => e.member.id), ['h']);   // zoom 11: Charlie and Bo are on the map
+    c.move(home, 14);   // zoom in on Home: Charlie (Hebron, 17 mi east) is now off the right edge
+    await t.pump(const Duration(seconds: 1));
+    final Iterable<EdgeChip> chips = t.widgetList<EdgeChip>(find.byType(EdgeChip));
+    expect(chips.map((EdgeChip e) => e.member.id).toSet(), {'h', 'c'});
+    expect(chips.firstWhere((EdgeChip e) => e.member.id == 'c').edge, EdgeSide.right);
+    c.move(const LatLng(33.95, -84.05), 11);   // zoom back out: Charlie is in view, the chip goes
+    await t.pump(const Duration(seconds: 1));
+    expect(t.widgetList<EdgeChip>(find.byType(EdgeChip)).map((EdgeChip e) => e.member.id), ['h']);
+  });
+
+  testWidgets('the viewer gets a chip too when their own point is off screen', (t) async {
+    final c = MapController();
+    await pump(t, app(c, [heidi, charlie, bo], centre: hebron, zoom: 14));
+    expect(t.widgetList<EdgeChip>(find.byType(EdgeChip)).map((EdgeChip e) => e.member.id).toSet(), {'h', 'b'});
   });
 }

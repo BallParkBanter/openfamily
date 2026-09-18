@@ -58,22 +58,22 @@ class PlaceIcon extends StatelessWidget {
     );
   }
 
-  Widget _picture(Uint8List bytes) => ClipRRect(
+  Widget _picture(Uint8List bytes) => ClipOval(
         key: const Key('place-icon-picture'),
-        borderRadius: BorderRadius.circular(size * 0.22),
         child: Image.memory(bytes, width: size, height: size, fit: BoxFit.cover, gaplessPlayback: true),
       );
 }
 
-/// The map chip for a place with its own icon: HomeChip's tile (40 x 40,
-/// white, radius 13, shadow) holding the icon - drawn under the people like
-/// the house. Home itself stays HomeChipLayer's house.
+/// The map chip for a place with its own icon: a round white chip (HomeChip's
+/// size, the marker's drop shadow) holding the icon - a logo fills ~85 % of
+/// the circle, clipped round - drawn under the people like the house. Home
+/// itself stays HomeChipLayer's house.
 class PlaceIconChip extends StatelessWidget {
   const PlaceIconChip({super.key, required this.place, this.cache});
   final Place place;
   final PlaceIconCache? cache;
-  static const double pictureSize = 28;
-  static const double emojiSize = 22 / 0.8; // PlaceIcon draws the emoji at 0.8 x size = 22, HomeChip's 22
+  static const double pictureSize = HomeChip.size * 0.85;   // the logo fills ~85 % of the circle
+  static const double emojiSize = 24 / 0.8; // PlaceIcon draws the emoji at 0.8 x size = 24, HomeChip's 24
 
   @override
   Widget build(BuildContext context) => Container(
@@ -81,11 +81,11 @@ class PlaceIconChip extends StatelessWidget {
         width: HomeChip.size,
         height: HomeChip.size,
         alignment: Alignment.center,
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(13),
-          border: Border.all(color: const Color(0x26141B36)),
-          boxShadow: const [BoxShadow(color: Color(0x4D000000), blurRadius: 10, offset: Offset(0, 3))],
+          shape: BoxShape.circle,
+          border: Border.fromBorderSide(BorderSide(color: Color(0x26141B36))),
+          boxShadow: [BoxShadow(color: Color(0x80000000), blurRadius: 14, offset: Offset(0, 4))],   // the marker's drop shadow
         ),
         child: PlaceIcon(place: place, size: place.hasImage ? pictureSize : emojiSize, cache: cache),
       );

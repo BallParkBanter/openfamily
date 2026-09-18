@@ -74,12 +74,12 @@ void main() {
     expect(kPoiChipMinStationary, const Duration(minutes: 5));
   });
 
-  testWidgets('PoiChip: the house chip tile (40 px white, radius 13) with the kind emoji', (t) async {
+  testWidgets('PoiChip: the round house chip (44 px white) with the kind emoji', (t) async {
     await t.pumpWidget(host(const Center(child: PoiChip(kind: 'school'))));
     final box = t.widget<Container>(find.byKey(const Key('poi-chip')));
     final d = box.decoration as BoxDecoration;
     expect(d.color, Colors.white);
-    expect(d.borderRadius, BorderRadius.circular(13));
+    expect(d.shape, BoxShape.circle);
     expect(t.getSize(find.byKey(const Key('poi-chip'))), const Size(HomeChip.size, HomeChip.size));
     expect(find.text('🏫'), findsOneWidget);
   });

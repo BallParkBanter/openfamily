@@ -23,15 +23,15 @@ class PoiChip extends StatelessWidget {
           width: HomeChip.size,
           height: HomeChip.size,
           alignment: Alignment.center,
-          decoration: BoxDecoration(
+          decoration: const BoxDecoration(
             color: Colors.white, // C:110
-            borderRadius: BorderRadius.circular(13), // C:110
-            border: Border.all(color: const Color(0x26141B36)), // C:111
-            boxShadow: const [
-              BoxShadow(color: Color(0x4D000000), blurRadius: 10, offset: Offset(0, 3)), // C:112
+            shape: BoxShape.circle, // Bo 2026-09-17: round like HomeChip
+            border: Border.fromBorderSide(BorderSide(color: Color(0x26141B36))), // C:111
+            boxShadow: [
+              BoxShadow(color: Color(0x80000000), blurRadius: 14, offset: Offset(0, 4)), // the marker's drop shadow
             ],
           ),
-          child: Text(poiIcon(kind), style: const TextStyle(fontSize: 22, height: 1)), // C:113
+          child: Text(poiIcon(kind), style: const TextStyle(fontSize: 24, height: 1)), // C:113
         ),
       );
 }

@@ -6,6 +6,7 @@ import 'package:openfamily/models/member.dart';
 import 'package:openfamily/theme/bray_tokens.dart';
 import 'package:openfamily/widgets/capsule_bubble.dart';
 import 'package:openfamily/widgets/glyphs.dart';
+import 'package:openfamily/widgets/member_avatar_bubble.dart' show StatusAvatar;
 
 // batteryPercent/address are required by Member's constructor (member.dart:85-90).
 Member m(String name, {int? mph, bool? charging, int batt = 50}) => Member(id: name, name: name, status: MemberStatus.normal,
@@ -26,6 +27,20 @@ void main() {
     final a = t.getTopLeft(avatars.at(0)), b = t.getTopLeft(avatars.at(1));
     expect(b.dx - a.dx, BrayTokens.capsuleAvatar - BrayTokens.capsuleOverlap);
     expect(t.getSize(avatars.at(0)).width, BrayTokens.capsuleAvatar);
+  });
+  testWidgets('every member stale: the pill and tail go stale grey, the faces desaturate, one "updated <age>" badge (Bo 2026-09-17: a still pair stays one capsule)', (t) async {
+    Member stale(String name, Duration ago) => Member(id: name, name: name, status: MemberStatus.normal, position: const LatLng(33.9, -84.4),
+        batteryPercent: 50, address: '', lastSeen: now.subtract(ago));
+    await t.pumpWidget(host(CapsuleBubble(members: [stale('Charlie', const Duration(hours: 3)), stale('Heidi', const Duration(hours: 5))], now: now, inDriveFor: (_) => false)));
+    final pill = t.widget<Container>(find.byKey(const Key('capsule-pill')));
+    expect((pill.decoration as BoxDecoration).color, BrayTokens.staleGrey);
+    expect(t.widgetList<StatusAvatar>(find.byType(StatusAvatar)).every((StatusAvatar a) => a.desaturate), isTrue);
+    expect(find.text('updated'), findsOneWidget);
+    expect(find.text('3 hr ago'), findsOneWidget);   // the freshest fix's age
+    // one fresh member: the normal grey, faces in colour
+    await t.pumpWidget(host(CapsuleBubble(members: [stale('Charlie', const Duration(hours: 3)), m('Heidi')], now: now, inDriveFor: (_) => false)));
+    expect((t.widget<Container>(find.byKey(const Key('capsule-pill'))).decoration as BoxDecoration).color, BrayTokens.capsuleGrey);
+    expect(t.widgetList<StatusAvatar>(find.byType(StatusAvatar)).any((StatusAvatar a) => a.desaturate), isFalse);
   });
   testWidgets('one badge on top of the capsule: the red car + the fastest speed, centred, its bottom 6 px under the pill top - the faces stay clear (Bo 2026-09-17)', (t) async {
     await t.pumpWidget(host(CapsuleBubble(members: [m('Bo Bray', mph: 61), m('Charlie', mph: 65)], now: now, inDriveFor: (_) => true)));
