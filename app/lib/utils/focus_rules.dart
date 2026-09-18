@@ -53,10 +53,12 @@ class FocusRules {
     return all.where((Member m) => m.id == id || keep.contains(m.id)).toList();
   }
 
-  double zoomFor(Member m, double currentZoom) {
-    final double floor = m.hasDrivingSpeed ? BrayTokens.followZoom : BrayTokens.focusZoom;
-    return currentZoom > floor ? currentZoom : floor;
-  }
+  /// The zoom a focus lands on: 16 for a moving member, 17 for a parked one
+  /// - whatever the camera was at (Bo 21:28: a z19 tap gave one smeared tile).
+  double zoomFor(Member m, double currentZoom) => m.hasDrivingSpeed ? BrayTokens.movingFocusZoom : BrayTokens.parkedFocusZoom;
+
+  /// Any automatic camera zoom while following: never past the cap.
+  static double capFollowZoom(double zoom) => zoom > BrayTokens.followZoomCap ? BrayTokens.followZoomCap : zoom;
 
   /// Focused → focus; otherwise hidden. There is no other level (Round 4).
   SheetLevel levelFor(SheetLevel current) => _focusedId != null ? SheetLevel.focus : SheetLevel.hidden;
