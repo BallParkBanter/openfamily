@@ -71,14 +71,8 @@ class FocusTrailLayer extends StatefulWidget {
   /// within [nearMeters] of it, or from the first segment the head lies on
   /// (the polyline caught up to there). Nothing near = the head is older
   /// than them all: keep every one.
-  static List<LatLng> recentAfterHead(List<LatLng> recent, LatLng head, {double nearMeters = 60}) {
-    const Distance d = Distance();
-    for (int i = 0; i < recent.length; i++) {
-      if (d.as(LengthUnit.Meter, recent[i], head) <= nearMeters) return recent.sublist(i + 1);   // the head is this crumb
-      if (i > 0 && TrailStore.distanceToSegmentMeters(head, recent[i - 1], recent[i]) <= nearMeters) return recent.sublist(i);   // the head lies between two crumbs (a straight run whose middle crumbs were dropped)
-    }
-    return List<LatLng>.of(recent);   // always a copy: the caller may clear the original
-  }
+  static List<LatLng> recentAfterHead(List<LatLng> recent, LatLng head, {double nearMeters = 60}) =>
+      List<LatLng>.of(recent.sublist(TrailStore.firstAfterHead(recent, head, nearMeters: nearMeters)));
 
   /// The raw fallback: drop a point within [minStepMeters] of the last kept one.
   static List<LatLng> thinRaw(List<LatLng> raw, {double accuracy = 0}) {
@@ -124,17 +118,19 @@ class _FocusTrailLayerState extends State<FocusTrailLayer> {
     return ListenableBuilder(
       listenable: _store,
       builder: (BuildContext context, _) {
-        final List<LatLng>? line = _store.trailFor(m.id, m.position);
-        if (line == null) return const SizedBox.shrink();
+        final List<List<LatLng>> pieces = _store.trailFor(m.id, m.position, markerAt: m.lastSeen ?? widget.now);
+        if (pieces.isEmpty) return const SizedBox.shrink();
         final Color accent = BrayTokens.accentFor(m);
         return Stack(children: [
           PolylineLayer(polylines: [
             // OPEN: chosen - BrayTokens.ink (#0A0E16) for J:166's #0a0e1a, 4 units of blue apart; one near-black, not two
-            Polyline(points: line, color: BrayTokens.ink.withValues(alpha: 0.35), strokeWidth: 7),   // J:166 halo #0a0e1a w7 .35
-            Polyline(points: line, color: accent.withValues(alpha: 0.95), strokeWidth: 3.5),         // J:167 accent w3.5 .95
+            for (final List<LatLng> piece in pieces)
+              Polyline(points: piece, color: BrayTokens.ink.withValues(alpha: 0.35), strokeWidth: 7),   // J:166 halo #0a0e1a w7 .35
+            for (final List<LatLng> piece in pieces)
+              Polyline(points: piece, color: accent.withValues(alpha: 0.95), strokeWidth: 3.5),         // J:167 accent w3.5 .95
           ]),
           CircleLayer(circles: [
-            CircleMarker(point: line.first, radius: 4, color: BrayTokens.ink, borderColor: accent, borderStrokeWidth: 2), // J:168 the start of the drive
+            CircleMarker(point: pieces.first.first, radius: 4, color: BrayTokens.ink, borderColor: accent, borderStrokeWidth: 2), // J:168 the start of the drive
           ]),
         ]);
       },
