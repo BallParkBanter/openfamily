@@ -55,7 +55,7 @@ import '../widgets/edge_chip.dart';
 import '../widgets/family_accordion.dart';
 import '../widgets/family_header.dart';
 import '../widgets/map_top_chrome.dart';
-import '../widgets/fading_tail_layer.dart';
+import '../widgets/drive_line_layer.dart';
 import '../widgets/following_pill.dart';
 import '../widgets/home_chip.dart';
 import '../widgets/map_bottom_bar.dart';
@@ -1441,14 +1441,14 @@ class _MapScreenState extends State<MapScreen>
                 // the members (design list: "House chip at home, drawn under
                 // people"; C:183-186). Places come from the same FamilyService
                 // that labels members with them.
+                // Bo 2026-09-18 (Life360): the charcoal drive line for everyone in a drive, under every chip and marker.
+                DriveLineLayer(members: _visible(onMap), inDriveFor: _inDriveFor),
                 HomeChipLayer(places: _familyService.places),
                 PlaceIconChipLayer(places: _familyService.places),   // bray: a place's own emoji / picture under the people
                 // Piece 5: the POI chip (🏫 ✈️ 🛒 ...) under a person parked
                 // at a named feature for 5 min - one per member position,
                 // never for a mover, never at home (the house is there).
                 PoiChipLayer(members: _visible(onMap)),
-                // Bo 21:5x: every moving member on screen trails a 30 s fading tail (house under the tail under people).
-                FadingTailLayer(members: _visible(onMap), inDriveFor: _inDriveFor),
                 // Member bubbles, clustered by on-screen proximity at
                 // the current zoom (rebuilds as the camera moves).
                 MemberMarkerLayer(
