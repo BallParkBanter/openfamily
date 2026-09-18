@@ -167,6 +167,8 @@ services:
       - ./tiles/nginx.conf:/etc/nginx/nginx.conf:ro
       - ${TILES_CACHE:-/mnt/DATA3-10TB/tiles-cache}:/cache
       - ${TILES_CACHE:-/mnt/DATA3-10TB/tiles-cache}/log:/var/log/nginx
+      # bray 2026-09-18: vector tilesets + per-region packs (offline maps), read-only
+      - ${VECTOR_TILES:-/mnt/DATA3-10TB/vector-tiles}:/vector:ro
     ports:
       - "${TILES_PORT:-8114}:80"
 
