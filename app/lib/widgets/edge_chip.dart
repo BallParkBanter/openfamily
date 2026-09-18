@@ -145,9 +145,14 @@ class EdgeFlarePainter extends CustomPainter {
   /// The silhouette, inset by half the hairline so the stroke stays inside [face].
   Path flare(Size size) {
     const double inset = EdgeChip.hairline / 2;
-    final double cx = faceCentre.dx, cy = faceCentre.dy;
+    // Drawn for the LEFT edge (x = 0 is the screen edge), mirrored for the
+    // right - so the circle is laid out at its LEFT-edge x first. (Bo
+    // 2026-09-17 21:02, o1c.png: the right-edge chip used the right-side x
+    // and then mirrored it too, so its circle bulged out on the map side
+    // and the face sat inside a long wedge - a shape nobody had seen, as
+    // only left-edge chips had been on screen since v7.)
+    final double cx = edge == EdgeSide.left ? faceCentre.dx : size.width - faceCentre.dx, cy = faceCentre.dy;
     final double r = faceRadius - inset;
-    // Drawn for the LEFT edge (x = 0 is the screen edge), mirrored for the right.
     final Path circle = Path()..addOval(Rect.fromCircle(center: Offset(cx, cy), radius: r));
     // The wedge: from each edge point (4 px past the edge, so the screen cuts
     // it flat and its outline never closes on screen) a straight line tangent
