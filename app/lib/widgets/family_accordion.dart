@@ -11,8 +11,13 @@
 // (circle_switcher.dart _SingleCircleContext: sheet colour, radius 22,
 // elevation 3). Bo 2026-09-17 19:55: the panel is exactly as wide as its
 // longest row (face + name + toggle + padding), rows 44, face 32, the toggle
-// at the trailing edge, 12 in from each side, and the pill widens to the
-// panel's width while it is open.
+// at the trailing edge, 12 in from each side. Bo 20:25: the pill is ALWAYS
+// that width (both states), the drawer hangs directly under it with no gap
+// as ONE outlined shape (the pill's bottom corners square while open, the
+// panel's top square, its bottom rounded, one shadow), and the slide is
+// slow: ~900 ms open, ~700 ms close.
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../models/member.dart';
@@ -22,68 +27,83 @@ import 'marker_extents.dart' show measureText;
 import 'member_avatar_bubble.dart' show StatusAvatar;
 
 /// The pill: family name + chevron. Long press is left to the caller (the
-/// hidden card gallery lives on it). [minWidth] is the open panel's width -
-/// the pill grows to it (and back) with the drawer.
+/// hidden card gallery lives on it). [width] is the drawer's width
+/// (FamilyAccordionPanel.widthFor) - the pill is always exactly that wide;
+/// null lets it size to its content.
 class FamilyChip extends StatelessWidget {
-  const FamilyChip({super.key, required this.label, required this.expanded, required this.onTap, this.minWidth = 0});
+  const FamilyChip({super.key, required this.label, required this.expanded, required this.onTap, this.width});
 
   final String label;
   final bool expanded;
   final VoidCallback onTap;
-  final double minWidth;
+  final double? width;
 
   /// 10 + 20 (the chevron) + 10 - the map screen places the panel under it.
   static const double height = 40;
+  static const double radius = 22;
+  static const EdgeInsets padding = EdgeInsets.fromLTRB(22, 10, 16, 10);   // Bo 2026-09-17 17:20: a bit wider (~+20 %)
+  static const double iconSize = 19, iconGap = 7, chevronGap = 4, chevronSize = 20, labelMaxWidth = 180;
+  static const TextStyle labelStyle = TextStyle(fontWeight: FontWeight.w700, fontSize: 14, height: 20 / 14);
+
+  /// The pill's own content width for [label] - the floor of the shared width.
+  static double contentWidth(String label) =>
+      padding.horizontal + iconSize + iconGap + math.min(labelMaxWidth, measureText(label, labelStyle)) + chevronGap + chevronSize;
 
   @override
   Widget build(BuildContext context) {
     final BrandTheme brand = BrandTheme.of(context);
+    final Duration d = expanded ? FamilyAccordionPanel.openDuration : FamilyAccordionPanel.closeDuration;
+    final Curve c = expanded ? FamilyAccordionPanel.expandCurve : FamilyAccordionPanel.collapseCurve;
+    // Open: the bottom corners square and the shadow handed to the drawer,
+    // so pill + panel read as one shape with one outline.
+    final BorderRadius shape = BorderRadius.vertical(top: const Radius.circular(radius), bottom: Radius.circular(expanded ? 0 : radius));
     return Semantics(
       label: 'Current family: $label',
       hint: expanded ? 'Collapse the family list' : 'Expand the family list',
       button: true,
-      child: Material(
-        color: brand.sheet,
-        borderRadius: BorderRadius.circular(22),
-        elevation: 3,
-        child: InkWell(
-          key: const Key('family-chip'),
-          borderRadius: BorderRadius.circular(22),
-          onTap: onTap,
-          child: AnimatedSize(
-            duration: FamilyAccordionPanel.transition,
-            curve: expanded ? FamilyAccordionPanel.expandCurve : FamilyAccordionPanel.collapseCurve,
-            alignment: Alignment.center,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minWidth: expanded ? minWidth : 0),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(22, 10, 16, 10),   // Bo 2026-09-17 17:20: a bit wider (~+20 %)
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.group_outlined, size: 19, color: brand.accentInk),
-                    const SizedBox(width: 7),
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 180),
-                      child: Text(
-                        label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontWeight: FontWeight.w700, fontSize: 14, height: 20 / 14),
-                      ),
+      child: AnimatedContainer(
+        key: const Key('family-chip-shape'),
+        duration: d,
+        curve: c,
+        width: width,
+        decoration: BoxDecoration(
+          color: brand.sheet,
+          borderRadius: shape,
+          boxShadow: expanded ? const <BoxShadow>[] : kElevationToShadow[3],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            key: const Key('family-chip'),
+            borderRadius: shape,
+            onTap: onTap,
+            child: Padding(
+              padding: padding,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.group_outlined, size: iconSize, color: brand.accentInk),
+                  const SizedBox(width: iconGap),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: labelMaxWidth),
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: labelStyle.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
                     ),
-                    const SizedBox(width: 4),
-                    // The same clock and curve as the drawer, so the chevron turns with it.
-                    AnimatedRotation(
-                      key: const Key('family-chevron'),
-                      turns: expanded ? 0.5 : 0,          // down when collapsed, up when expanded
-                      duration: FamilyAccordionPanel.transition,
-                      curve: expanded ? FamilyAccordionPanel.expandCurve : FamilyAccordionPanel.collapseCurve,
-                      child: Icon(Icons.expand_more, size: 20, color: brand.accentInk),
-                    ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: chevronGap),
+                  // The same clock and curve as the drawer, so the chevron turns with it.
+                  AnimatedRotation(
+                    key: const Key('family-chevron'),
+                    turns: expanded ? 0.5 : 0,          // down when collapsed, up when expanded
+                    duration: d,
+                    curve: c,
+                    child: Icon(Icons.expand_more, size: chevronSize, color: brand.accentInk),
+                  ),
+                ],
               ),
             ),
           ),
@@ -104,6 +124,7 @@ class FamilyAccordionPanel extends StatefulWidget {
     required this.labelFor,
     required this.hiddenIds,
     required this.onToggle,
+    this.familyLabel = '',
   });
 
   final bool expanded;
@@ -114,7 +135,8 @@ class FamilyAccordionPanel extends StatefulWidget {
   /// (member id, shown on the map)
   final void Function(String id, bool shown) onToggle;
 
-  static const Duration transition = Duration(milliseconds: 280);
+  static const Duration openDuration = Duration(milliseconds: 900);    // Bo 20:25: "much slower"
+  static const Duration closeDuration = Duration(milliseconds: 700);
   static const Curve expandCurve = Curves.easeOutCubic;
   static const Curve collapseCurve = Curves.easeInCubic;
   static const double rowHeight = 44;
@@ -127,23 +149,28 @@ class FamilyAccordionPanel extends StatefulWidget {
   static const TextStyle headerStyle = TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: .6);
   static const String header = 'On the map';
 
-  /// The panel's width: its longest row - the inset, the face, the gap, the
-  /// longest name, the gap, the toggle, the inset (the small header line
-  /// counts too).
-  static double widthFor(List<Member> members, String Function(Member) labelFor) {
+  /// The one width pill and drawer share: the longest row - the inset, the
+  /// face, the gap, the longest name, the gap, the toggle, the inset (the
+  /// small header line counts too) - never less than the pill's own content
+  /// ([familyLabel], FamilyChip.contentWidth).
+  static double widthFor(List<Member> members, String Function(Member) labelFor, {String familyLabel = ''}) {
     double longest = measureText(header, headerStyle);
     for (final Member m in members) {
-      longest = longest > measureText(labelFor(m), nameStyle) ? longest : measureText(labelFor(m), nameStyle);
+      longest = math.max(longest, measureText(labelFor(m), nameStyle));
     }
-    return inset + face + faceGap + longest + nameGap + switchWidth + inset;
+    return math.max(inset + face + faceGap + longest + nameGap + switchWidth + inset, FamilyChip.contentWidth(familyLabel));
   }
+
+  /// The drawer's width for the same family label the pill shows.
+  final String familyLabel;
 
   @override
   State<FamilyAccordionPanel> createState() => _FamilyAccordionPanelState();
 }
 
 class _FamilyAccordionPanelState extends State<FamilyAccordionPanel> with SingleTickerProviderStateMixin {
-  late final AnimationController _drawer = AnimationController(vsync: this, duration: FamilyAccordionPanel.transition, value: widget.expanded ? 1 : 0);
+  late final AnimationController _drawer = AnimationController(
+      vsync: this, duration: FamilyAccordionPanel.openDuration, reverseDuration: FamilyAccordionPanel.closeDuration, value: widget.expanded ? 1 : 0);
   // The reverse curve runs on the controller's value (1 -> 0), so the
   // collapse's easeInCubic - gentle start, fast finish - is its flip there.
   late final Animation<double> _open = CurvedAnimation(parent: _drawer, curve: FamilyAccordionPanel.expandCurve, reverseCurve: FamilyAccordionPanel.collapseCurve.flipped);
@@ -169,21 +196,23 @@ class _FamilyAccordionPanelState extends State<FamilyAccordionPanel> with Single
   @override
   Widget build(BuildContext context) {
     final BrandTheme brand = BrandTheme.of(context);
-    final double width = FamilyAccordionPanel.widthFor(widget.members, widget.labelFor);
+    final double width = FamilyAccordionPanel.widthFor(widget.members, widget.labelFor, familyLabel: widget.familyLabel);
     return AnimatedBuilder(
       animation: _open,
       builder: (BuildContext context, Widget? child) => ClipRect(
         key: const Key('family-panel-clip'),
         child: Align(
           alignment: Alignment.topCenter,
+          widthFactor: 1,                 // the clip box is exactly the panel's width, the pill's
           heightFactor: _open.value,
           child: child,
         ),
       ),
+      // Square top (the joint with the pill), the pill's radius at the bottom, the one shadow.
       child: Material(
         key: const Key('family-panel'),
         color: brand.sheet,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(FamilyChip.radius)),
         elevation: 3,
         clipBehavior: Clip.antiAlias,
         child: SizedBox(

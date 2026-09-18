@@ -1531,7 +1531,7 @@ class _MapScreenState extends State<MapScreen>
                             label: _familyName,
                             expanded: _familyOpen,
                             onTap: _toggleFamilyOpen,
-                            minWidth: FamilyAccordionPanel.widthFor(members, _labelFor),   // Bo 2026-09-17 19:55: the pill widens to the open panel
+                            width: FamilyAccordionPanel.widthFor(members, _labelFor, familyLabel: _familyName),   // Bo 2026-09-17 20:25: always the drawer's width
                           )
                         : CircleSwitcher(
                             circles: [_familyName],
@@ -1551,6 +1551,7 @@ class _MapScreenState extends State<MapScreen>
                       labelFor: _labelFor,
                       hiddenIds: MapVisibilityStore.instance.hiddenIds,
                       onToggle: (String id, bool shown) => MapVisibilityStore.instance.setHidden(id, !shown),
+                      familyLabel: _familyName,
                     ),
                   ),
                   // Bo 17:20: "Following <name> ✕" sits directly under the family pill, centred, in every state.
@@ -1914,8 +1915,12 @@ class MemberMarkerLayer extends StatelessWidget {
     // One clock per layer build: every marker's speed / cone / age is judged
     // against the same instant (Member.isStaleAt).
     final DateTime now = DateTime.now();
+    // Bo 2026-09-17 20:25: a member whose face is not whole on the map is an
+    // edge chip (EdgeChipLayer, the same faceOffScreen test), never a
+    // half-visible marker on the edge.
+    final List<Member> onScreen = members.where((Member m) => !faceOffScreen(camera, m)).toList();
     final List<BubblePlacement> placements = placeBubbles(
-      members,
+      onScreen,
       toScreenOffset: (latLng) {
         final p = camera.latLngToScreenPoint(latLng);
         return Offset(p.x, p.y);

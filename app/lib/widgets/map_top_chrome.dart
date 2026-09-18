@@ -88,7 +88,7 @@ class MapTopChrome extends StatelessWidget {
                 key: const Key('top-center-column'),
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (centerPanel != null) Padding(padding: const EdgeInsets.only(top: 6), child: centerPanel),
+                  if (centerPanel != null) centerPanel!,   // Bo 2026-09-17 20:25: no gap - the drawer hangs straight off the pill
                   if (under != null) Padding(padding: const EdgeInsets.only(top: gap), child: under),
                 ],
               ),

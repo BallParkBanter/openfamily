@@ -10,7 +10,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:openfamily/models/member.dart';
 import 'package:openfamily/theme/bray_tokens.dart';
+import 'package:openfamily/screens/map_screen.dart' show MemberMarkerLayer;
 import 'package:openfamily/widgets/edge_chip.dart';
+import 'package:openfamily/widgets/member_avatar_bubble.dart' show MemberAvatarBubble;
 
 const LatLng elSegundo = LatLng(33.9301, -118.3837);
 const LatLng hebron = LatLng(34.0073, -83.9115);
@@ -164,6 +166,7 @@ void main() {
     expect(r.top, greaterThanOrEqualTo(80 + EdgeChip.margin));
   });
   edgeForAnyoneTests();
+  faceOffScreenTests();
 }
 
 // Bo 2026-09-17 19:50: ANY member outside the viewport gets a chip, at every
@@ -195,5 +198,76 @@ void edgeForAnyoneTests() {
     final c = MapController();
     await pump(t, app(c, [heidi, charlie, bo], centre: hebron, zoom: 14));
     expect(t.widgetList<EdgeChip>(find.byType(EdgeChip)).map((EdgeChip e) => e.member.id).toSet(), {'h', 'b'});
+  });
+}
+
+// Bo 2026-09-17 20:25: off screen = the face circle (ring included) not
+// fully inside the viewport inset by 8 - not the point leaving - and it is
+// always chip OR marker, never a half-visible marker on the edge.
+void faceOffScreenTests() {
+  testWidgets('faceOffScreen flips as soon as the ring touches the 8 px inset, on any side; the marker layer drops the marker the same moment', (t) async {
+    t.view.physicalSize = const Size(1600, 2560);
+    t.view.devicePixelRatio = 2.0;
+    addTearDown(t.view.reset);
+    const double degPerPx = 360 / (256 * 32768);            // zoom 15
+    const LatLng c0 = LatLng(33.95, -84.05);
+    Member at(double x, {double y = 640}) => mk('x', 'Xena', LatLng(c0.latitude - (y - 640) * degPerPx * 0.83, c0.longitude + (x - 400) * degPerPx));   // ~0.83: cos(34 deg)
+    final MapController ctl = MapController();
+    late MapCamera cam;
+    Widget app(Member m) => MaterialApp(home: Scaffold(body: FlutterMap(
+      mapController: ctl,
+      options: const MapOptions(initialCenter: c0, initialZoom: 15),
+      children: [
+        Builder(builder: (BuildContext context) { cam = MapCamera.of(context); return const SizedBox(); }),
+        MemberMarkerLayer(members: [m], onMemberTap: (_) {}, onMemberHold: (_) {}, labelFor: (_) => 'Xena', inDriveFor: (_) => false, canGroup: (_, __) => false, mustGroup: (_, __) => false),
+        EdgeChipLayer(members: [m], viewerId: 'b', labelFor: (_) => 'Xena', onTap: (_) {}, chromeBottom: 88),
+      ],
+    )));
+    const double r = BrayTokens.soloFace / 2;   // 28
+    // right edge: the ring's right rim at 792 is still on; 1 px more is off
+    await t.pumpWidget(app(at(800 - 8 - r - 1)));
+    await t.pump();
+    expect(faceOffScreen(cam, at(800 - 8 - r - 1)), isFalse);
+    expect(find.byKey(const Key('bray-ring')), findsOneWidget);
+    expect(find.byType(EdgeChip), findsNothing);
+    await t.pumpWidget(app(at(800 - 8 - r + 1)));
+    await t.pump();
+    expect(faceOffScreen(cam, at(800 - 8 - r + 1)), isTrue);     // the centre is 35 px INSIDE the edge, the face is not whole
+    expect(find.byKey(const Key('bray-ring')), findsNothing);    // no half marker on the edge
+    expect(find.byType(EdgeChip), findsOneWidget);
+    expect(t.widget<EdgeChip>(find.byType(EdgeChip)).edge, EdgeSide.right);
+    // left edge
+    expect(faceOffScreen(cam, at(8 + r + 1)), isFalse);
+    expect(faceOffScreen(cam, at(8 + r - 1)), isTrue);
+    // top: the ring's centre is 51 above the point
+    const double ringAbove = MemberAvatarBubble.pointFromTop - MemberAvatarBubble.ringCentreFromTop;
+    expect(faceOffScreen(cam, at(400, y: 8 + r + ringAbove + 2)), isFalse);
+    expect(faceOffScreen(cam, at(400, y: 8 + r + ringAbove - 2)), isTrue);
+    // bottom
+    expect(faceOffScreen(cam, at(400, y: 1280 - 8 - r + ringAbove - 2)), isFalse);
+    expect(faceOffScreen(cam, at(400, y: 1280 - 8 - r + ringAbove + 2)), isTrue);
+    // and it swaps back when the camera brings the face in
+    await t.pumpWidget(app(at(800 - 8 - r + 1)));
+    ctl.move(at(800 - 8 - r + 1).position!, 15);
+    await t.pump();
+    expect(find.byType(EdgeChip), findsNothing);
+    expect(find.byKey(const Key('bray-ring')), findsOneWidget);
+  });
+
+  testWidgets('there is one chip widget only - EdgeChip, the v7 flare - whoever is off screen and however far', (t) async {
+    t.view.physicalSize = const Size(1600, 2560);
+    t.view.devicePixelRatio = 2.0;
+    addTearDown(t.view.reset);
+    final Member near = mk('n', 'Near', const LatLng(33.95, -84.0));      // ~4.6 km east of the centre: off the right edge at z14
+    await t.pumpWidget(app(MapController(), [heidi, near, bo], zoom: 14));
+    await t.pump(const Duration(seconds: 1));
+    final List<EdgeChip> chips = t.widgetList<EdgeChip>(find.byType(EdgeChip)).toList();
+    expect(chips.map((EdgeChip e) => e.member.id).toSet(), {'h', 'n', 'b'});   // Bo (Home, 14 km west) is off too at z14
+    for (final EdgeChip e in chips) {
+      expect(e.runtimeType, EdgeChip);
+      expect(t.getSize(find.byWidget(e)), const Size(EdgeChip.width, EdgeChip.height));
+    }
+    expect(find.byKey(const Key('edge-chip-flare')), findsNWidgets(3));
+    expect(find.byKey(const Key('edge-chip-face')), findsNWidgets(3));
   });
 }
