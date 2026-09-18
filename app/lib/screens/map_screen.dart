@@ -421,7 +421,10 @@ class _MapScreenState extends State<MapScreen>
     }
     if (who == null || who.position == null || who.headingDeg == null || who.displaySpeedAt(now) == null) return;
     _lastPrefetch = now;
-    unawaited(TilePrefetcher.instance.ahead(from: who.position!, headingDeg: who.headingDeg!, zoom: _mapController.camera.zoom, urlTemplate: _satellite ? kSatelliteTileUrl : kTileUrl));
+    // Bo 21:28: prefetch at the zoom a focus/follow WILL land on (and one out, inside corridorTiles),
+    // not the camera's previous zoom - so the tiles exist before the camera gets there.
+    final double zoom = _followId != null || _focus.focusedId != null ? _mapController.camera.zoom : _focus.zoomFor(who, _mapController.camera.zoom);
+    unawaited(TilePrefetcher.instance.ahead(from: who.position!, headingDeg: who.headingDeg!, zoom: FocusRules.capFollowZoom(zoom), urlTemplate: _satellite ? kSatelliteTileUrl : kTileUrl));
   }
 
   void _trackFit(DateTime now) {
@@ -495,7 +498,7 @@ class _MapScreenState extends State<MapScreen>
     });
     if (member.position != null) {
       final double zoom = _mapController.camera.zoom;
-      _animateTo(member.position!, zoom < 14 ? 15 : zoom);
+      _animateTo(member.position!, FocusRules.capFollowZoom(zoom < 14 ? 15 : zoom));
     }
   }
 
@@ -1421,6 +1424,10 @@ class _MapScreenState extends State<MapScreen>
                   tileUpdateTransformer: TileUpdateTransformers.throttle(const Duration(milliseconds: 300)),
                   keepBuffer: 3,
                   panBuffer: 1,
+                  // Bo 21:28: the loaded tiles of the last zoom stay under a new zoom's until its own
+                  // tiles arrive (flutter_map's default retention - no grey); past the source's last
+                  // native zoom (18) the z18 tile is scaled rather than a blank asked for.
+                  maxNativeZoom: 18,
                 ),
                 // Blue "range" circle - Bray look: only for members in the
                 // approximate GPS-accuracy state (see showRange), never for a

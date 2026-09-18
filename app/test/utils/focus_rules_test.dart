@@ -2,7 +2,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:openfamily/models/member.dart';
-import 'package:openfamily/theme/bray_tokens.dart';
 import 'package:openfamily/utils/focus_rules.dart';
 import 'package:openfamily/widgets/people_sheet.dart';
 
@@ -22,11 +21,14 @@ void main() {
     f.tap('heidi');
     expect(f.visible(all).map((x) => x.id).toList(), ['heidi']);
   });
-  test('zoom: at least 16, 17 while driving, never zooms out (J:217)', () {
+  test('zoom (Bo 21:28): a moving member focuses at exactly 16, a parked one at 17, whatever the camera was; the follow auto zoom is capped at 17', () {
     final f = FocusRules();
-    expect(f.zoomFor(m('bo'), 13), BrayTokens.focusZoom);
-    expect(f.zoomFor(m('bo', mph: 40), 13), BrayTokens.followZoom);
-    expect(f.zoomFor(m('bo'), 18), 18);
+    expect(f.zoomFor(m('bo'), 13), 17);
+    expect(f.zoomFor(m('bo', mph: 40), 13), 16);
+    expect(f.zoomFor(m('bo'), 19), 17);              // a z19 tap no longer stays at z19
+    expect(f.zoomFor(m('bo', mph: 40), 19), 16);
+    expect(FocusRules.capFollowZoom(19), 17);
+    expect(FocusRules.capFollowZoom(15), 15);
   });
   test('five idle minutes send the view back; any touch restarts the clock', () {
     DateTime now = DateTime(2026, 9, 13, 12, 0);

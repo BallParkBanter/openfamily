@@ -281,8 +281,14 @@ class BrayTokens {
   static const double brandSize = 21;                // S:38 .brand 21px 800
   static const double summarySize = 12.5;            // S:40 .summary 12.5px 600 --muted
   static const Color summaryBg = Color(0xB30A0E16);  // S:41 rgba(10,14,22,.7), 1px --line
-  static const double focusZoom = 16;                // J:217 max(zoom, 16) when focused
-  static const double followZoom = 17;               // J:217 max(zoom, 17) when following a drive
+  // Bo driving 2026-09-17 21:28 (x1s.png: a tap on his own face went to z19 -
+  // one smeared tile, half the screen grey): focus/follow zoom is EXACTLY
+  // 16 for a moving member, 17 for a parked one (J:217 had max(zoom, 16/17)),
+  // and the auto zoom never goes past followZoomCap; a pinch beyond it is
+  // the user's own.
+  static const double movingFocusZoom = 16;
+  static const double parkedFocusZoom = 17;
+  static const double followZoomCap = 17;
   static const Duration idleBack = Duration(minutes: 5); // design list "5 minutes idle = back to everyone"
   static const double focusRing = 4;                 // J:101 border-width:4px for the selected face
 
