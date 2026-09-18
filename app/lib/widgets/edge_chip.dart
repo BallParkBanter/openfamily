@@ -62,12 +62,13 @@ class EdgeChip extends StatelessWidget {
   static const double height = 84;        // the flare at the edge (72) + the shadow's air
   static const double face = 48;          // the whole circle: hairline + white border + colour ring + photo
   static const double hairline = 1.5;     // the person's colour round the white silhouette (circle + tail)
-  static const double whiteBorder = BrayTokens.ringSolo;   // the uniform border round the ring = the marker ring's width (3); capsule grey since 08:40
+  static const double whiteBorder = BrayTokens.ringSolo;   // the uniform white border = the marker ring's width (3)
   static const double faceRing = 2;       // the ring in the person's colour, inside the white
   static const double rimIn = 3;          // the circle's edge-side rim this far inside the screen edge (v7: was 6): nothing of it is ever clipped
   static const double faceCentreIn = rimIn + face / 2;   // 27
   static const double flareEdgeHalf = 36; // the flare's half-height at the screen edge: 1.5 x the circle (Bo: 1.4-1.6 x)
   static const double margin = 8;         // OPEN: chosen - air between the avatar and the header / bottom bar (= BrayTokens.fitAir)
+  static const double gap = 8;            // Bo 20:38: at least this between two chips on one edge
 
   /// The inner disc (colour ring + photo) inside the white border and the hairline.
   static const double inner = face - 2 * (hairline + whiteBorder);   // 39
@@ -130,8 +131,10 @@ class EdgeChip extends StatelessWidget {
 /// shadow, filled with the capsule grey (BrayTokens.capsuleGrey), outlined
 /// with a 1.5 px hairline in [accent]. Nothing above/below the circle on the map side.
 class EdgeFlarePainter extends CustomPainter {
-  /// The silhouette's fill: the grey the capsule uses for its padding and each face's border.
-  static const Color fill = BrayTokens.capsuleGrey;
+  /// The silhouette's fill: the badges' white, as v7 / 29827031 (7ad8a2e)
+  /// had it (Bo 2026-09-17 20:38: the 08:40 capsule-grey fill read as a
+  /// pale purple fan on the map - back to the v7 white).
+  static const Color fill = BrayTokens.badgeBg;
 
   const EdgeFlarePainter({required this.edge, required this.faceCentre, required this.faceRadius, required this.edgeHalf, required this.accent});
   final EdgeSide edge;
@@ -182,7 +185,7 @@ class EdgeFlarePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final Path p = flare(size);
     canvas.drawShadow(p, BrayTokens.ringShadow, BrayTokens.ringShadowDy, true);                     // the marker's drop shadow under the whole shape
-    canvas.drawPath(p, Paint()..color = fill..style = PaintingStyle.fill);                       // the capsule's padding/ring grey (#d5d9e2), Bo 2026-09-17 08:40: not white
+    canvas.drawPath(p, Paint()..color = fill..style = PaintingStyle.fill);                       // the badges' white (markers-13.html .age #fff)
     canvas.drawPath(p, Paint()..color = accent..style = PaintingStyle.stroke..strokeWidth = EdgeChip.hairline);   // the hairline in the person's colour
   }
 
@@ -246,13 +249,14 @@ class EdgeChipLayer extends StatelessWidget {
     );
     final Offset centre = screen.center;
     final Member? viewer = members.cast<Member?>().firstWhere((Member? m) => m!.id == viewerId && m.position != null, orElse: () => null);
-    final List<Widget> chips = <Widget>[];
     // Bo 2026-09-17 19:50 / 20:25: a chip for ANY member whose face is not
     // whole on the map at THIS camera (faceOffScreen) - not only the far
     // cluster (near_fit.dart) - recomputed on every camera change
     // (MapCamera.of rebuilds this layer), gone the moment they are in view.
     // The caller leaves hidden members out; a capsule off screen is one chip
-    // per person in it.
+    // per person in it. Bo 20:38: chips on one edge never overlap - laid
+    // along the edge in bearing order with >= 8 px between (spreadAlongEdge).
+    final List<_Slot> slots = <_Slot>[];
     for (final Member m in members) {
       if (!faceOffScreen(camera, m)) continue;   // the face is whole on the map: the marker is the chip
       final p = camera.latLngToScreenPoint(m.position!);
@@ -260,14 +264,51 @@ class EdgeChipLayer extends StatelessWidget {
       final double metres = viewer == null ? 0 : groundMetres(viewer.position!, m.position!);
       final EdgeSide edge = target.dx < centre.dx ? EdgeSide.left : EdgeSide.right;
       final Offset at = edgeAvatarPoint(centre: centre, target: target, band: band, edge: edge);
-      chips.add(Positioned(
-        left: at.dx - EdgeChip.width / 2,
-        top: at.dy - EdgeChip.height / 2,
-        child: EdgeChip(member: m, label: labelFor(m), metres: metres, bearingDeg: screenBearingDeg(centre, target), edge: edge, onTap: () => onTap(m)),
-      ));
+      slots.add(_Slot(m, edge, at, screenBearingDeg(centre, target), metres));
+    }
+    final List<Widget> chips = <Widget>[];
+    for (final EdgeSide edge in EdgeSide.values) {
+      final List<_Slot> side = slots.where((_Slot s) => s.edge == edge).toList()..sort((_Slot a, _Slot b) => a.at.dy.compareTo(b.at.dy));
+      final List<double> ys = spreadAlongEdge(side.map((_Slot s) => s.at.dy).toList(), step: EdgeChip.height + EdgeChip.gap, top: band.top, bottom: band.bottom);
+      for (int i = 0; i < side.length; i++) {
+        final _Slot s = side[i];
+        chips.add(Positioned(
+          left: s.at.dx - EdgeChip.width / 2,
+          top: ys[i] - EdgeChip.height / 2,
+          child: EdgeChip(member: s.member, label: labelFor(s.member), metres: s.metres, bearingDeg: s.bearingDeg, edge: edge, onTap: () => onTap(s.member)),
+        ));
+      }
     }
     return Stack(clipBehavior: Clip.none, children: chips);
   }
+}
+
+class _Slot {
+  const _Slot(this.member, this.edge, this.at, this.bearingDeg, this.metres);
+  final Member member;
+  final EdgeSide edge;
+  final Offset at;
+  final double bearingDeg, metres;
+}
+
+/// Chip centres along one edge, [ys] sorted top to bottom (bearing order),
+/// pushed apart to at least [step] between centres and kept inside
+/// [top]..[bottom]: a colliding chip moves down, and when the last one
+/// would leave the band the run slides back up toward the middle. A run
+/// taller than the band overflows at the top rather than overlap.
+List<double> spreadAlongEdge(List<double> ys, {required double step, required double top, required double bottom}) {
+  final List<double> out = List<double>.of(ys);
+  for (int i = 0; i < out.length; i++) {
+    out[i] = out[i].clamp(top, bottom);
+    if (i > 0 && out[i] < out[i - 1] + step) out[i] = out[i - 1] + step;
+  }
+  if (out.isNotEmpty && out.last > bottom) {
+    final double shift = out.last - bottom;
+    for (int i = 0; i < out.length; i++) {
+      out[i] -= shift;
+    }
+  }
+  return out;
 }
 
 /// Where the avatar's centre sits: on the band's left or right edge line
