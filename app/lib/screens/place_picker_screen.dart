@@ -2,6 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+
+import '../services/tile_cache.dart';
+import '../widgets/street_layer.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../models/place.dart';
@@ -238,10 +241,7 @@ class _PlacePickerScreenState extends State<PlacePickerScreen> {
                     },
                   ),
                   children: [
-                    TileLayer(
-                      urlTemplate: kTileUrl,
-                      userAgentPackageName: 'app.openfamily',
-                    ),
+                    StreetLayer(raster: TileLayer(urlTemplate: kTileUrl, userAgentPackageName: 'app.openfamily', tileProvider: TileCache.instance.provider())),   // bray 2026-09-18: vector packs / stream, raster on the Settings fallback
                     // The geofence radius, drawn live around the pin.
                     CircleLayer(
                       circles: [

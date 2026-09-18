@@ -14,6 +14,7 @@ import '../services/api_client.dart';
 import '../services/app_config.dart';
 import '../services/background_location_service.dart';
 import '../services/battery_optimization_service.dart';
+import '../services/map_layer_preference.dart';
 import '../services/map_visibility_store.dart';
 import '../services/self_fix.dart';
 import '../services/tile_cache.dart';
@@ -64,6 +65,7 @@ import '../widgets/member_avatar_bubble.dart';
 import '../widgets/people_sheet.dart';
 import '../widgets/place_text.dart' show placeTypeForPoiKind;
 import '../widgets/poi_chip.dart';
+import '../widgets/street_layer.dart';
 import 'card_gallery_screen.dart';
 import 'marker_gallery_screen.dart';
 import 'check_in_screen.dart';
@@ -424,7 +426,9 @@ class _MapScreenState extends State<MapScreen>
     // Bo 21:28: prefetch at the zoom a focus/follow WILL land on (and one out, inside corridorTiles),
     // not the camera's previous zoom - so the tiles exist before the camera gets there.
     final double zoom = _followId != null || _focus.focusedId != null ? _mapController.camera.zoom : _focus.zoomFor(who, _mapController.camera.zoom);
-    unawaited(TilePrefetcher.instance.ahead(from: who.position!, headingDeg: who.headingDeg!, zoom: FocusRules.capFollowZoom(zoom), urlTemplate: _satellite ? kSatelliteTileUrl : kTileUrl));
+    if (_satellite || MapLayerPreference.layer.value == StreetLayerKind.raster) {   // bray 2026-09-18: the vector layer has no raster tiles to prefetch
+      unawaited(TilePrefetcher.instance.ahead(from: who.position!, headingDeg: who.headingDeg!, zoom: FocusRules.capFollowZoom(zoom), urlTemplate: _satellite ? kSatelliteTileUrl : kTileUrl));
+    }
   }
 
   void _trackFit(DateTime now) {
@@ -1402,21 +1406,37 @@ class _MapScreenState extends State<MapScreen>
                 onTap: (_, __) { _closeFamily(); _onMapTap(); },   // design list: tap the map = back; Bo 2026-09-14: also drops the all-cards sheet; a tap outside closes the family accordion
               ),
               children: [
-                TileLayer(
-                  urlTemplate: _satellite ? kSatelliteTileUrl : kTileUrl,
-                  userAgentPackageName: 'app.openfamily',
-                  tileProvider: _tiles,   // bray: on-device cache, 30 days / ~300 MB (services/tile_cache.dart)
-                  // Live 16:16 (Bo driving, follow mode): the camera moves every
-                  // frame; schedule tile loads/prunes a few times a second, not
-                  // per frame, and keep a wider ring of tiles around the view.
-                  tileUpdateTransformer: TileUpdateTransformers.throttle(const Duration(milliseconds: 300)),
-                  keepBuffer: 3,
-                  panBuffer: 1,
-                  // Bo 21:28: the loaded tiles of the last zoom stay under a new zoom's until its own
-                  // tiles arrive (flutter_map's default retention - no grey); past the source's last
-                  // native zoom (18) the z18 tile is scaled rather than a blank asked for.
-                  maxNativeZoom: 18,
-                ),
+                // bray 2026-09-18 (offline maps): the street layer is the vector
+                // one (packs on the device + the server's stream) unless Settings
+                // says classic raster; satellite stays the raster Esri layer.
+                if (_satellite)
+                  TileLayer(
+                    urlTemplate: kSatelliteTileUrl,
+                    userAgentPackageName: 'app.openfamily',
+                    tileProvider: _tiles,   // bray: on-device cache, 30 days / ~300 MB (services/tile_cache.dart)
+                    // Live 16:16 (Bo driving, follow mode): the camera moves every
+                    // frame; schedule tile loads/prunes a few times a second, not
+                    // per frame, and keep a wider ring of tiles around the view.
+                    tileUpdateTransformer: TileUpdateTransformers.throttle(const Duration(milliseconds: 300)),
+                    keepBuffer: 3,
+                    panBuffer: 1,
+                    maxNativeZoom: 18,
+                  )
+                else
+                  StreetLayer(
+                    raster: TileLayer(
+                      urlTemplate: kTileUrl,
+                      userAgentPackageName: 'app.openfamily',
+                      tileProvider: _tiles,
+                      tileUpdateTransformer: TileUpdateTransformers.throttle(const Duration(milliseconds: 300)),
+                      keepBuffer: 3,
+                      panBuffer: 1,
+                      // Bo 21:28: the loaded tiles of the last zoom stay under a new zoom's until its own
+                      // tiles arrive (flutter_map's default retention - no grey); past the source's last
+                      // native zoom (18) the z18 tile is scaled rather than a blank asked for.
+                      maxNativeZoom: 18,
+                    ),
+                  ),
                 // Blue "range" circle - Bray look: only for members in the
                 // approximate GPS-accuracy state (see showRange), never for a
                 // merely known accuracy. The radius is the member's real GPS
@@ -1581,6 +1601,7 @@ class _MapScreenState extends State<MapScreen>
                   }),
                   notice: _locationOff ? _LocationOffBanner(onEnable: _enableLocation) : null,
                   controls: [
+                    const StreamingPill(),   // bray 2026-09-18: "streaming" while tiles come from the server, not a pack
                     _LayerToggle(
                       isSatellite: _satellite,
                       onToggle: _toggleSatellite,
