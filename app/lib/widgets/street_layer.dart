@@ -40,7 +40,13 @@ class _StreetLayerState extends State<StreetLayer> {
     super.initState();
     MapLayerPreference.layer.addListener(_rebuild);
     _maps.packsVersion.addListener(_rebuild);
+    _maps.addListener(_indexChanged);   // regions.json arriving (or changing) = a new stream URL
     unawaited(_load());
+  }
+
+  String? _streamUrl;
+  void _indexChanged() {
+    if (mounted && _maps.index?.streamingUrl != _streamUrl) unawaited(_load());
   }
 
   void _rebuild() {
@@ -56,9 +62,10 @@ class _StreetLayerState extends State<StreetLayer> {
     final vtr.Theme theme = _theme ?? await VectorTiles.theme();
     final bool packsChanged = _packsVersion != _maps.packsVersion.value;
     PackFirstTileProvider? provider = _provider;
-    if (provider == null || packsChanged) {
+    if (provider == null || packsChanged || _maps.index?.streamingUrl != _streamUrl) {
       provider = await VectorTiles.provider(_maps);
       _packsVersion = _maps.packsVersion.value;
+      _streamUrl = _maps.index?.streamingUrl;
     }
     if (!mounted || gen != _generation) return;
     final PackFirstTileProvider? old = _provider;
@@ -73,17 +80,22 @@ class _StreetLayerState extends State<StreetLayer> {
   void dispose() {
     MapLayerPreference.layer.removeListener(_rebuild);
     _maps.packsVersion.removeListener(_rebuild);
+    _maps.removeListener(_indexChanged);
     unawaited(_provider?.close());
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (MapLayerPreference.layer.value == StreetLayerKind.raster || _theme == null || _provider == null) {
+    // Raster when asked for, while the style loads, and when the vector layer
+    // would have NOTHING to draw (no pack on the device and no server index
+    // yet): a blank green map is worse than the old picture tiles.
+    final bool vectorEmpty = _provider != null && _provider!.packs.isEmpty && _provider!.streamUrl == null;
+    if (MapLayerPreference.layer.value == StreetLayerKind.raster || _theme == null || _provider == null || vectorEmpty) {
       return widget.raster ?? TileLayer(urlTemplate: kTileUrl, userAgentPackageName: 'app.openfamily', tileProvider: TileCache.instance.provider(), tileUpdateTransformer: TileUpdateTransformers.throttle(const Duration(milliseconds: 300)), keepBuffer: 3, maxNativeZoom: 18);
     }
     return VectorTileLayer(
-      key: ValueKey<int>(_packsVersion),   // a pack added or removed: fresh caches, fresh tiles
+      key: ValueKey<String>('$_packsVersion|$_streamUrl'),   // a pack added or removed, or a new stream: fresh caches, fresh tiles
       tileProviders: TileProviders(<String, VectorTileProvider>{'openmaptiles': _provider!}),
       theme: _theme!,
       layerMode: VectorTileLayerMode.vector,

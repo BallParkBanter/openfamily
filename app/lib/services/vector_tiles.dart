@@ -103,7 +103,7 @@ class PackFirstTileProvider extends VectorTileProvider {
       }
     }
     final PmTilesArchive? s = await _openStream();
-    if (s == null) throw ProviderException(message: 'offline and no pack covers $tile', retryable: Retryable.retry, statusCode: 503);
+    if (s == null) throw ProviderException(message: 'offline and no pack covers $tile', retryable: Retryable.none, statusCode: 404);   // nothing to retry against; the tile is asked for again on the next pan
     try {
       final Uint8List bytes = Uint8List.fromList((await s.tile(id)).bytes());
       fromStream++;
