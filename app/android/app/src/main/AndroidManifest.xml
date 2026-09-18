@@ -94,5 +94,9 @@
             android:permission="android.permission.FOREGROUND_SERVICE"
             android:exported="false"
             android:foregroundServiceType="location"/>
+        <!-- bray 2026-09-18: the BrayTV box (HP ProBook Android-x86, Vulkan swapchain
+             broken) needs Impeller off; every other device keeps Flutter's default.
+             Set by tool/build-tvbox.sh via -Pimpeller=false (see build.gradle.kts). -->
+        <meta-data android:name="io.flutter.embedding.android.EnableImpeller" android:value="${impeller}" />
     </application>
 </manifest>
