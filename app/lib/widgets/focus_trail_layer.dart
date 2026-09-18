@@ -18,6 +18,15 @@
 // polyline only arrives every minute, so a LIVE TAIL runs from its head to
 // the marker's drawn position every frame - the trail always ends exactly
 // at the marker's dot; a newer polyline replaces the tail up to its head.
+//
+// Bo driving 20:36 ("a straight line from his icon back across the fields"):
+// the head lags the marker by up to two minutes (the server re-matches
+// every 60 s, the app refetches every 60 s) - at 72 mph that is 2-4 km, so
+// the head sat off screen and the tail was one straight chord over the
+// fields. The tail is now the member's own recent fixes (every drawn
+// position this layer saw since the head, >= 10 m apart) and then the
+// marker: on the road, because the fixes are. A newer polyline drops the
+// fixes up to the one nearest its head.
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -57,14 +66,33 @@ class FocusTrailLayer extends StatefulWidget {
     return out;
   }
 
-  /// [lines] with a live tail on the newest line from its head to [marker]
-  /// (the member's drawn position). Nothing to extend = unchanged.
-  static List<List<LatLng>> withLiveTail(List<List<LatLng>> lines, LatLng? marker) {
+  /// [lines] with a live tail on the newest line from its head through the
+  /// member's [recent] fixes (oldest first, those newer than the head) to
+  /// [marker] (the member's drawn position). Nothing to extend = unchanged.
+  static List<List<LatLng>> withLiveTail(List<List<LatLng>> lines, LatLng? marker, {List<LatLng> recent = const <LatLng>[]}) {
     if (marker == null || lines.isEmpty) return lines;
     final List<LatLng> last = lines.last;
-    if (last.isNotEmpty && last.last == marker) return lines;
-    return <List<LatLng>>[...lines.take(lines.length - 1), <LatLng>[...last, marker]];
+    if (last.isNotEmpty && last.last == marker && recent.isEmpty) return lines;
+    final List<LatLng> tail = <LatLng>[for (final LatLng p in recent) if (p != marker) p, marker];
+    return <List<LatLng>>[...lines.take(lines.length - 1), <LatLng>[...last, ...tail]];
   }
+
+  /// The fixes still newer than [head]: everything after the one nearest it
+  /// (the polyline caught up to there). No fix within [nearMeters] of the
+  /// head = the head is older than them all: keep every one.
+  static List<LatLng> recentAfterHead(List<LatLng> recent, LatLng head, {double nearMeters = 60}) {
+    const Distance d = Distance();
+    int nearest = -1;
+    double best = nearMeters;
+    for (int i = 0; i < recent.length; i++) {
+      final double m = d.as(LengthUnit.Meter, recent[i], head);
+      if (m <= best) { best = m; nearest = i; }
+    }
+    return nearest < 0 ? recent : recent.sublist(nearest + 1);
+  }
+
+  static const double crumbStepMeters = 10;   // a drawn position closer than this to the last crumb is the same crumb
+  static const int maxCrumbs = 900;           // ~30 min at one every 2 s
 
   /// The raw fallback: drop a point within [minStepMeters] of the last kept one.
   static List<LatLng> thinRaw(List<LatLng> raw, {double accuracy = 0}) {
@@ -86,6 +114,10 @@ class _FocusTrailLayerState extends State<FocusTrailLayer> {
   String? _forId;
   List<List<LatLng>> _lines = const <List<LatLng>>[];
   Timer? _timer;
+
+  /// The member's drawn positions since the polyline head (oldest first).
+  final List<LatLng> _crumbs = <LatLng>[];
+  String? _crumbsFor;
 
   @override
   void initState() {
@@ -120,19 +152,44 @@ class _FocusTrailLayerState extends State<FocusTrailLayer> {
           ? await widget.fetch!(id, since)
           : await TripsService.fetch(memberId: id, since: since);
       if (!mounted || widget.member?.id != id) return;
-      setState(() { _forId = id; _lines = FocusTrailLayer.tripLines(trips, now); });
-    } catch (_) {
+      final List<List<LatLng>> lines = FocusTrailLayer.tripLines(trips, now);
+      final Trip? open = trips.cast<Trip?>().firstWhere((Trip? t) => t!.open, orElse: () => null);
+      debugPrint('trail: ${trips.length} trips for $id; open: ${open == null ? 'none' : '${open.points.length} pts matched ${open.matched} head ${open.points.isEmpty ? '-' : open.points.last}'}; crumbs ${_crumbs.length}');
+      setState(() {
+        _forId = id;
+        _lines = lines;
+        if (lines.isNotEmpty && lines.last.isNotEmpty) {
+          final List<LatLng> kept = FocusTrailLayer.recentAfterHead(_crumbs, lines.last.last);
+          _crumbs..clear()..addAll(kept);
+        }
+      });
+    } catch (e) {
       // J:170 "a missing trail should never break the map"
+      debugPrint('trail: fetch failed for $id: $e');
       if (mounted) setState(() { _forId = id; _lines = const <List<LatLng>>[]; });
     }
+  }
+
+  /// Remember the member's drawn position as a crumb (>= crumbStepMeters
+  /// from the last one); a new member starts a fresh trail of crumbs.
+  void _crumb(Member m) {
+    if (_crumbsFor != m.id) { _crumbs.clear(); _crumbsFor = m.id; }
+    final LatLng? p = m.position;
+    if (p == null) return;
+    const Distance d = Distance();
+    if (_crumbs.isNotEmpty && d.as(LengthUnit.Meter, _crumbs.last, p) < FocusTrailLayer.crumbStepMeters) return;
+    _crumbs.add(p);
+    if (_crumbs.length > FocusTrailLayer.maxCrumbs) _crumbs.removeRange(0, _crumbs.length - FocusTrailLayer.maxCrumbs);
   }
 
   @override
   Widget build(BuildContext context) {
     final Member? m = widget.member;
+    if (m != null) _crumb(m);
     if (m == null || _forId != m.id || _lines.isEmpty) return const SizedBox.shrink();   // J:163
     final Color accent = BrayTokens.accentFor(m);
-    final List<List<LatLng>> lines = FocusTrailLayer.withLiveTail(_lines, m.position);   // ends at the marker every frame
+    // The tail: the head, the fixes since it, the marker - ends at the marker every frame, on the road.
+    final List<List<LatLng>> lines = FocusTrailLayer.withLiveTail(_lines, m.position, recent: FocusTrailLayer.recentAfterHead(_crumbs, _lines.last.last));
     return Stack(children: [
       PolylineLayer(polylines: [
         // OPEN: chosen - BrayTokens.ink (#0A0E16) for J:166's #0a0e1a, 4 units of blue apart; one near-black, not two
