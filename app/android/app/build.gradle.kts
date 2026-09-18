@@ -39,6 +39,9 @@ android {
         // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // bray 2026-09-18: `flutter build apk -Pimpeller=false` (tool/build-tvbox.sh) turns
+        // Impeller off for the BrayTV box whose x86 Vulkan swapchain fails; default on.
+        manifestPlaceholders["impeller"] = (project.findProperty("impeller") ?: "true").toString()
     }
 
     signingConfigs {
