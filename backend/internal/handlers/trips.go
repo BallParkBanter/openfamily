@@ -293,9 +293,14 @@ func (m *Matcher) TraceRoute(ctx context.Context, fixes []tripFix) ([][2]float64
 
 // traceOptionsFor sizes Valhalla's search from the fixes' own accuracy:
 // gps_accuracy is the worst reported accuracy (5-50 m), search_radius twice
-// that (50-100 m, Valhalla's ceiling), and breakage_distance is raised so a
-// sparse phone's 60-s gaps at highway speed (up to ~2 km) stay one leg -
-// the road between two far-apart points is then routed, not chorded.
+// that (50-100 m, Valhalla's ceiling), and breakage_distance matches
+// tripSilenceGap at highway speed (10 min at 75 mph = 20 km) so a sparse
+// phone's gaps stay one leg: the road between two far-apart points is
+// routed, not chorded. Valhalla only honours this when breakage_distance
+// is in the server's meili.customizable list - the gis-ops image's default
+// config lacks it and silently keeps 2 km (Charlie's 34-fix drive home came
+// back as its first 0.7 km): config/valhalla-config-patch.sh on
+// BrayAppServer adds it to every tile set's valhalla.json.
 func traceOptionsFor(fixes []tripFix) map[string]any {
 	acc := 0.0
 	for _, f := range fixes {
@@ -305,7 +310,7 @@ func traceOptionsFor(fixes []tripFix) map[string]any {
 	return map[string]any{
 		"search_radius":     math.Min(math.Max(2*acc, 50), 100),
 		"gps_accuracy":      acc,
-		"breakage_distance": 5000,
+		"breakage_distance": 20000,
 	}
 }
 
@@ -398,6 +403,7 @@ type tripRow struct {
 	Started   time.Time
 	Ended     *time.Time
 	Fixes     int
+	Matched   bool
 	Withdrawn bool // superseded by itself: hidden, but re-pointed or revived if a drive claims its start again
 }
 
@@ -456,8 +462,8 @@ func (s *Server) rebuildTripsFor(ctx context.Context, userID string, now time.Ti
 	for _, d := range drives {
 		start := d.fixes[0].At.UTC()
 		produced[start] = true
-		if r, ok := byStart[start]; ok && !r.Withdrawn && !d.open && r.Ended != nil && r.Ended.Equal(d.fixes[len(d.fixes)-1].At) && r.Fixes == len(d.fixes) {
-			continue // unchanged: no re-match
+		if r, ok := byStart[start]; ok && !r.Withdrawn && r.Matched && !d.open && r.Ended != nil && r.Ended.Equal(d.fixes[len(d.fixes)-1].At) && r.Fixes == len(d.fixes) {
+			continue // unchanged and matched: no re-match (a raw row is retried each pass while in the window)
 		}
 		if err := s.upsertTrip(ctx, userID, d.fixes, d.open); err != nil {
 			return err
@@ -495,7 +501,7 @@ func (s *Server) rebuildTripsFor(ctx context.Context, userID string, now time.Ti
 // loadTripRows reads a user's live (not superseded) and withdrawn trip rows
 // starting at or after `from`; rows absorbed by another drive stay as they are.
 func (s *Server) loadTripRows(ctx context.Context, userID string, from time.Time) ([]tripRow, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT id, started_at, ended_at, fixes, superseded_by = id FROM trips
+	rows, err := s.Pool.Query(ctx, `SELECT id, started_at, ended_at, fixes, matched, superseded_by = id FROM trips
 		WHERE user_id = $1 AND started_at >= $2 AND (superseded_by IS NULL OR superseded_by = id) ORDER BY started_at`, userID, from)
 	if err != nil {
 		return nil, err
@@ -505,7 +511,7 @@ func (s *Server) loadTripRows(ctx context.Context, userID string, from time.Time
 	for rows.Next() {
 		var r tripRow
 		var withdrawn *bool
-		if err := rows.Scan(&r.ID, &r.Started, &r.Ended, &r.Fixes, &withdrawn); err != nil {
+		if err := rows.Scan(&r.ID, &r.Started, &r.Ended, &r.Fixes, &r.Matched, &withdrawn); err != nil {
 			return nil, err
 		}
 		r.Withdrawn = withdrawn != nil && *withdrawn

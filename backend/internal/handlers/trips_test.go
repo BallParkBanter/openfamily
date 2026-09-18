@@ -172,7 +172,7 @@ func TestSegmentDrivesSparsePhoneIsOneDrive(t *testing.T) {
 		t.Fatal("1 km in 3 min (12 mph) is moving whatever the fix's speed says")
 	}
 	opts := traceOptionsFor(fixes)
-	if opts["gps_accuracy"] != 11.0 || opts["search_radius"] != 50.0 {
-		t.Fatalf("trace options from the worst accuracy (11 m -> gps 11, radius 50): %v", opts)
+	if opts["gps_accuracy"] != 11.0 || opts["search_radius"] != 50.0 || opts["breakage_distance"] != 20000 {
+		t.Fatalf("trace options from the worst accuracy (11 m -> gps 11, radius 50) and a 20 km breakage: %v", opts)
 	}
 }
