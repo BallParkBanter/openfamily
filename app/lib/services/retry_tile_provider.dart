@@ -14,6 +14,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 import 'package:flutter_map/flutter_map.dart';
 
+/// 2026-09-18 tile tracing (the grey map behind Heidi): every ask / attempt / outcome to logcat.
+const bool kTileTrace = true;
+
 const List<Duration> kTileRetryDelays = <Duration>[Duration(seconds: 1), Duration(seconds: 3), Duration(seconds: 10), Duration(seconds: 30)];
 
 /// Wraps any [TileProvider] (ours: the cached one) with retry-until-shown.
@@ -34,6 +37,7 @@ class RetryTileProvider extends TileProvider {
   ImageProvider<Object> getImageWithCancelLoadingSupport(TileCoordinates coordinates, TileLayer options, Future<void> cancelLoading) {
     bool cancelled = false;
     cancelLoading.then((_) => cancelled = true);
+    if (kTileTrace) debugPrint('tile ask ${coordinates.z}/${coordinates.x}/${coordinates.y}');
     return RetryingImageProvider(
       key: '${options.urlTemplate}|${coordinates.z}/${coordinates.x}/${coordinates.y}',
       load: () => inner.supportsCancelLoading
@@ -95,6 +99,7 @@ class RetryingCompleter extends ImageStreamCompleter {
   ImageStreamListener? _listener;
 
   void _attempt() {
+    if (kTileTrace) debugPrint('tile attempt ${provider.key.split('|').last} #$_failures');
     final ImageProvider<Object> inner = provider.load();
     final ImageStream stream = inner.resolve(ImageConfiguration.empty);
     _stream = stream;
@@ -102,10 +107,12 @@ class RetryingCompleter extends ImageStreamCompleter {
     listener = ImageStreamListener(
       (ImageInfo info, bool sync) {
         if (_failures > 0) provider.onRecovered?.call();
+        if (kTileTrace) debugPrint('tile image ${provider.key.split('|').last} ${info.image.width}px');
         _failures = 0;
         setImage(info);   // the same stream flutter_map is listening to: no rebuild
       },
       onError: (Object error, StackTrace? stack) {
+        if (kTileTrace) debugPrint('tile error ${provider.key.split('|').last}: ${error.runtimeType} ${error.toString().split('\n').first}');
         stream.removeListener(listener);
         PaintingBinding.instance.imageCache.evict(inner);   // never remember the failure
         provider.onError?.call(error);
@@ -118,6 +125,7 @@ class RetryingCompleter extends ImageStreamCompleter {
 
   void _scheduleRetry() {
     if (!provider.stillWanted()) {
+      if (kTileTrace) debugPrint('tile dropped ${provider.key.split('|').last}');
       // scrolled away / disposed: give up LOUDLY so the ImageCache drops this
       // pending entry (a silent stop left it there forever - live 16:16).
       reportError(exception: StateError('tile no longer wanted'), silent: true);
@@ -136,6 +144,7 @@ class RetryingCompleter extends ImageStreamCompleter {
 
   @override
   void onDisposed() {
+    if (kTileTrace) debugPrint('tile disposed ${provider.key.split('|').last} failures=$_failures');
     _timer?.cancel();
     final ImageStreamListener? l = _listener;
     if (l != null) _stream?.removeListener(l);

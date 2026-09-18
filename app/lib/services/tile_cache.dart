@@ -65,6 +65,13 @@ class TileCache {
       ..maxConnectionsPerHost = maxConnectionsPerHost
       ..idleTimeout = const Duration(seconds: 90)
       ..connectionTimeout = const Duration(seconds: 6));   // an errored socket is closed by dart:io, never reused
+    if (kTileTrace) {
+      dio.interceptors.add(InterceptorsWrapper(
+        onRequest: (RequestOptions o, RequestInterceptorHandler h) { debugPrint('dio req ${o.uri.path}'); h.next(o); },
+        onResponse: (Response<dynamic> r, ResponseInterceptorHandler h) { debugPrint('dio resp ${r.requestOptions.uri.path} ${r.statusCode} fromCache=${r.extra['@fromNetwork@'] == false}'); h.next(r); },
+        onError: (DioException e, ErrorInterceptorHandler h) { debugPrint('dio err ${e.requestOptions.uri.path} ${e.type}'); h.next(e); },
+      ));
+    }
     return dio;
   }
 
