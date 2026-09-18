@@ -11,6 +11,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:openfamily/models/member.dart';
+import 'package:openfamily/models/member_place.dart';
 import 'package:openfamily/models/road_snap.dart';
 import 'package:openfamily/services/trail_store.dart';
 import 'package:openfamily/services/trips_service.dart';
@@ -50,7 +51,8 @@ void main() {
     await t.pumpWidget(host(FocusTrailLayer(member: bo(fixes.last), store: store, now: now)));
     await t.pump();
     final PolylineLayer layer = t.widget(find.byType(PolylineLayer));
-    final List<LatLng> pts = layer.polylines[1].points;
+    final List<LatLng> pts = layer.polylines.last.points;
+    expect(layer.polylines.length, 2);                      // one piece: halo + accent - no gap in 90 s of 2 s fixes
     expect(pts.first, fixes.first);
     expect(pts.last, fixes.last);                           // ends at the marker
     // no chord off the road: every point of the line is on the road's centreline, and the whole road so far is covered
@@ -64,9 +66,9 @@ void main() {
   test('no crumbs past the head and the marker far from it: the line ends at the head - nothing is drawn as a chord; no line and not driving: nothing', () {
     final TrailStore store = TrailStore(fetch: (_, __) async => <Trip>[], clock: () => now);
     addTearDown(store.dispose);
-    expect(store.trailFor('b', start), isNull);
+    expect(store.trailFor('b', start), isEmpty);
     store.observe([bo(start, snapped: start)], inDriveFor: driving);
-    expect(store.trailFor('b', start), isNull);            // one crumb is not a line
+    expect(store.trailFor('b', start), isEmpty);            // one crumb is not a line
   });
 
   test('a parked member keeps one crumb only (wobble is not a trail); a drive that closes clears the crumbs and the line', () async {
@@ -85,10 +87,67 @@ void main() {
     }
     await store.refreshMember('b');
     expect(store.lineOf('b'), isNotNull);
-    expect(store.trailFor('b', d.offset(start, 1000, 90))!.length, greaterThan(2));   // the line, then the crumbs past its head
+    expect(store.trailFor('b', d.offset(start, 1000, 90)), isNotEmpty);   // the line and the crumbs past its head
     // it closes
     answer = [Trip(startedAt: now, endedAt: now.add(const Duration(minutes: 5)), matched: true, points: [start, d.offset(start, 100, 90)])];
     await store.refreshMember('b');
+    expect(store.lineOf('b'), isNull);
+    expect(store.crumbsOf('b'), isEmpty);
+  });
+
+  group('segments - the one trail rule (Bo 21:37)', () {
+    final DateTime t0 = now;
+    TrailCrumb at(LatLng p, int secs) => TrailCrumb(p, t0.add(Duration(seconds: secs)));
+    final List<LatLng> road = [for (int i = 0; i <= 20; i++) d.offset(start, 100.0 * i, 90)];   // 2 km east
+
+    test('a stale head 2 km behind fresh crumbs: the drawn pieces never include the head -> crumb jump; the crumbs draw as their own piece', () {
+      final List<LatLng> line = road.sublist(0, 3);                       // the match ends 200 m in
+      final List<TrailCrumb> fresh = [for (int i = 0; i < 5; i++) at(d.offset(road.last, 50.0 * i, 90), i * 2)];   // 2 km further on, 2 s apart
+      final List<List<LatLng>> pieces = TrailStore.segments(line: line, crumbs: fresh, marker: d.offset(road.last, 260, 90), markerAt: t0.add(const Duration(seconds: 10)));
+      expect(pieces.length, 2);
+      expect(pieces[0], line);                                            // the match as it is
+      expect(pieces[1].length, 6);                                        // the five crumbs + the marker
+      for (final List<LatLng> piece in pieces) {
+        for (int i = 1; i < piece.length; i++) {
+          expect(d.as(LengthUnit.Meter, piece[i - 1], piece[i]), lessThanOrEqualTo(TrailStore.joinMeters + 0.01), reason: 'no segment longer than the join distance');
+        }
+      }
+    });
+    test('crumbs older than the head are dropped (covered by the match): polyline + only the newest crumbs, never a jump back', () {
+      final List<LatLng> line = road.sublist(0, 11);                      // matched to 1 km
+      final List<TrailCrumb> crumbs = [for (int i = 0; i <= 20; i++) at(road[i], i * 4)];   // crumbs over the whole 2 km
+      final List<List<LatLng>> pieces = TrailStore.segments(line: line, crumbs: crumbs, marker: road.last, markerAt: t0.add(const Duration(seconds: 80)));
+      expect(pieces.length, 1);
+      expect(pieces.single.sublist(0, 11), line);
+      expect(pieces.single.sublist(11), road.sublist(11));                // only the crumbs past the head, in order
+    });
+    test('a 30 s+ gap in time, or a 150 m+ gap in space, breaks the piece - the gap stays blank', () {
+      final List<TrailCrumb> crumbs = [at(road[0], 0), at(road[1], 10), at(road[2], 20), at(road[3], 80), at(road[4], 90)];   // 60 s hole before road[3]
+      final List<List<LatLng>> byTime = TrailStore.segments(line: const <LatLng>[], crumbs: crumbs, marker: road[5], markerAt: t0.add(const Duration(seconds: 100)));
+      expect(byTime, [road.sublist(0, 3), road.sublist(3, 6)]);
+      final List<TrailCrumb> far = [at(road[0], 0), at(road[1], 10), at(road[5], 20), at(road[6], 30)];   // a 400 m hole
+      expect(TrailStore.segments(line: const <LatLng>[], crumbs: far), [road.sublist(0, 2), road.sublist(5, 7)]);
+      // the marker 2 km from the last crumb is never joined to it
+      expect(TrailStore.segments(line: const <LatLng>[], crumbs: far, marker: road.last, markerAt: t0.add(const Duration(seconds: 31))), [road.sublist(0, 2), road.sublist(5, 7)]);
+      // a lone crumb, or a lone marker, is not a piece
+      expect(TrailStore.segments(line: const <LatLng>[], crumbs: [at(road[0], 0)], marker: road.last, markerAt: t0), isEmpty);
+    });
+  });
+
+  test('arrival at a saved place (place since set, not moving) clears the trail at once - not after the 2-min tail', () async {
+    final TrailStore store = TrailStore(fetch: (_, __) async => [Trip(startedAt: now.subtract(const Duration(minutes: 20)), endedAt: null, matched: true, points: [start, d.offset(start, 500, 90)])], clock: () => now);
+    addTearDown(store.dispose);
+    for (int i = 1; i <= 20; i++) {
+      store.observe([bo(d.offset(start, 50.0 * i, 90), snapped: d.offset(start, 50.0 * i, 90))], inDriveFor: driving);
+    }
+    await store.refreshMember('b');
+    final LatLng here = d.offset(start, 1000, 90);
+    expect(store.trailFor('b', here), isNotEmpty);
+    // the next frame: parked at Home (place.since set), speed 0 - the open trip is still open server-side
+    final Member home = Member(id: 'b', name: 'Bo Bray', status: MemberStatus.normal, position: here, batteryPercent: 85, address: '', speedMph: 0,
+        place: MemberPlace(atHome: true, placeName: 'Home', homeDistanceM: 5, since: now));
+    store.observe([home], inDriveFor: driving);
+    expect(store.trailFor('b', here), isEmpty);
     expect(store.lineOf('b'), isNull);
     expect(store.crumbsOf('b'), isEmpty);
   });
@@ -118,10 +177,10 @@ void main() {
     }
     final List<LatLng> rawCrumbs = raw.crumbsOf('b');
     expect(rawCrumbs.length, greaterThanOrEqualTo(2));
-    expect(rawCrumbs.length, lessThan(centre.length ~/ 4));                 // the straight run collapsed: collinear crumbs dropped
+    expect(rawCrumbs.length, lessThan(centre.length ~/ 2));                 // the straight run thinned: collinear crumbs dropped down to one per 150 m
     final double worstCrumb = rawCrumbs.map(off).reduce(math.max);
     expect(worstCrumb, lessThan(worstRaw));
-    expect(worstCrumb, lessThan(6));                                        // the average of three +-10 m fixes
+    expect(worstCrumb, lessThan(8));                                        // the average of three +-10 m fixes
     expect(rawCrumbs.map(off).reduce((a, b) => a + b) / rawCrumbs.length, lessThan(3));
   });
 }

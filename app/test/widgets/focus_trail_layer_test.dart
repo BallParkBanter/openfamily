@@ -104,24 +104,26 @@ void main() {
     await t.pumpWidget(host(FocusTrailLayer(member: near, store: store, now: now)));
     await t.pumpAndSettle();
     PolylineLayer layer = t.widget(find.byType(PolylineLayer));
-    expect(layer.polylines[1].points.last, near.position);          // ends at the marker's dot
-    expect(layer.polylines[1].points.length, 42);                   // 41 matched + the marker
+    expect(layer.polylines.last.points.last, near.position);        // ends at the marker's dot
+    expect(layer.polylines.last.points.length, 42);                 // 41 matched + the marker
     final Member far = m('Bo Bray', at: d.offset(head, 300, 90));
     await t.pumpWidget(host(FocusTrailLayer(member: far, store: store, now: now)));
     await t.pump();
     layer = t.widget(find.byType(PolylineLayer));
-    expect(layer.polylines[1].points.length, 41);                   // no chord to a marker 300 m out
-    expect(layer.polylines[1].points.last, head);
+    expect(layer.polylines.length, 2);                              // one piece only
+    expect(layer.polylines.last.points.length, 41);                 // no chord to a marker 300 m out
+    expect(layer.polylines.last.points.last, head);
   });
 
   testWidgets('Bo 20:36 / 21:20: the tail follows the member\'s own crumbs from the head (recorded unfocused, from every frame), not one chord; a newer head drops the crumbs it caught up to', (t) async {
     // the head 3 km behind the marker (two minutes at 72 mph); the road bends: the crumbs since the head are not on the chord
     final LatLng head = driveHome.points.last;
-    final List<LatLng> road = [for (int i = 1; i <= 10; i++) d.offset(d.offset(head, 300.0 * i, 90), 400.0 * (i <= 5 ? i : 10 - i), 0)];   // an arc north of the chord
+    final List<LatLng> road = [for (int i = 1; i <= 10; i++) d.offset(d.offset(head, 60.0 * i, 90), 80.0 * (i <= 5 ? i : 10 - i), 0)];   // an arc north of the chord, 100 m steps
     final LatLng marker = d.offset(road.last, 30, 90);
-    // the server snaps every moving fix: the crumbs are the snapped points themselves
+    // the server snaps every moving fix: the crumbs are the snapped points themselves; one fix every 10 s
+    int tick = 0;
     Member at(LatLng p) => Member(id: 'Bo Bray', name: 'Bo Bray', status: MemberStatus.normal, position: p, batteryPercent: 85, address: '', speedMph: 60, movement: MovementType.car,
-        road: RoadSnap(point: p, headingDeg: 90, path: const <LatLng>[]));
+        lastSeen: now.add(Duration(seconds: 10 * tick++)), road: RoadSnap(point: p, headingDeg: 90, path: const <LatLng>[]));
     List<Trip> answer = [drivingNow];
     final TrailStore store = storeWith((_, __) async => answer);
     bool driving(Member x) => true;
@@ -136,7 +138,8 @@ void main() {
     await t.pumpWidget(host(FocusTrailLayer(member: at(marker), store: store, now: now)));
     await t.pump();
     PolylineLayer layer = t.widget(find.byType(PolylineLayer));
-    final List<LatLng> pts = layer.polylines[1].points;
+    expect(layer.polylines.length, 2);                               // one piece (halo + accent): head -> crumbs -> marker all within the join rule
+    final List<LatLng> pts = layer.polylines.last.points;
     expect(pts.length, 41 + 10 + 1);                                 // the matched line, the ten crumbs, the marker
     expect(pts.sublist(41, 51), road);                               // through the crumbs, in order
     expect(pts.last, marker);
@@ -145,7 +148,7 @@ void main() {
     await store.refreshMember('Bo Bray');
     await t.pump();
     layer = t.widget(find.byType(PolylineLayer));
-    expect(layer.polylines[1].points.sublist(42), [...road.sublist(5), marker]);
+    expect(layer.polylines.last.points.sublist(42), [...road.sublist(5), marker]);
     // pure helper
     expect(FocusTrailLayer.recentAfterHead(road, road[4]), road.sublist(5));
     expect(FocusTrailLayer.recentAfterHead(road, d.offset(road[9], 5000, 180)), road);   // a head older than every crumb keeps them all

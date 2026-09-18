@@ -18,10 +18,13 @@
 // - The open drive's matched polyline (services/trips_service.dart): fetched
 //   every 60 s for every member currently in a drive (and anyone still
 //   holding a line, to see it close), focus or not.
-// - trailFor: the polyline, then the crumbs newer than its head, then the
-//   marker - never a straight head -> marker chord: with no crumbs past the
-//   head the line ends at the head (the marker joins only from within
-//   joinMeters of the last point).
+// - segments (ONE function, Bo 21:37 "hard rule"): the polyline, then only
+//   the crumbs newer than its head, then the marker - and a segment is
+//   drawn ONLY between two consecutive points <= 30 s apart in time AND
+//   <= 150 m apart in space (the polyline's head joins the first crumb only
+//   within 150 m); any gap is left blank. No chord, ever, in any state.
+// - The trail clears the moment the member is in a saved place (place
+//   since set) or the drive closes - not after the 2-min tail.
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -31,6 +34,13 @@ import 'package:latlong2/latlong.dart';
 import '../models/member.dart';
 import '../widgets/focus_trail_layer.dart' show FocusTrailLayer;
 import 'trips_service.dart';
+
+/// One remembered position and when it was fixed.
+class TrailCrumb {
+  const TrailCrumb(this.point, this.at);
+  final LatLng point;
+  final DateTime at;
+}
 
 class TrailStore extends ChangeNotifier {
   TrailStore({Future<List<Trip>> Function(String memberId, DateTime since)? fetch, DateTime Function()? clock, this.refresh = const Duration(seconds: 60)})
@@ -45,11 +55,12 @@ class TrailStore extends ChangeNotifier {
 
   static const double crumbStepMeters = 10;
   static const int maxCrumbs = 2000;
-  static const double joinMeters = 150;  // the marker joins the trail only from this close to its last point (the smoothed last crumb trails it by up to a fix step)
+  static const double joinMeters = 150;  // two consecutive points further apart than this are not joined (the marker included)
+  static const Duration joinGap = Duration(seconds: 30);   // ...nor two crumbs further apart than this in time
   static const double rawSlackMeters = 8;   // a raw crumb this close to the line between its neighbours is jitter
   static const int rawSmoothing = 3;        // the moving average over the last raw fixes
 
-  final Map<String, List<LatLng>> _crumbs = <String, List<LatLng>>{};
+  final Map<String, List<TrailCrumb>> _crumbs = <String, List<TrailCrumb>>{};
   final Map<String, List<LatLng>> _raw = <String, List<LatLng>>{};   // the last raw fixes per member, for the moving average
   final Map<String, List<LatLng>> _lines = <String, List<LatLng>>{};
   final Set<String> _driving = <String>{};
@@ -57,7 +68,7 @@ class TrailStore extends ChangeNotifier {
   Timer? _timer;
 
   @visibleForTesting
-  List<LatLng> crumbsOf(String id) => List<LatLng>.unmodifiable(_crumbs[id] ?? const <LatLng>[]);
+  List<LatLng> crumbsOf(String id) => List<LatLng>.unmodifiable((_crumbs[id] ?? const <TrailCrumb>[]).map((TrailCrumb c) => c.point));
   @visibleForTesting
   List<LatLng>? lineOf(String id) => _lines[id];
   bool isDriving(String id) => _driving.contains(id);
@@ -75,11 +86,19 @@ class TrailStore extends ChangeNotifier {
       } else {
         _driving.remove(m.id);
       }
-      final List<LatLng> crumbs = _crumbs.putIfAbsent(m.id, () => <LatLng>[]);
+      // Bo 21:37: in a saved place (place since set) and not moving = arrived: the trail goes at once
+      if (!driving && m.place?.since != null) {
+        _crumbs.remove(m.id);
+        _raw.remove(m.id);
+        _lines.remove(m.id);
+        continue;
+      }
+      final List<TrailCrumb> crumbs = _crumbs.putIfAbsent(m.id, () => <TrailCrumb>[]);
+      final DateTime at = m.lastSeen ?? _clock();
       final LatLng? snapped = m.road?.point;
       if (snapped != null) {
         _raw.remove(m.id);
-        _addCrumb(crumbs, snapped);
+        _addCrumb(crumbs, snapped, at);
       } else {
         // raw: smooth over the last fixes, then keep only what bends the line
         final List<LatLng> raw = _raw.putIfAbsent(m.id, () => <LatLng>[]);
@@ -87,10 +106,11 @@ class TrailStore extends ChangeNotifier {
           raw.add(p);
           if (raw.length > rawSmoothing) raw.removeRange(0, raw.length - rawSmoothing);
         }
-        if (_addCrumb(crumbs, average(raw)) && crumbs.length >= 3) {
-          final LatLng a = crumbs[crumbs.length - 3], b = crumbs[crumbs.length - 2], c = crumbs.last;
+        if (_addCrumb(crumbs, average(raw), at) && crumbs.length >= 3) {
+          final LatLng a = crumbs[crumbs.length - 3].point, b = crumbs[crumbs.length - 2].point, c = crumbs.last.point;
           final double slack = (m.accuracyMeters ?? 0) > rawSlackMeters ? m.accuracyMeters! : rawSlackMeters;
-          if (distanceToSegmentMeters(b, a, c) <= slack) crumbs.removeAt(crumbs.length - 2);
+          // ...but never so far apart that the two left would not join (the 150 m rule)
+          if (distanceToSegmentMeters(b, a, c) <= slack && const Distance().as(LengthUnit.Meter, a, c) <= joinMeters) crumbs.removeAt(crumbs.length - 2);
         }
       }
       if (!driving && !_lines.containsKey(m.id) && crumbs.length > 1) {
@@ -101,11 +121,70 @@ class TrailStore extends ChangeNotifier {
   }
 
   /// Adds [p] as a crumb when it is >= crumbStepMeters from the last one.
-  bool _addCrumb(List<LatLng> crumbs, LatLng p) {
-    if (crumbs.isNotEmpty && const Distance().as(LengthUnit.Meter, crumbs.last, p) < crumbStepMeters) return false;
-    crumbs.add(p);
+  bool _addCrumb(List<TrailCrumb> crumbs, LatLng p, DateTime at) {
+    if (crumbs.isNotEmpty && const Distance().as(LengthUnit.Meter, crumbs.last.point, p) < crumbStepMeters) return false;
+    crumbs.add(TrailCrumb(p, at));
     if (crumbs.length > maxCrumbs) crumbs.removeRange(0, crumbs.length - maxCrumbs);
     return true;
+  }
+
+  /// The index of the first crumb newer than [head]: after the crumb that
+  /// is the head (< 5 m), from a crumb within [nearMeters] of it (kept, so
+  /// the head always has a crumb within reach to join - at most 60 m of
+  /// overlap on the road), or from the first segment the head lies on.
+  /// Nothing near = the head is older than them all: 0.
+  static int firstAfterHead(List<LatLng> points, LatLng head, {double nearMeters = 60}) {
+    const Distance d = Distance();
+    for (int i = 0; i < points.length; i++) {
+      final double m = d.as(LengthUnit.Meter, points[i], head);
+      if (m < 5) return i + 1;                                                                     // this crumb IS the head
+      if (m <= nearMeters) return i;                                                               // as good as the head: kept, so the head always has a crumb within reach to join
+      if (i > 0 && distanceToSegmentMeters(head, points[i - 1], points[i]) <= nearMeters) return i;   // the head is on the way to points[i]
+    }
+    return 0;
+  }
+
+  /// THE trail rule (Bo 2026-09-17 21:37), for every state: the pieces to
+  /// draw for a member from their open polyline [line], their [crumbs]
+  /// (oldest first) and the [marker] fixed at [markerAt]. The polyline is
+  /// continuous road geometry and is drawn as it is; only the crumbs newer
+  /// than its head follow it (older ones are covered by the match - never
+  /// a jump back); a segment joins two consecutive points ONLY when they
+  /// are <= joinGap apart in time and <= joinMeters apart in space (the
+  /// head -> first crumb join is by distance alone; the head has no time),
+  /// otherwise the piece ends and a new one starts - a gap stays blank. A
+  /// piece is at least two points.
+  static List<List<LatLng>> segments({required List<LatLng> line, required List<TrailCrumb> crumbs, LatLng? marker, DateTime? markerAt}) {
+    const Distance d = Distance();
+    final List<List<LatLng>> pieces = <List<LatLng>>[];
+    List<LatLng> cur = <LatLng>[...line];
+    LatLng? prevPoint = line.isEmpty ? null : line.last;
+    DateTime? prevAt;   // null = the polyline head (no time)
+    void close() {
+      if (cur.length >= 2) pieces.add(cur);
+      cur = <LatLng>[];
+    }
+    bool joins(LatLng p, DateTime? at) {
+      final LatLng? prev = prevPoint;
+      final DateTime? prevTime = prevAt;
+      if (prev == null) return true;
+      if (d.as(LengthUnit.Meter, prev, p) > joinMeters) return false;
+      if (prevTime != null && at != null && at.difference(prevTime).abs() > joinGap) return false;
+      return true;
+    }
+    final int from = line.isEmpty ? 0 : firstAfterHead(crumbs.map((TrailCrumb c) => c.point).toList(), line.last);
+    for (final TrailCrumb c in crumbs.sublist(from)) {
+      if (!joins(c.point, c.at)) close();
+      cur.add(c.point);
+      prevPoint = c.point;
+      prevAt = c.at;
+    }
+    if (marker != null && marker != prevPoint) {
+      if (!joins(marker, markerAt)) close();
+      if (cur.isNotEmpty || prevPoint == null) cur.add(marker);   // a marker alone is not a piece
+    }
+    close();
+    return pieces;
   }
 
   /// The mean of [points] (a short list; flat-earth over metres).
@@ -147,10 +226,10 @@ class TrailStore extends ChangeNotifier {
       debugPrint('trail: ${trips.length} trips for $id; open: ${open == null ? 'none' : '${open.points.length} pts matched ${open.matched} head ${open.points.isEmpty ? '-' : open.points.last}'}; crumbs ${_crumbs[id]?.length ?? 0}');
       if (lines.isNotEmpty && lines.last.isNotEmpty) {
         _lines[id] = lines.last;
-        final List<LatLng>? crumbs = _crumbs[id];
+        final List<TrailCrumb>? crumbs = _crumbs[id];
         if (crumbs != null) {
-          final List<LatLng> kept = FocusTrailLayer.recentAfterHead(crumbs, lines.last.last);
-          crumbs..clear()..addAll(kept);
+          final int from = firstAfterHead(crumbs.map((TrailCrumb c) => c.point).toList(), lines.last.last);
+          crumbs.removeRange(0, from);   // covered by the match now
         }
       } else {
         // no open drive: the drive closed (or never was) - the trail is history now (Drives)
@@ -166,25 +245,15 @@ class TrailStore extends ChangeNotifier {
     }
   }
 
-  /// The line to draw for [id] with the marker at [marker], or null for
-  /// nothing: the open polyline, the crumbs past its head, the marker if it
-  /// is within joinMeters of the last point. No polyline yet: the crumbs
-  /// alone while they are in a drive (fewer than two = nothing).
-  List<LatLng>? trailFor(String id, LatLng? marker) {
+  /// The pieces to draw for [id] with the marker at [marker] (fixed at
+  /// [markerAt]): [segments] over their open polyline and crumbs. No
+  /// polyline yet: the crumbs alone while they are in a drive. Nothing to
+  /// draw = empty.
+  List<List<LatLng>> trailFor(String id, LatLng? marker, {DateTime? markerAt}) {
     final List<LatLng> line = _lines[id] ?? const <LatLng>[];
-    final List<LatLng> crumbs = _crumbs[id] ?? const <LatLng>[];
-    final List<LatLng> out;
-    if (line.isNotEmpty) {
-      out = <LatLng>[...line, ...FocusTrailLayer.recentAfterHead(crumbs, line.last)];
-    } else if (_driving.contains(id)) {
-      out = <LatLng>[...crumbs];
-    } else {
-      return null;
-    }
-    if (marker != null && out.isNotEmpty && out.last != marker && const Distance().as(LengthUnit.Meter, out.last, marker) <= joinMeters) {
-      out.add(marker);
-    }
-    return out.length >= 2 ? out : null;
+    final List<TrailCrumb> crumbs = _crumbs[id] ?? const <TrailCrumb>[];
+    if (line.isEmpty && !_driving.contains(id)) return const <List<LatLng>>[];
+    return segments(line: line, crumbs: crumbs, marker: marker, markerAt: markerAt ?? _clock());
   }
 
   /// Stops the minute refresh (tests; the map never stops it).
