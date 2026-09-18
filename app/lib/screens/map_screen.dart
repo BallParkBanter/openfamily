@@ -55,7 +55,7 @@ import '../widgets/edge_chip.dart';
 import '../widgets/family_accordion.dart';
 import '../widgets/family_header.dart';
 import '../widgets/map_top_chrome.dart';
-import '../widgets/focus_trail_layer.dart';
+import '../widgets/fading_tail_layer.dart';
 import '../widgets/following_pill.dart';
 import '../widgets/home_chip.dart';
 import '../widgets/map_bottom_bar.dart';
@@ -1361,18 +1361,6 @@ class _MapScreenState extends State<MapScreen>
     final List<Member> onMap = _onMap(members);   // bray: the map layers only; counts and cards see everyone
     // Bo 21:20: every member's drawn position becomes a trail crumb every frame, focus or not (services/trail_store.dart).
     TrailStore.instance.observe(members, inDriveFor: _inDriveFor);
-    // The focused member for FocusTrailLayer: independent of _followedMember
-    // because the Following pill's ✕ can end following while focus stays
-    // active (controller note 1) — look the id up in `members` directly.
-    Member? focusedMember;
-    if (_focus.focusedId != null) {
-      for (final Member candidate in members) {
-        if (candidate.id == _focus.focusedId) {
-          focusedMember = candidate;
-          break;
-        }
-      }
-    }
     final MediaQueryData media = MediaQuery.of(context);
     final double safeBottom = media.padding.bottom;
     // Space reserved at the very bottom for the fixed control bar (its own
@@ -1459,9 +1447,8 @@ class _MapScreenState extends State<MapScreen>
                 // at a named feature for 5 min - one per member position,
                 // never for a mover, never at home (the house is there).
                 PoiChipLayer(members: _visible(onMap)),
-                // Piece 3: the focused person's last 6 h under their marker
-                // (house under the trail under people).
-                FocusTrailLayer(member: focusedMember),
+                // Bo 21:5x: every moving member on screen trails a 30 s fading tail (house under the tail under people).
+                FadingTailLayer(members: _visible(onMap), inDriveFor: _inDriveFor),
                 // Member bubbles, clustered by on-screen proximity at
                 // the current zoom (rebuilds as the camera moves).
                 MemberMarkerLayer(
