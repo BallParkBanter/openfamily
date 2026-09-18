@@ -394,10 +394,11 @@ func (s *Server) upsertTrip(ctx context.Context, userID string, fixes []tripFix,
 
 // tripRow is what an existing trips row looks like to the reconciler.
 type tripRow struct {
-	ID      string
-	Started time.Time
-	Ended   *time.Time
-	Fixes   int
+	ID        string
+	Started   time.Time
+	Ended     *time.Time
+	Fixes     int
+	Withdrawn bool // superseded by itself: hidden, but re-pointed or revived if a drive claims its start again
 }
 
 // rebuildTripsFor re-segments a user's fixes over the lookback window (30
@@ -407,8 +408,10 @@ type tripRow struct {
 // live row whose start is no longer a drive start - a stub that a longer
 // drive absorbed once the sparse phone's next fixes arrived - is marked
 // superseded_by that drive (or by itself when nothing covers it any more).
-// Nothing is deleted. A drive already underway at the window's start is
-// skipped rather than stored truncated.
+// Nothing is deleted. The fixes are read from tripSilenceGap before the
+// window so a drive that started before it is seen whole and left alone
+// (it belongs to an earlier pass) rather than stored truncated; only rows
+// and drives starting inside the window are reconciled.
 func (s *Server) rebuildTripsFor(ctx context.Context, userID string, now time.Time) error {
 	var older int // closed trips older than the lookback window: none = the history was never built
 	if err := s.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM trips WHERE user_id = $1 AND ended_at IS NOT NULL AND started_at < $2`,
@@ -419,18 +422,18 @@ func (s *Server) rebuildTripsFor(ctx context.Context, userID string, now time.Ti
 	if older == 0 {
 		from = now.Add(-tripBackfill)
 	}
-	fixes, err := s.loadTripFixes(ctx, userID, from)
+	fixes, err := s.loadTripFixes(ctx, userID, from.Add(-tripSilenceGap))
 	if err != nil || len(fixes) < tripMinFixes {
 		return err
 	}
 	closed, open := segmentDrives(fixes, now)
-	if len(closed) > 0 && closed[0][0].At.Sub(fixes[0].At) < tripStillGap {
-		closed = closed[1:] // underway at the window edge: not a whole drive
+	for len(closed) > 0 && closed[0][0].At.Before(from) {
+		closed = closed[1:] // started before the window: an earlier pass's drive, left as stored
 	}
-	if open != nil && len(closed) == 0 && open[0].At.Sub(fixes[0].At) < tripStillGap {
+	if open != nil && open[0].At.Before(from) {
 		open = nil
 	}
-	existing, err := s.loadTripRows(ctx, userID, fixes[0].At)
+	existing, err := s.loadTripRows(ctx, userID, from)
 	if err != nil {
 		return err
 	}
@@ -453,7 +456,7 @@ func (s *Server) rebuildTripsFor(ctx context.Context, userID string, now time.Ti
 	for _, d := range drives {
 		start := d.fixes[0].At.UTC()
 		produced[start] = true
-		if r, ok := byStart[start]; ok && !d.open && r.Ended != nil && r.Ended.Equal(d.fixes[len(d.fixes)-1].At) && r.Fixes == len(d.fixes) {
+		if r, ok := byStart[start]; ok && !r.Withdrawn && !d.open && r.Ended != nil && r.Ended.Equal(d.fixes[len(d.fixes)-1].At) && r.Fixes == len(d.fixes) {
 			continue // unchanged: no re-match
 		}
 		if err := s.upsertTrip(ctx, userID, d.fixes, d.open); err != nil {
@@ -478,6 +481,9 @@ func (s *Server) rebuildTripsFor(ctx context.Context, userID string, now time.Ti
 				break
 			}
 		}
+		if r.Withdrawn && by == r.ID {
+			continue
+		}
 		if _, err := s.Pool.Exec(ctx, `UPDATE trips SET superseded_by = $2, updated_at = now() WHERE id = $1`, r.ID, by); err != nil {
 			return err
 		}
@@ -486,10 +492,11 @@ func (s *Server) rebuildTripsFor(ctx context.Context, userID string, now time.Ti
 	return nil
 }
 
-// loadTripRows reads a user's live (not superseded) trip rows starting at or after `from`.
+// loadTripRows reads a user's live (not superseded) and withdrawn trip rows
+// starting at or after `from`; rows absorbed by another drive stay as they are.
 func (s *Server) loadTripRows(ctx context.Context, userID string, from time.Time) ([]tripRow, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT id, started_at, ended_at, fixes FROM trips
-		WHERE user_id = $1 AND started_at >= $2 AND superseded_by IS NULL ORDER BY started_at`, userID, from)
+	rows, err := s.Pool.Query(ctx, `SELECT id, started_at, ended_at, fixes, superseded_by = id FROM trips
+		WHERE user_id = $1 AND started_at >= $2 AND (superseded_by IS NULL OR superseded_by = id) ORDER BY started_at`, userID, from)
 	if err != nil {
 		return nil, err
 	}
@@ -497,9 +504,11 @@ func (s *Server) loadTripRows(ctx context.Context, userID string, from time.Time
 	var out []tripRow
 	for rows.Next() {
 		var r tripRow
-		if err := rows.Scan(&r.ID, &r.Started, &r.Ended, &r.Fixes); err != nil {
+		var withdrawn *bool
+		if err := rows.Scan(&r.ID, &r.Started, &r.Ended, &r.Fixes, &withdrawn); err != nil {
 			return nil, err
 		}
+		r.Withdrawn = withdrawn != nil && *withdrawn
 		out = append(out, r)
 	}
 	return out, rows.Err()
