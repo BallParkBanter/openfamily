@@ -21,7 +21,7 @@ import '../models/member.dart';
 import '../theme/bray_tokens.dart';
 import '../utils/member_clustering.dart' show groundMetres;
 import '../utils/near_fit.dart' show compassWord, milesLabel, screenBearingDeg;
-import 'member_avatar_bubble.dart' show StatusAvatar;
+import 'member_avatar_bubble.dart' show MemberAvatarBubble, StatusAvatar;
 
 /// Which screen edge the avatar rides: always left or right (a steep bearing
 /// sits at the top or bottom of that edge, never on the header or the bar).
@@ -191,6 +191,23 @@ class EdgeFlarePainter extends CustomPainter {
       old.edge != edge || old.faceCentre != faceCentre || old.faceRadius != faceRadius || old.edgeHalf != edgeHalf || old.accent != accent;
 }
 
+/// Bo 2026-09-17 20:25: a member is OFF SCREEN - edge chip instead of the
+/// marker - as soon as their marker's face circle (the ring included,
+/// BrayTokens.soloFace across, its centre 51 above the map point, 11 more
+/// at home) is not fully inside the viewport inset by [inset] px. Not when
+/// the point leaves: a face half in the last 60 px is off screen. Both the
+/// marker layer and the chip layer use this one test, so it is always one
+/// or the other.
+bool faceOffScreen(MapCamera camera, Member m, {double inset = EdgeChip.margin, DateTime? now}) {
+  if (m.position == null) return false;
+  final p = camera.latLngToScreenPoint(m.position!);
+  const double ringAbove = MemberAvatarBubble.pointFromTop - MemberAvatarBubble.ringCentreFromTop;
+  final double lift = m.place?.atHome == true ? MemberAvatarBubble.atHomeLift : 0;
+  const double r = BrayTokens.soloFace / 2;
+  final double cx = p.x, cy = p.y - ringAbove - lift;
+  return cx - r < inset || cx + r > camera.nonRotatedSize.x - inset || cy - r < inset || cy + r > camera.nonRotatedSize.y - inset;
+}
+
 /// A FlutterMap child: one [EdgeChip] per far member whose marker is not on
 /// the map right now, at the point where the ray from the screen centre to
 /// them crosses the chip band (inside the header and the bottom bar).
@@ -230,16 +247,16 @@ class EdgeChipLayer extends StatelessWidget {
     final Offset centre = screen.center;
     final Member? viewer = members.cast<Member?>().firstWhere((Member? m) => m!.id == viewerId && m.position != null, orElse: () => null);
     final List<Widget> chips = <Widget>[];
-    // Bo 2026-09-17 19:50: a chip for ANY member whose point is outside the
-    // viewport at THIS camera - not only the far cluster (near_fit.dart) -
-    // recomputed on every camera change (MapCamera.of rebuilds this layer),
-    // gone the moment they are in view. The caller leaves hidden members
-    // out; a capsule off screen is one chip per person in it.
+    // Bo 2026-09-17 19:50 / 20:25: a chip for ANY member whose face is not
+    // whole on the map at THIS camera (faceOffScreen) - not only the far
+    // cluster (near_fit.dart) - recomputed on every camera change
+    // (MapCamera.of rebuilds this layer), gone the moment they are in view.
+    // The caller leaves hidden members out; a capsule off screen is one chip
+    // per person in it.
     for (final Member m in members) {
-      if (m.position == null) continue;
+      if (!faceOffScreen(camera, m)) continue;   // the face is whole on the map: the marker is the chip
       final p = camera.latLngToScreenPoint(m.position!);
       final Offset target = Offset(p.x, p.y);
-      if (screen.contains(target)) continue;   // in view: the marker is the chip
       final double metres = viewer == null ? 0 : groundMetres(viewer.position!, m.position!);
       final EdgeSide edge = target.dx < centre.dx ? EdgeSide.left : EdgeSide.right;
       final Offset at = edgeAvatarPoint(centre: centre, target: target, band: band, edge: edge);
