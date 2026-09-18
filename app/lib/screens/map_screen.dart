@@ -18,6 +18,7 @@ import '../services/map_visibility_store.dart';
 import '../services/self_fix.dart';
 import '../services/tile_cache.dart';
 import '../services/tile_prefetch.dart';
+import '../services/trail_store.dart';
 import '../utils/cadence.dart';
 import '../utils/stillness.dart';
 import '../utils/view_history.dart';
@@ -1355,6 +1356,8 @@ class _MapScreenState extends State<MapScreen>
   Widget build(BuildContext context) {
     final List<Member> members = _liveMembers();
     final List<Member> onMap = _onMap(members);   // bray: the map layers only; counts and cards see everyone
+    // Bo 21:20: every member's drawn position becomes a trail crumb every frame, focus or not (services/trail_store.dart).
+    TrailStore.instance.observe(members, inDriveFor: _inDriveFor);
     // The focused member for FocusTrailLayer: independent of _followedMember
     // because the Following pill's ✕ can end following while focus stays
     // active (controller note 1) — look the id up in `members` directly.
