@@ -4,6 +4,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:openfamily/models/member.dart';
+import 'package:openfamily/models/member_device.dart';
 import 'package:openfamily/utils/anchor_glide.dart';
 import 'package:openfamily/utils/member_clustering.dart';
 
@@ -75,5 +76,25 @@ void main() {
     expect(s.drawnForMember('heidi'), isNull);
     s.prune(t0, drawnIds: <String>{});
     expect(s.drawnForMember('charlie'), isNull);
+  });
+
+  test('2026-09-18 (Bo driving with Charlie): a member whose POSITION is stale (primary posting every 60 s, its relay bumping lastSeen every 10 s) does not weigh the capsule - the anchor is the live member\'s point; both live = the centroid; none live = the freshest position', () {
+    final DateTime now = t0;
+    final Member bo = mk('bo', north(600), now.subtract(const Duration(seconds: 3)));
+    final Member charlie = mk('charlie', north(0), now.subtract(const Duration(seconds: 2))).copyWith(devices: <MemberDevice>[
+      MemberDevice(id: 'c-app', isPrimary: true, ts: now.subtract(const Duration(seconds: 30)), position: north(0)),
+      MemberDevice(id: 'c-relay', ts: now.subtract(const Duration(seconds: 2)), position: north(590)),
+    ]);
+    expect(positionAt(charlie, now), now.subtract(const Duration(seconds: 30)));
+    expect(positionAt(bo, now), now.subtract(const Duration(seconds: 3)));
+    expect(forcedAnchor([bo, charlie], now), bo.position);
+    expect(forcedAnchor([charlie, bo], now), bo.position);
+    // Charlie's primary just posted: both live, the centroid
+    final Member charlieFresh = charlie.copyWith(position: north(580), devices: <MemberDevice>[MemberDevice(id: 'c-app', isPrimary: true, ts: now.subtract(const Duration(seconds: 4)), position: north(580))]);
+    expect(forcedAnchor([bo, charlieFresh], now).latitude, closeTo(north(590).latitude, 1e-9));
+    // nobody live (both past the 10 s reckoning window): the freshest POSITION, not the freshest lastSeen
+    final Member boOld = mk('bo', north(600), now.subtract(const Duration(seconds: 12)));
+    expect(forcedAnchor([boOld, charlie], now), boOld.position);
+    expect(kLivePosition, const Duration(seconds: 10));
   });
 }

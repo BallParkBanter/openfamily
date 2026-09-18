@@ -137,8 +137,8 @@ void main() {
     double off(LatLng p) => TrailStore.distanceToSegmentMeters(p, centre.first, centre.last);
     final TrailStore snapped = make(() => t0);
     for (final LatLng c in centre) {
-      final LatLng jittered = d.offset(c, 10 * (rng.nextDouble() * 2 - 1), rng.nextBool() ? 0 : 180);
-      snapped.observe([bo(jittered, snapped: c, accuracy: 6)], inDriveFor: driving);
+      // 2026-09-18: the map passes the DRAWN point - on the road when the server snapped the fix (the reckoning walks the snap's path)
+      snapped.observe([bo(c, snapped: c, accuracy: 6)], inDriveFor: driving);
     }
     final List<LatLng> snappedCrumbs = snapped.crumbsOf('b');
     expect(snappedCrumbs.length, greaterThan(50));
@@ -157,5 +157,70 @@ void main() {
     expect(worstCrumb, lessThan(worstRaw));
     expect(worstCrumb, lessThan(8));
     expect(rawCrumbs.map(off).reduce((a, b) => a + b) / rawCrumbs.length, lessThan(3));
+  });
+
+  test('2026-09-18 (Bo driving, teeth): the viewer\'s cycle - raw device frames (crumbs from the drawn point), then the server\'s echo of the SAME fix with its snap: no crumb ever steps back, and crumbs keep coming while the drawn point moves with the road set', () {
+    DateTime clock = t0;
+    final TrailStore store = make(() => clock);
+    // heading east at 30 m/s; the drawn point (what the map passes as position) advances every frame
+    LatLng drawn(double sec) => d.offset(start, 30 * sec, 90);
+    void frame(double sec, {LatLng? snapped}) {
+      clock = t0.add(Duration(milliseconds: (sec * 1000).round()));
+      store.observe([bo(drawn(sec), snapped: snapped, at: t0, accuracy: 12)], inDriveFor: driving);
+    }
+    for (double sec = 0; sec < 1.0; sec += 0.1) {
+      frame(sec);   // the device fix at t0 (raw); frames until the echo
+    }
+    // t0 + 1 s: the server echoes the fix of t0, snapped 4 m north of the raw fix - road set from here on
+    final LatLng snap = d.offset(start, 4, 0);
+    for (double sec = 1.0; sec <= 5.0; sec += 0.1) {
+      frame(sec, snapped: snap);
+    }
+    final List<LatLng> crumbs = store.crumbsOf('b');
+    double along(LatLng p) => (p.longitude - start.longitude) * 111320 * math.cos(start.latitudeInRad);
+    for (int i = 1; i < crumbs.length; i++) {
+      expect(along(crumbs[i]), greaterThan(along(crumbs[i - 1]) - 1), reason: 'crumb $i (${along(crumbs[i]).toStringAsFixed(0)} m) is behind crumb ${i - 1} (${along(crumbs[i - 1]).toStringAsFixed(0)} m)');
+    }
+    // 150 m of drawn motion at 10 m steps: a crumb every ~10 m, none missing while the road is set
+    expect(crumbs.length, greaterThanOrEqualTo(10));   // the raw first second thins to its ends (w1c); the road part is every 10 m
+    expect(along(crumbs.last), greaterThan(130));
+    // and the line is one piece to the marker, on the road
+    final List<List<LatLng>> line = store.driveLineFor('b', drawn(5.0), markerAt: clock);
+    expect(line.length, 1);
+  });
+
+  test('2026-09-18: a pull (the drawn point crossing 1.2 km in 2 s after a 60 s silent phone) lays no crumbs, so the line never follows it as a chord; normal motion after it resumes with a blank gap', () {
+    DateTime clock = t0;
+    final TrailStore store = make(() => clock);
+    void frame(double sec, LatLng p) {
+      clock = t0.add(Duration(milliseconds: (sec * 1000).round()));
+      store.observe([bo(p, at: t0.add(Duration(seconds: sec.floor())))], inDriveFor: driving);
+    }
+    // 10 s of driving at 30 m/s
+    for (double sec = 0; sec <= 10; sec += 0.1) {
+      frame(sec, d.offset(start, 30 * sec, 90));
+    }
+    final int before = store.crumbsOf('b').length;
+    expect(before, greaterThanOrEqualTo(2));   // a straight road thins to its ends (w1c)
+    // the pull: 2 s from 300 m to 1500 m east (600 m/s)
+    for (double sec = 10.1; sec <= 12; sec += 0.1) {
+      frame(sec, d.offset(start, 300 + (sec - 10) / 2 * 1200, 90));
+    }
+    expect(store.crumbsOf('b').length, before, reason: 'a pull is not driving');
+    // driving on from 1500 m
+    for (double sec = 12.1; sec <= 16; sec += 0.1) {
+      frame(sec, d.offset(start, 1500 + 30 * (sec - 12), 90));
+    }
+    final List<LatLng> crumbs = store.crumbsOf('b');
+    double along(LatLng p) => (p.longitude - start.longitude) * 111320 * math.cos(start.latitudeInRad);
+    expect(crumbs.where((LatLng c) => along(c) > 310 && along(c) < 1490), isEmpty, reason: 'no crumb inside the pull');
+    expect(crumbs.where((LatLng c) => along(c) >= 1490).length, greaterThanOrEqualTo(2));
+    final List<List<LatLng>> line = store.driveLineFor('b', d.offset(start, 1620, 90), markerAt: clock);
+    expect(line.length, 2);   // before the pull, after the pull - the gap between stays blank
+    for (final List<LatLng> piece in line) {
+      for (int i = 1; i < piece.length; i++) {
+        expect(d.as(LengthUnit.Meter, piece[i - 1], piece[i]), lessThanOrEqualTo(TrailStore.joinMeters));
+      }
+    }
   });
 }

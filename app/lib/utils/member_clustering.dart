@@ -4,6 +4,7 @@ import 'dart:ui' show Offset;
 import 'package:latlong2/latlong.dart';
 
 import '../models/member.dart';
+import 'primary_device.dart' show freshPrimary;
 import '../theme/bray_tokens.dart';
 import '../widgets/marker_extents.dart' show MarkerExtents;
 
@@ -357,25 +358,50 @@ LatLng _centroid(List<Member> members) {
   return LatLng(lat / members.length, lng / members.length);
 }
 
+/// A member's position is LIVE while its fix is under this old - the
+/// dead-reckoning window (utils/dead_reckoning.dart maxExtrapolation): past
+/// it the drawn point holds where the last fix put it, which is not where
+/// the car is.
+const Duration kLivePosition = Duration(seconds: 10);
+
+/// When the member's DRAWN position was fixed: the primary device's fix while
+/// the primary is fresh (utils/primary_device.dart - a frame from another
+/// device bumps [Member.lastSeen] for liveness without moving the member),
+/// else [Member.lastSeen].
+DateTime? positionAt(Member m, DateTime now) => freshPrimary(m, now)?.ts ?? m.lastSeen;
+
 /// Where a must-group (riding-together) cluster sits. 5b (Bo, live
-/// 2026-09-16 15:35 - "not seeing smooth movements for our capsule"): when
-/// every member is fresh, the centroid of their positions - the caller
-/// passes GLIDED members (map_screen._liveMembers), so the point moves
-/// smoothly, and a change of which phone posted last moves nothing. The
-/// lead phone (below) is only the fallback when a member is stale: then the
-/// fresh phone is where the car is.
-LatLng forcedAnchor(List<Member> members, DateTime now) =>
-    members.every((Member m) => !m.isStaleAt(now)) ? _centroid(members) : _leadPosition(members);
+/// 2026-09-16 15:35 - "not seeing smooth movements for our capsule"): the
+/// centroid of the members whose position is live ([kLivePosition]) - the
+/// caller passes GLIDED members (map_screen._liveMembers), so the point
+/// moves smoothly, and a change of which phone posted last moves nothing.
+/// 2026-09-18 (Bo driving with Charlie, "the marker jumps"): Charlie's app
+/// posted every 60 s while his relay bumped lastSeen every 10 s, so he
+/// counted as fresh with a position up to a minute old and the centroid sat
+/// hundreds of metres behind the car, leaping forward once a minute. A
+/// member whose position is past the reckoning window does not weigh in;
+/// nobody live = the member with the freshest POSITION (the lead phone).
+LatLng forcedAnchor(List<Member> members, DateTime now) {
+  final List<Member> live = members.where((Member m) {
+    final DateTime? at = positionAt(m, now);
+    return !m.isStaleAt(now) && at != null && now.difference(at) <= kLivePosition;
+  }).toList();
+  return live.isEmpty ? _leadPosition(members, now) : _centroid(live);
+}
 
 /// Bray piece 5 (rig run 1028): the position of the member with the latest
-/// [Member.lastSeen] (the lead phone; "the group is where its freshest
-/// phone is"). A member with no lastSeen counts as oldest; ties keep the
-/// earlier-listed member. Since 5b only the fallback in [forcedAnchor].
-LatLng _leadPosition(List<Member> members) {
+/// position time ([positionAt]; the lead phone - "the group is where its
+/// freshest phone is"). A member with no time counts as oldest; ties keep
+/// the earlier-listed member. Since 5b only the fallback in [forcedAnchor].
+LatLng _leadPosition(List<Member> members, DateTime now) {
   Member lead = members.first;
+  DateTime? leadAt = positionAt(lead, now);
   for (final Member m in members.skip(1)) {
-    final DateTime? seen = m.lastSeen;
-    if (seen != null && (lead.lastSeen == null || seen.isAfter(lead.lastSeen!))) lead = m;
+    final DateTime? at = positionAt(m, now);
+    if (at != null && (leadAt == null || at.isAfter(leadAt))) {
+      lead = m;
+      leadAt = at;
+    }
   }
   return lead.position!;
 }
