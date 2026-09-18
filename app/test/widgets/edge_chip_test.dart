@@ -67,7 +67,7 @@ void main() {
     expect(face.center.dx, EdgeChip.faceCentreIn);
     expect(face.left, EdgeChip.rimIn + EdgeChip.hairline + EdgeChip.whiteBorder);   // the circle's rim (hairline + white) is 6 in from the edge, on screen
     expect(EdgeChip.whiteBorder, BrayTokens.ringSolo);                              // = the marker ring's width, uniform all round
-    expect(EdgeFlarePainter.fill, BrayTokens.capsuleGrey);                          // the capsule's padding/ring grey, not white (Bo 08:40)
+    expect(EdgeFlarePainter.fill, BrayTokens.badgeBg);                              // the v7 white (Bo 20:38: the 08:40 grey read as a pale purple fan)
     final BoxDecoration ring = t.widget<Container>(find.byKey(const Key('edge-chip-face'))).decoration as BoxDecoration;
     expect(ring.border!.top.color, BrayTokens.accentHeidi);
     final EdgeFlarePainter flare = t.widget<CustomPaint>(find.byKey(const Key('edge-chip-flare'))).painter as EdgeFlarePainter;
@@ -167,6 +167,7 @@ void main() {
   });
   edgeForAnyoneTests();
   faceOffScreenTests();
+  noOverlapTests();
 }
 
 // Bo 2026-09-17 19:50: ANY member outside the viewport gets a chip, at every
@@ -269,5 +270,33 @@ void faceOffScreenTests() {
     }
     expect(find.byKey(const Key('edge-chip-flare')), findsNWidgets(3));
     expect(find.byKey(const Key('edge-chip-face')), findsNWidgets(3));
+  });
+}
+
+// Bo 2026-09-17 20:38: chips on the same edge never overlap - along the edge
+// in bearing order, >= 8 px apart, the run nudged back toward the middle.
+void noOverlapTests() {
+  test('spreadAlongEdge: sorted centres pushed apart by the step, kept in the band, a run at the bottom slides up', () {
+    expect(spreadAlongEdge([500, 500], step: 92, top: 120, bottom: 1160), [500, 592]);
+    expect(spreadAlongEdge([500, 530, 540], step: 92, top: 120, bottom: 1160), [500, 592, 684]);
+    expect(spreadAlongEdge([1150, 1160], step: 92, top: 120, bottom: 1160), [1068, 1160]);   // the run slides up to stay in the band
+    expect(spreadAlongEdge([100, 110], step: 92, top: 120, bottom: 1160), [120, 212]);       // clamped to the band's top first
+    expect(spreadAlongEdge([300], step: 92, top: 120, bottom: 1160), [300]);
+    expect(spreadAlongEdge([], step: 92, top: 120, bottom: 1160), isEmpty);
+  });
+
+  testWidgets('two members off the right edge on the same bearing: two distinct chips, no overlap, 8 px apart', (t) async {
+    t.view.physicalSize = const Size(1600, 2560);
+    t.view.devicePixelRatio = 2.0;
+    addTearDown(t.view.reset);
+    final Member c1 = mk('c', 'Charlie Bray', hebron), h1 = mk('h', 'Heidi Bray', const LatLng(34.0068, -83.912));   // both at Hebron, due east of Home
+    await t.pumpWidget(app(MapController(), [c1, h1, bo], centre: home, zoom: 13));
+    await t.pump(const Duration(seconds: 1));
+    final List<Rect> rects = t.widgetList<EdgeChip>(find.byType(EdgeChip)).map((EdgeChip e) => t.getRect(find.byWidget(e))).toList();
+    expect(rects.length, 2);
+    expect(rects.every((Rect r) => r.right == 800), isTrue);                       // both on the right edge
+    final Rect a = rects[0].top < rects[1].top ? rects[0] : rects[1], b = rects[0].top < rects[1].top ? rects[1] : rects[0];
+    expect(a.overlaps(b), isFalse);
+    expect(b.top - a.bottom, closeTo(EdgeChip.gap, 0.01));
   });
 }

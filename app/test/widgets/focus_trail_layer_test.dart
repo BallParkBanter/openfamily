@@ -107,4 +107,36 @@ void main() {
     expect(FocusTrailLayer.withLiveTail(const [], marker), isEmpty);
     expect(FocusTrailLayer.withLiveTail([[head]], head).single.length, 1);
   });
+
+  testWidgets('Bo 20:36: the tail follows the member\'s own recent fixes from the head, not one straight chord; a newer head drops the fixes it caught up to', (t) async {
+    // the head 3 km behind the marker (two minutes at 72 mph); the road bends: the fixes since the head are not on the chord
+    final LatLng head = driveHome.points.last;
+    final List<LatLng> road = [for (int i = 1; i <= 10; i++) d.offset(d.offset(head, 300.0 * i, 90), 400.0 * (i <= 5 ? i : 10 - i), 0)];   // an arc north of the chord
+    final LatLng marker = d.offset(head, 3300, 90);
+    Member at(LatLng p) => Member(id: 'Bo Bray', name: 'Bo Bray', status: MemberStatus.normal, position: p, batteryPercent: 85, address: '');
+    await t.pumpWidget(host(FocusTrailLayer(member: at(head), fetch: (_, __) async => [drivingNow], now: now)));
+    await t.pumpAndSettle();
+    for (final LatLng p in road) {   // the member is drawn along the road, one build per fix
+      await t.pumpWidget(host(FocusTrailLayer(member: at(p), fetch: (_, __) async => [drivingNow], now: now)));
+      await t.pump();
+    }
+    await t.pumpWidget(host(FocusTrailLayer(member: at(marker), fetch: (_, __) async => [drivingNow], now: now)));
+    await t.pump();
+    PolylineLayer layer = t.widget(find.byType(PolylineLayer));
+    final List<LatLng> pts = layer.polylines[1].points;
+    expect(pts.length, 41 + 10 + 1);                                 // the matched line, the ten fixes, the marker
+    expect(pts.sublist(41, 51), road);                               // through the fixes, in order
+    expect(pts.last, marker);
+    // the polyline catches up to the 5th fix: the tail starts there
+    final Trip longer = Trip(startedAt: drivingNow.startedAt, endedAt: null, matched: true, points: [...driveHome.points, road[4]]);
+    await t.pumpWidget(host(FocusTrailLayer(member: at(marker), fetch: (_, __) async => [longer], now: now)));
+    await t.pump(const Duration(seconds: 61));   // the minute refetch
+    await t.pumpAndSettle();
+    layer = t.widget(find.byType(PolylineLayer));
+    expect(layer.polylines[1].points.sublist(42), [...road.sublist(5), marker]);
+    // pure helpers
+    expect(FocusTrailLayer.recentAfterHead(road, road[4]), road.sublist(5));
+    expect(FocusTrailLayer.recentAfterHead(road, d.offset(road[9], 5000, 180)), road);   // a head older than every fix keeps them all
+    expect(FocusTrailLayer.withLiveTail([[head]], marker, recent: road).single, [head, ...road, marker]);
+  });
 }
