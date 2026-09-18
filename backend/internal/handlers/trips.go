@@ -11,6 +11,17 @@ package handlers
 // keep the raw polyline (matched = false). The open drive (still moving) is
 // re-matched every tripRefresh into its row (ended_at NULL). The app draws
 // trips only - nothing for a stationary period.
+//
+// bray-5b (2026-09-18, Bo's 15:32-15:48 ET loop with only his iPhone
+// reporting - 16 fixes about a minute apart - came out as two stubs):
+// SILENCE IS NOT STILLNESS. A drive closes on OBSERVED stillness (still
+// fixes covering tripStillGap) or on tripSilenceGap of no fixes at all; a
+// sparse phone that says nothing for a few minutes and then reports moving
+// again is still on the same drive. A step across a silence at
+// tripGapDriveMPS or faster counts as moving even when the fix's own speed
+// says 0. Each pass re-segments the whole window and RECONCILES the rows:
+// a row whose start is no longer a drive start (a stub merged into a longer
+// drive) is marked superseded_by the drive that absorbed it - never deleted.
 
 import (
 	"bytes"
@@ -29,10 +40,12 @@ import (
 )
 
 const (
-	tripMovingMPS   = 3 * 0.44704 // BrayTokens.driveStillMph: under 3 mph a fix is standing still
-	tripStillGap    = 2 * time.Minute
-	tripStepFloorM  = 25.0 // a step under max(accuracy, this) is GPS wobble, not motion
-	tripChunk       = 100  // trace_route points per request
+	tripMovingMPS   = 3 * 0.44704      // BrayTokens.driveStillMph: under 3 mph a fix is standing still
+	tripStillGap    = 2 * time.Minute  // OBSERVED stillness (still fixes spanning this) ends a drive
+	tripSilenceGap  = 10 * time.Minute // no fixes at all for this long ends a drive (the phone went dark)
+	tripGapDriveMPS = 5 * 0.44704      // a step across a silence at this pace was a drive, whatever the fix's speed says
+	tripStepFloorM  = 25.0             // a step under max(accuracy, this) is GPS wobble, not motion
+	tripChunk       = 100              // trace_route points per request
 	tripRefresh     = 60 * time.Second
 	tripLookback    = 6 * time.Hour
 	tripBackfill    = 30 * 24 * time.Hour // a member with no trips yet gets their last 30 days built once
@@ -92,33 +105,51 @@ func (s *Server) placeNameAt(ctx context.Context, userID string, lat, lon float6
 	return &name
 }
 
-// moving says whether fix i counts as moving: by its speed when it has one,
-// else by its step from the previous fix against max(accuracy, 25 m).
+// moving says whether fix i counts as moving: by its speed when it has one
+// (and, when the speed says still, by a step from the previous fix that
+// could only have been driven: past max(accuracy, 25 m) at tripGapDriveMPS
+// or more), else by its step from the previous fix against max(accuracy, 25 m).
 func moving(fixes []tripFix, i int) bool {
 	f := fixes[i]
-	if f.SpeedMPS != nil {
-		return *f.SpeedMPS >= tripMovingMPS
+	if f.SpeedMPS != nil && *f.SpeedMPS >= tripMovingMPS {
+		return true
 	}
 	if i == 0 {
 		return false
 	}
 	p := fixes[i-1]
-	return haversineMeters(p.Lat, p.Lon, f.Lat, f.Lon) > math.Max(f.Accuracy, tripStepFloorM)
+	step := haversineMeters(p.Lat, p.Lon, f.Lat, f.Lon)
+	if step <= math.Max(f.Accuracy, tripStepFloorM) {
+		return false
+	}
+	if f.SpeedMPS == nil {
+		return true
+	}
+	dt := f.At.Sub(p.At).Seconds()
+	return dt > 0 && step/dt >= tripGapDriveMPS
 }
 
 // segmentDrives splits fixes (oldest first) into drives: runs of moving
-// fixes where no gap between moving fixes reaches tripStillGap. The fixes
-// between a drive's first and last moving fix all belong to it (a red light
-// is inside the drive). A drive whose last moving fix is younger than
-// tripStillGap at `now` is still open.
+// fixes. A drive ends when stillness is OBSERVED for tripStillGap (still
+// fixes from the first still one to a later still one, with no motion
+// between) or when the phone says nothing at all for tripSilenceGap. The
+// fixes between a drive's first moving fix and its arrival (the first still
+// fix after its last motion) all belong to it - a red light, a pickup line,
+// a few minutes of a sparse phone's silence. At `now` the last drive is open
+// while neither end rule has fired (a lone arrival fix followed by
+// tripStillGap of silence counts as the stop: the phone's last word was
+// "still" and it has had nothing to add).
 func segmentDrives(fixes []tripFix, now time.Time) (closed [][]tripFix, open []tripFix) {
 	var cur []tripFix
-	var lastMoving time.Time
+	var lastMoving, stillStart time.Time
 	flush := func(isOpen bool) {
-		// trailing still fixes (the stop after the drive) are not part of it
+		// the drive ends at its arrival: the first still fix after the last motion
 		end := len(cur)
 		for end > 0 && cur[end-1].At.After(lastMoving) {
 			end--
+		}
+		if end < len(cur) {
+			end++
 		}
 		cur = cur[:end]
 		if len(cur) >= tripMinFixes && spanMeters(cur) >= tripMinSpanM {
@@ -129,28 +160,39 @@ func segmentDrives(fixes []tripFix, now time.Time) (closed [][]tripFix, open []t
 			}
 		}
 		cur = nil
+		stillStart = time.Time{}
 	}
 	for i := range fixes {
 		f := fixes[i]
-		if moving(fixes, i) {
-			if cur != nil && f.At.Sub(lastMoving) >= tripStillGap {
-				flush(false)
+		mv := moving(fixes, i)
+		if cur != nil {
+			if f.At.Sub(fixes[i-1].At) >= tripSilenceGap {
+				flush(false) // the phone went dark: the drive ended at its last word
+			} else if !mv && !stillStart.IsZero() && f.At.Sub(stillStart) >= tripStillGap {
+				flush(false) // still for 2 min, seen: the drive is over
 			}
+		}
+		if mv {
 			if cur == nil {
 				cur = []tripFix{}
 			}
 			cur = append(cur, f)
 			lastMoving = f.At
+			stillStart = time.Time{}
 		} else if cur != nil {
-			if f.At.Sub(lastMoving) >= tripStillGap {
-				flush(false)
-			} else {
-				cur = append(cur, f) // a stop inside the drive
+			if stillStart.IsZero() {
+				stillStart = f.At
 			}
+			cur = append(cur, f)
 		}
 	}
 	if cur != nil {
-		flush(now.Sub(lastMoving) < tripStillGap) // open when the last motion is recent
+		last := cur[len(cur)-1].At
+		isOpen := now.Sub(last) < tripSilenceGap
+		if !stillStart.IsZero() && now.Sub(stillStart) >= tripStillGap {
+			isOpen = false
+		}
+		flush(isOpen)
 	}
 	return closed, open
 }
@@ -212,7 +254,7 @@ func (m *Matcher) TraceRoute(ctx context.Context, fixes []tripFix) ([][2]float64
 	}
 	body, err := json.Marshal(map[string]any{
 		"shape": shape, "costing": "auto", "shape_match": "map_snap", "units": "kilometers",
-		"trace_options": map[string]any{"search_radius": 50, "gps_accuracy": 15},
+		"trace_options": traceOptionsFor(fixes),
 	})
 	if err != nil {
 		return nil, 0, err
@@ -247,6 +289,24 @@ func (m *Matcher) TraceRoute(ctx context.Context, fixes []tripFix) ([][2]float64
 		out = append(out, pts...)
 	}
 	return out, tr.Trip.Summary.Length * 1000, nil
+}
+
+// traceOptionsFor sizes Valhalla's search from the fixes' own accuracy:
+// gps_accuracy is the worst reported accuracy (5-50 m), search_radius twice
+// that (50-100 m, Valhalla's ceiling), and breakage_distance is raised so a
+// sparse phone's 60-s gaps at highway speed (up to ~2 km) stay one leg -
+// the road between two far-apart points is then routed, not chorded.
+func traceOptionsFor(fixes []tripFix) map[string]any {
+	acc := 0.0
+	for _, f := range fixes {
+		acc = math.Max(acc, f.Accuracy)
+	}
+	acc = math.Min(math.Max(acc, 5), 50)
+	return map[string]any{
+		"search_radius":     math.Min(math.Max(2*acc, 50), 100),
+		"gps_accuracy":      acc,
+		"breakage_distance": 5000,
+	}
 }
 
 // matchTrip map-matches a drive in chunks; raw when the matcher is missing
@@ -326,58 +386,123 @@ func (s *Server) upsertTrip(ctx context.Context, userID string, fixes []tripFix,
 		ON CONFLICT (user_id, started_at) DO UPDATE SET
 			ended_at = EXCLUDED.ended_at, polyline = EXCLUDED.polyline, distance_m = EXCLUDED.distance_m,
 			matched = EXCLUDED.matched, fixes = EXCLUDED.fixes, top_speed_mps = EXCLUDED.top_speed_mps,
-			from_place = EXCLUDED.from_place, to_place = EXCLUDED.to_place, updated_at = now()`,
+			from_place = EXCLUDED.from_place, to_place = EXCLUDED.to_place, superseded_by = NULL, updated_at = now()`,
 		userID, first.At, ended, raw, dist, matched, len(fixes), topSpeed(fixes),
 		s.placeNameAt(ctx, userID, first.Lat, first.Lon), s.placeNameAt(ctx, userID, last.Lat, last.Lon))
 	return err
 }
 
-// rebuildTripsFor builds a user's trips from where the last closed trip
-// ended (or the lookback window - 30 days when they have none yet): new
-// closed drives are written once, the open drive is rewritten every pass. A
-// drive already underway at the window's start is skipped rather than
-// stored truncated (it would grow a new row every pass as the window slid).
+// tripRow is what an existing trips row looks like to the reconciler.
+type tripRow struct {
+	ID      string
+	Started time.Time
+	Ended   *time.Time
+	Fixes   int
+}
+
+// rebuildTripsFor re-segments a user's fixes over the lookback window (30
+// days once, when they have no trips yet) and reconciles the rows: a drive
+// whose row already has the same fixes and end is left alone (no re-match),
+// a new or changed drive is upserted (keyed by user + started_at), and a
+// live row whose start is no longer a drive start - a stub that a longer
+// drive absorbed once the sparse phone's next fixes arrived - is marked
+// superseded_by that drive (or by itself when nothing covers it any more).
+// Nothing is deleted. A drive already underway at the window's start is
+// skipped rather than stored truncated.
 func (s *Server) rebuildTripsFor(ctx context.Context, userID string, now time.Time) error {
-	var lastEnd *time.Time
 	var older int // closed trips older than the lookback window: none = the history was never built
-	if err := s.Pool.QueryRow(ctx, `SELECT MAX(ended_at), COUNT(*) FILTER (WHERE started_at < $2) FROM trips WHERE user_id = $1 AND ended_at IS NOT NULL`,
-		userID, now.Add(-tripLookback)).Scan(&lastEnd, &older); err != nil {
+	if err := s.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM trips WHERE user_id = $1 AND ended_at IS NOT NULL AND started_at < $2`,
+		userID, now.Add(-tripLookback)).Scan(&older); err != nil {
 		return err
 	}
 	from := now.Add(-tripLookback)
 	if older == 0 {
 		from = now.Add(-tripBackfill)
-		lastEnd = nil // rebuild from the far edge; existing rows are upserted in place
-	}
-	edge := true // the window starts at an arbitrary moment: a drive underway there is skipped
-	if lastEnd != nil && lastEnd.After(from) {
-		from = *lastEnd
-		edge = false // it starts where a drive ended: still by definition
 	}
 	fixes, err := s.loadTripFixes(ctx, userID, from)
 	if err != nil || len(fixes) < tripMinFixes {
 		return err
 	}
 	closed, open := segmentDrives(fixes, now)
-	if edge && len(closed) > 0 && closed[0][0].At.Sub(fixes[0].At) < tripStillGap {
+	if len(closed) > 0 && closed[0][0].At.Sub(fixes[0].At) < tripStillGap {
 		closed = closed[1:] // underway at the window edge: not a whole drive
 	}
-	if edge && open != nil && len(closed) == 0 && open[0].At.Sub(fixes[0].At) < tripStillGap {
+	if open != nil && len(closed) == 0 && open[0].At.Sub(fixes[0].At) < tripStillGap {
 		open = nil
 	}
+	existing, err := s.loadTripRows(ctx, userID, fixes[0].At)
+	if err != nil {
+		return err
+	}
+	byStart := map[time.Time]tripRow{}
+	for _, r := range existing {
+		byStart[r.Started.UTC()] = r
+	}
+	type drive struct {
+		fixes []tripFix
+		open  bool
+	}
+	var drives []drive
 	for _, d := range closed {
-		if err := s.upsertTrip(ctx, userID, d, false); err != nil {
-			return err
-		}
+		drives = append(drives, drive{d, false})
 	}
 	if open != nil {
-		// one open row at a time: an earlier open row that never closed is replaced
-		if _, err := s.Pool.Exec(ctx, `DELETE FROM trips WHERE user_id = $1 AND ended_at IS NULL AND started_at <> $2`, userID, open[0].At); err != nil {
+		drives = append(drives, drive{open, true})
+	}
+	produced := map[time.Time]bool{}
+	for _, d := range drives {
+		start := d.fixes[0].At.UTC()
+		produced[start] = true
+		if r, ok := byStart[start]; ok && !d.open && r.Ended != nil && r.Ended.Equal(d.fixes[len(d.fixes)-1].At) && r.Fixes == len(d.fixes) {
+			continue // unchanged: no re-match
+		}
+		if err := s.upsertTrip(ctx, userID, d.fixes, d.open); err != nil {
 			return err
 		}
-		return s.upsertTrip(ctx, userID, open, true)
+	}
+	for _, r := range existing {
+		if produced[r.Started.UTC()] {
+			continue
+		}
+		by := r.ID // nothing covers it any more: withdrawn
+		for _, d := range drives {
+			end := now
+			if !d.open {
+				end = d.fixes[len(d.fixes)-1].At
+			}
+			if !d.fixes[0].At.After(r.Started) && !end.Before(r.Started) {
+				var id string
+				if err := s.Pool.QueryRow(ctx, `SELECT id FROM trips WHERE user_id = $1 AND started_at = $2`, userID, d.fixes[0].At).Scan(&id); err == nil {
+					by = id
+				}
+				break
+			}
+		}
+		if _, err := s.Pool.Exec(ctx, `UPDATE trips SET superseded_by = $2, updated_at = now() WHERE id = $1`, r.ID, by); err != nil {
+			return err
+		}
+		slog.Info("trips: row superseded", "user_id", userID, "trip", r.ID, "by", by, "started_at", r.Started)
 	}
 	return nil
+}
+
+// loadTripRows reads a user's live (not superseded) trip rows starting at or after `from`.
+func (s *Server) loadTripRows(ctx context.Context, userID string, from time.Time) ([]tripRow, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT id, started_at, ended_at, fixes FROM trips
+		WHERE user_id = $1 AND started_at >= $2 AND superseded_by IS NULL ORDER BY started_at`, userID, from)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []tripRow
+	for rows.Next() {
+		var r tripRow
+		if err := rows.Scan(&r.ID, &r.Started, &r.Ended, &r.Fixes); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }
 
 // RebuildTrips runs the trip builder for every user with a fix in the last
@@ -456,7 +581,7 @@ func (s *Server) ListMemberTrips(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := s.Pool.Query(r.Context(), `
 		SELECT id, user_id, started_at, ended_at, polyline, distance_m, matched, fixes, top_speed_mps, from_place, to_place
-		FROM trips WHERE user_id = $1 AND (ended_at IS NULL OR ended_at >= $2)
+		FROM trips WHERE user_id = $1 AND superseded_by IS NULL AND (ended_at IS NULL OR ended_at >= $2)
 		ORDER BY started_at`, memberID, since)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list trips")
