@@ -84,6 +84,10 @@ type Config struct {
 	// that key as app-visible quota, not a server secret.
 	TileURL          string
 	SatelliteTileURL string
+	// VectorMapsURL is the URL of the vector-map region index (regions.json)
+	// the app's Offline Maps screen reads (bray 2026-09-18). Empty = the app
+	// derives it from TileURL's origin when that is the self-hosted tile cache.
+	VectorMapsURL string
 
 	// APNs push notification credentials (optional; empty KeyFile disables APNs).
 	APNsKeyFile    string
@@ -194,6 +198,7 @@ func Load() Config {
 		NtfyBaseURL:           strings.TrimRight(getenv("NTFY_BASE_URL", ""), "/"),
 		TileURL:               getenv("TILE_URL", DefaultTileURL),
 		SatelliteTileURL:      getenv("SATELLITE_TILE_URL", DefaultSatelliteTileURL),
+		VectorMapsURL:         getenv("VECTOR_MAPS_URL", ""),
 		APNsKeyFile:           getenv("APNS_KEY_FILE", ""),
 		APNsKeyID:             getenv("APNS_KEY_ID", ""),
 		APNsTeamID:            getenv("APNS_TEAM_ID", ""),
