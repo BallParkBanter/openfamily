@@ -30,28 +30,49 @@ void main() {
       expect(at(400), MarkerLayout.normal);
       expect(at(400, prefer: true).mirrored, isTrue);
     });
-    test('40 px from the right edge: the slot badge (16 + its width past the point) flips left; nothing hidden', () {
+    test('at the right edge the slot badge (16 + its width past the point) flips left - where the name has room to mirror', () {
       expect(slotW + 16, greaterThan(40));
-      final MarkerLayout l = at(760);
+      final double x = 800 - 10 - nameBadgeWidth('Charlie') - 1;   // the last point where the mirrored name still fits
+      expect(x + slotW + 16, greaterThan(800));                     // and the slot badge no longer does
+      final MarkerLayout l = at(x);
       expect(l.mirrored, isTrue);
       expect(l.hideSlot, isFalse);
       expect(l.hideName, isFalse);
       expect(l.hideBattery, isFalse);
     });
-    test('at the left edge the name badge mirrors to the right (when that cuts less than putting the wider slot badge there)', () {
+    test('40 px from the right edge the name cannot mirror either (10 + its width), so it stays and the slot badge, which fits nowhere it may go, is hidden - never drawn cut', () {
+      expect(760 + 10 + nameBadgeWidth('Charlie'), greaterThan(800));
+      final MarkerLayout l = at(760);
+      expect(l.mirrored, isFalse);
+      expect(l.hideName, isFalse);
+      expect(l.hideSlot, isTrue);
+      expect(l.hideBattery, isFalse);
+    });
+    test('at the left edge the name badge mirrors to the right; the name comes first even when the slot badge then hangs off the left - and that one is hidden, not drawn cut', () {
       final Member fresh = Member(id: 'f', name: 'Fresh', status: MemberStatus.normal, position: centre, batteryPercent: 90, address: '', lastSeen: now);   // no slot badge
       expect(slotBadgeFor(fresh, now: now, inDrive: false), isNull);
-      expect(markerLayoutFor(x: 30, screenWidth: 800, m: fresh, label: 'Charlie', now: now, inDrive: false).mirrored, isTrue);
-      // a long name, 100 in: the name (10 + ~its width) is cut more on the left than the slot badge would be mirrored there
-      expect(nameBadgeWidth('Grandmother Josephine') + 10 - 100, greaterThan(slotW + 16 - 100));
-      expect(markerLayoutFor(x: 100, screenWidth: 800, m: c, label: 'Grandmother Josephine', now: now, inDrive: false).mirrored, isTrue);
-      // "Charlie" at 30: mirroring would push the wider slot badge off the left edge by more - the name stays, cut less
-      expect(nameBadgeWidth('Charlie') + 10 - 30, lessThan(slotW + 16 - 30));
-      expect(at(30).mirrored, isFalse);
+      expect(markerLayoutFor(x: 30, screenWidth: 800, m: fresh, label: 'Charlie', now: now, inDrive: false), const MarkerLayout(mirrored: true));
+      // "Charlie" at 30 with the wider "here for" badge: the name only fits mirrored, so it mirrors; the slot badge (16 + its width to the left) is cut there -> hidden
+      final MarkerLayout l = at(30);
+      expect(l.mirrored, isTrue);
+      expect(l.hideName, isFalse);
+      expect(l.hideSlot, isTrue);
+      expect(l.hideBattery, isFalse);
+    });
+    test('near the right edge where the name fits only unmirrored (a fanned pair pushed it there): the name stays, the slot badge that would be cut is hidden', () {
+      // x 746: mirrored the name would reach 10 + its width past 800; normal the slot badge would
+      final double nameW = nameBadgeWidth('Charlie');
+      expect(746 + 10 + nameW, greaterThan(800));
+      final MarkerLayout l = at(746, prefer: true);
+      expect(l.mirrored, isFalse);
+      expect(l.hideName, isFalse);
+      expect(l.hideSlot, isTrue);
     });
     test('the edge beats the pair\'s preference, not the other way round', () {
-      expect(at(760, prefer: false).mirrored, isTrue);
-      expect(at(30, prefer: true).mirrored, isFalse);
+      final double x = 800 - 10 - nameBadgeWidth('Charlie') - 1;
+      expect(at(x, prefer: false).mirrored, isTrue);
+      expect(at(30, prefer: true).mirrored, isTrue);
+      expect(at(30, prefer: false).mirrored, isTrue);
     });
     test('a badge that fits on neither side is hidden', () {
       final double nameW = nameBadgeWidth('Charlie');
@@ -64,20 +85,21 @@ void main() {
     });
   });
 
-  testWidgets('on a real map: a member 40 px from the right edge draws the slot badge on the left, and gets it back on the right once the camera puts them mid-screen', (t) async {
+  testWidgets('on a real map: near the right edge the slot badge flips left of the ring; 40 px from it the name stays and the slot badge is hidden; mid-screen the normal layout is back', (t) async {
     t.view.physicalSize = const Size(1600, 2560);
     t.view.devicePixelRatio = 2.0;
     addTearDown(t.view.reset);
-    // zoom 15: 256 * 2^15 / 360 px per degree of longitude -> 360 px east of the centre = x 760 on an 800 screen
+    // zoom 15: 256 * 2^15 / 360 px per degree of longitude
     const double degPerPx = 360 / (256 * 32768);
-    final Member c = charlie(at: LatLng(centre.latitude, centre.longitude + 360 * degPerPx));
+    final double flipX = 800 - 10 - nameBadgeWidth('Charlie') - 3;   // 3 of air for the projection's rounding
+    Member at(double x) => charlie(at: LatLng(centre.latitude, centre.longitude + (x - 400) * degPerPx));
     final MapController ctl = MapController();
-    Widget app() => MaterialApp(home: Scaffold(body: FlutterMap(
+    Widget app(Member m) => MaterialApp(home: Scaffold(body: FlutterMap(
       mapController: ctl,
       options: const MapOptions(initialCenter: centre, initialZoom: 15),
       children: [
         MemberMarkerLayer(
-          members: [c],
+          members: [m],
           onMemberTap: (_) {},
           onMemberHold: (_) {},
           labelFor: (_) => 'Charlie',
@@ -87,19 +109,31 @@ void main() {
         ),
       ],
     )));
-    await t.pumpWidget(app());
+    // the flip
+    await t.pumpWidget(app(at(flipX)));
     await t.pump();
-    final Rect ring = t.getRect(find.byKey(const Key('bray-ring')));
-    expect(ring.center.dx, closeTo(760, 1));
-    final Rect slot = t.getRect(find.byKey(const Key('slot-badge')));
-    expect(slot.right, lessThanOrEqualTo(800));
-    expect(slot.right, lessThan(ring.center.dx));                                    // flipped to the left
+    Rect ring = t.getRect(find.byKey(const Key('bray-ring')));
+    expect(ring.center.dx, closeTo(flipX, 1));
+    Rect slot = t.getRect(find.byKey(const Key('slot-badge')));
+    expect(slot.right, lessThan(ring.center.dx));                                            // flipped to the left
     expect(t.getRect(find.byKey(const Key('bray-name-tag'))).left, greaterThan(ring.center.dx));   // the name went right
-    ctl.move(c.position!, 15);   // the camera change: Charlie mid-screen
+    expect(t.getRect(find.byKey(const Key('bray-name-tag'))).right, lessThanOrEqualTo(800));       // whole
+    // 40 px from the edge
+    await t.pumpWidget(app(at(760)));
     await t.pump();
-    final Rect ring2 = t.getRect(find.byKey(const Key('bray-ring')));
-    expect(ring2.center.dx, closeTo(400, 1));
-    expect(t.getRect(find.byKey(const Key('slot-badge'))).left, greaterThan(ring2.center.dx));   // back on the right
-    expect(t.getRect(find.byKey(const Key('bray-name-tag'))).right, lessThan(ring2.center.dx));
+    ring = t.getRect(find.byKey(const Key('bray-ring')));
+    expect(ring.center.dx, closeTo(760, 1));
+    expect(find.byKey(const Key('slot-badge')), findsNothing);                                // hidden, not cut
+    final Rect name = t.getRect(find.byKey(const Key('bray-name-tag')));
+    expect(name.right, lessThan(ring.center.dx));                                             // the name stays on its side, whole
+    // the camera change: Charlie mid-screen
+    final Member c = at(760);
+    await t.pumpWidget(app(c));
+    ctl.move(c.position!, 15);
+    await t.pump();
+    ring = t.getRect(find.byKey(const Key('bray-ring')));
+    expect(ring.center.dx, closeTo(400, 1));
+    expect(t.getRect(find.byKey(const Key('slot-badge'))).left, greaterThan(ring.center.dx));   // back on the right
+    expect(t.getRect(find.byKey(const Key('bray-name-tag'))).right, lessThan(ring.center.dx));
   });
 }

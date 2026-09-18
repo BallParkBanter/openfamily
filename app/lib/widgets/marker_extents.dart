@@ -202,9 +202,13 @@ class MarkerLayout {
 /// The badge layout for a marker whose point is at screen [x]. The name and
 /// slot badges share the band above the ring, so they always take opposite
 /// sides and swap together: the right-hand slot badge flips left at the
-/// right edge, the name badge mirrors to the right at the left edge - the
-/// side that cuts less wins, [prefer] (a fanned pair's outward side) only
-/// breaks a tie. A badge that fits on neither side is hidden.
+/// right edge, the name badge mirrors to the right at the left edge. The
+/// name comes first - a layout that keeps the name whole wins over one
+/// that keeps the slot badge whole; between two that both do (or neither),
+/// the side that cuts less wins, and [prefer] (a fanned pair's outward
+/// side) only breaks a tie. Anything still cut in the chosen layout is
+/// hidden rather than drawn cut (5b: "nothing cut off, ever") - it fits on
+/// neither side, or its band-mate needed the side it fits.
 MarkerLayout markerLayoutFor({
   required double x,
   required double screenWidth,
@@ -216,19 +220,23 @@ MarkerLayout markerLayoutFor({
 }) {
   final SlotBadgeSpec? badge = slotBadgeFor(m, now: now, inDrive: inDrive);
   final bool battery = batteryBadgeFor(percent: m.batteryPercent, charging: m.charging == true) != null;
-  final List<BadgeReach> reaches = <BadgeReach>[
-    nameBadgeReach(label),
-    if (badge != null) slotBadgeReach(badge),
-    if (battery) batteryBadgeReach,
-  ];
+  final BadgeReach name = nameBadgeReach(label);
+  final BadgeReach? slot = badge == null ? null : slotBadgeReach(badge);
+  final List<BadgeReach> reaches = <BadgeReach>[name, if (slot != null) slot, if (battery) batteryBadgeReach];
+  bool fits(BadgeReach r, bool mirrored) => r.fits(x: x, screenWidth: screenWidth, mirrored: mirrored);
   double cut(bool mirrored) => reaches.fold(0, (double sum, BadgeReach r) => sum + r.cut(x: x, screenWidth: screenWidth, mirrored: mirrored));
-  final double normal = cut(false), flipped = cut(true);
-  final bool mirrored = flipped < normal || (flipped == normal && prefer);
-  bool neither(BadgeReach r) => !r.fits(x: x, screenWidth: screenWidth, mirrored: false) && !r.fits(x: x, screenWidth: screenWidth, mirrored: true);
+  final bool nameNormal = fits(name, false), nameFlipped = fits(name, true);
+  final bool mirrored;
+  if (nameNormal != nameFlipped) {
+    mirrored = nameFlipped;                       // the name comes first
+  } else {
+    final double normal = cut(false), flipped = cut(true);
+    mirrored = flipped < normal || (flipped == normal && prefer);
+  }
   return MarkerLayout(
     mirrored: mirrored,
-    hideName: neither(nameBadgeReach(label)),
-    hideSlot: badge != null && neither(slotBadgeReach(badge)),
-    hideBattery: battery && neither(batteryBadgeReach),
+    hideName: !fits(name, mirrored),
+    hideSlot: slot != null && !fits(slot, mirrored),
+    hideBattery: battery && !fits(batteryBadgeReach, mirrored),
   );
 }
