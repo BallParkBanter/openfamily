@@ -125,7 +125,7 @@ class _OfflineMapsScreenState extends State<OfflineMapsScreen> {
       appBar: AppBar(
         title: const Text('Offline maps'),
         actions: <Widget>[
-          IconButton(icon: const Icon(Icons.refresh), tooltip: 'Check the server', onPressed: _refreshing ? null : _refresh),
+          IconButton(icon: const Icon(Icons.refresh), onPressed: _refreshing ? null : _refresh),
         ],
       ),
       body: ListView(
@@ -264,7 +264,7 @@ class _RegionTile extends StatelessWidget {
         trailing = FilledButton.tonalIcon(onPressed: onDownload, icon: const Icon(Icons.download, size: 18), label: const Text('Download'));
       case PackStatus.downloading:
         subtitle = '${(state.progress * 100).toStringAsFixed(0)}% of ${formatBytes(r.bytes)}';
-        trailing = IconButton(icon: const Icon(Icons.close), tooltip: 'Cancel', onPressed: onCancel);
+        trailing = IconButton(icon: const Icon(Icons.close), onPressed: onCancel);
       case PackStatus.installed:
         subtitle = 'Downloaded · ${formatBytes(state.installed!.bytes)} · ${formatVersion(state.installed!.version)}${volumeLabel != null ? ' · $volumeLabel' : ''}';
         trailing = _menu(context, update: false);
