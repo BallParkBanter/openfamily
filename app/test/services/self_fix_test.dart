@@ -45,4 +45,20 @@ void main() {
     expect(LocationReporter.movingPostInterval, const Duration(seconds: 2));
     expect(LocationReporter.minPostInterval, const Duration(seconds: 5));
   });
+
+  test('2026-09-18 (Bo driving, the marker wobble): while the server frame is fresh (the echo of the last fix, under 8 s), the device fix gives speed / heading / drive state only - position, lastSeen, accuracy and the road snap stay with the server frame; a server more than 8 s behind hands the position to the device', () {
+    final SelfFix fix = SelfFix(position: const LatLng(33.91, -84.21), at: now, speedMps: 20, headingDeg: 95, accuracy: 6);
+    final Member fresh = withSelfLive([m('bo', mph: 0, seen: now.subtract(const Duration(seconds: 5)))], 'bo', fix, now).single;
+    expect(fresh.speedMph, 45);
+    expect(fresh.headingDeg, 95);
+    expect(fresh.movement, MovementType.car);
+    expect(fresh.position, const LatLng(33.9, -84.2));          // the server's
+    expect(fresh.lastSeen, now.subtract(const Duration(seconds: 5)));
+    expect(fresh.road, isNotNull);                                // the snap stays: the reckoning walks it
+    expect(kSelfServerLate, const Duration(seconds: 8));
+    final Member late = withSelfLive([m('bo', mph: 0, seen: now.subtract(const Duration(seconds: 9)))], 'bo', fix, now).single;
+    expect(late.position, const LatLng(33.91, -84.21));
+    expect(late.lastSeen, now);
+    expect(late.road, isNull);
+  });
 }

@@ -105,7 +105,10 @@ class MotionTracker {
         _motions[m.id] = nm;
         continue;
       }
-      if (cur.fix == fix && cur.fixAt == fixAt) continue;   // the same fix again (a presence frame)
+      // the same position is the same fix (a presence frame, or - 2026-09-18, Charlie's relay - a
+      // frame from a non-primary device that bumps lastSeen without moving the member): re-basing the
+      // reckoning at a 60-s-old position with a fresh time pulled the point 160 m back every 10 s
+      if (cur.fix == fix) continue;
       // advance the drawn point to this instant first, so the new fix re-aims a moving point
       _advance(cur, now);
       final LatLng prevFix = cur.fix;

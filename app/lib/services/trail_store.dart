@@ -5,14 +5,25 @@
 // current drive, ending under the marker"): the drive line's data lives
 // HERE, for every member, whether or not anyone is focused.
 //
-// - Crumbs: every drawn position of every member, >= 10 m apart, from every
+// - Crumbs: every DRAWN position of every member, >= 10 m apart, from every
 //   frame the map builds (MapScreen.build -> observe), kept for the open
-//   drive (<= maxCrumbs). A crumb is the member's SNAPPED position when the
-//   frame carries `road` (the server snaps every moving fix); raw only when
-//   there is no snap - and raw crumbs are smoothed (a 3-point moving average
-//   of the raw fixes) and a crumb within max(accuracy, 8 m) of the line
-//   between its neighbours is dropped (w1c.png: "stay on a straight line on
-//   the road"). A member not in a drive keeps only their last crumb.
+//   drive (<= maxCrumbs). The drawn position is the dead-reckoned point
+//   (utils/dead_reckoning.dart) - ON the road when the server snapped the
+//   fix, because the reckoning walks the snap's road path. 2026-09-18 (Bo
+//   driving, "draws all kinds of crazy stuff"): the crumb is ALWAYS the
+//   drawn position. It used to be `road.point` (the snap of the LAST FIX)
+//   whenever the frame carried a snap - for the viewer that point arrives
+//   ~1 s after the device fix, 20-30 m BEHIND the crumbs already taken from
+//   the reckoned point (a backward tooth per fix), and it does not move for
+//   the next 4 s, so no crumbs at all while the car covers 150 m (dashes and
+//   blanks at speed). A frame's `road` now only says the position is on the
+//   road: raw (no snap) crumbs are smoothed (a 3-point moving average) and a
+//   raw crumb within max(accuracy, 8 m) of the line between its neighbours
+//   is dropped (w1c.png: "stay on a straight line on the road"). A step the
+//   car could not have driven (> maxCrumbSpeedMps between two frames) is a
+//   pull or a snap of the drawn point, not driving: no crumb, so the line
+//   never follows a pull as a chord. A member not in a drive keeps only
+//   their last crumb.
 // - The open drive's server-matched polyline (services/trips_service.dart):
 //   fetched every 60 s for every member currently in a drive (and anyone
 //   still holding a line, to see it close), focus or not.
@@ -59,9 +70,11 @@ class TrailStore extends ChangeNotifier {
   static const Duration joinGap = Duration(seconds: 30);   // ...nor two crumbs further apart than this in time
   static const double rawSlackMeters = 8;   // a raw crumb this close to the line between its neighbours is jitter
   static const int rawSmoothing = 3;        // the moving average over the last raw fixes
+  static const double maxCrumbSpeedMps = 70;   // faster than this between two frames the drawn point is being pulled / snapped, not driven (157 mph)
 
   final Map<String, List<TrailCrumb>> _crumbs = <String, List<TrailCrumb>>{};
   final Map<String, List<LatLng>> _raw = <String, List<LatLng>>{};   // the last raw fixes per member, for the moving average
+  final Map<String, TrailCrumb> _lastDrawn = <String, TrailCrumb>{};   // where each member was drawn last frame and when (the clock), for the pull guard
   final Map<String, List<LatLng>> _lines = <String, List<LatLng>>{};  // the open drive's matched polyline per member
   final Set<String> _driving = <String>{};
   final Set<String> _fetching = <String>{};
@@ -91,14 +104,26 @@ class TrailStore extends ChangeNotifier {
         _crumbs.remove(m.id);
         _raw.remove(m.id);
         _lines.remove(m.id);
+        _lastDrawn.remove(m.id);
         continue;
       }
       final List<TrailCrumb> crumbs = _crumbs.putIfAbsent(m.id, () => <TrailCrumb>[]);
-      final DateTime at = m.lastSeen ?? _clock();
-      final LatLng? snapped = m.road?.point;
-      if (snapped != null) {
+      final DateTime now = _clock();
+      final DateTime at = m.lastSeen ?? now;
+      // the pull guard: a step between two frames faster than a car goes is the drawn point being pulled / snapped
+      final TrailCrumb? last = _lastDrawn[m.id];
+      _lastDrawn[m.id] = TrailCrumb(p, now);
+      if (last != null) {
+        final double dt = now.difference(last.at).inMilliseconds / 1000;
+        if (dt > 0 && const Distance().as(LengthUnit.Meter, last.point, p) / dt > maxCrumbSpeedMps) {
+          _raw.remove(m.id);   // the moving average must not mix the two sides of a pull
+          continue;
+        }
+      }
+      if (m.road != null) {
+        // on the road (the reckoning walks the snap's path): the drawn point as it is
         _raw.remove(m.id);
-        _addCrumb(crumbs, snapped, at);
+        _addCrumb(crumbs, p, at);
       } else {
         // raw: smooth over the last fixes, then keep only what bends the line
         final List<LatLng> raw = _raw.putIfAbsent(m.id, () => <LatLng>[]);
@@ -146,6 +171,7 @@ class TrailStore extends ChangeNotifier {
         _lines.remove(id);
         _crumbs.remove(id);
         _raw.remove(id);
+        _lastDrawn.remove(id);
       }
       notifyListeners();
     } catch (e) {
@@ -274,6 +300,7 @@ class TrailStore extends ChangeNotifier {
   void reset() {
     _crumbs.clear();
     _raw.clear();
+    _lastDrawn.clear();
     _lines.clear();
     _driving.clear();
     stop();

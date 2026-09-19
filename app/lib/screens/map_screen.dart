@@ -17,6 +17,7 @@ import '../services/battery_optimization_service.dart';
 import '../services/map_layer_preference.dart';
 import '../services/map_visibility_store.dart';
 import '../services/self_fix.dart';
+import '../services/retry_tile_provider.dart' show kTileTrace;
 import '../services/tile_cache.dart';
 import '../services/tile_prefetch.dart';
 import '../services/trail_store.dart';
@@ -167,6 +168,12 @@ class _MapScreenState extends State<MapScreen>
 
   /// bray: the cached tile provider, one per screen (its Dio client lives with it).
   final TileProvider _tiles = TileCache.instance.provider();
+  /// 2026-09-18 tile tracing: the throttled update stream, each event logged after the throttle.
+  static final StreamTransformer<TileUpdateEvent, TileUpdateEvent> _tracedThrottle = StreamTransformer<TileUpdateEvent, TileUpdateEvent>.fromBind(
+      (Stream<TileUpdateEvent> s) => s.transform(TileUpdateTransformers.throttle(const Duration(milliseconds: 300))).map((TileUpdateEvent e) {
+            if (kTileTrace) debugPrint('tile update z=${e.camera.zoom.toStringAsFixed(2)} load=${e.load} prune=${e.prune} ${e.mapEvent.runtimeType}');
+            return e;
+          }));
 
   // Camera animation controller for smooth recentering.
   AnimationController? _cameraAnim;
@@ -1417,7 +1424,7 @@ class _MapScreenState extends State<MapScreen>
                     // Live 16:16 (Bo driving, follow mode): the camera moves every
                     // frame; schedule tile loads/prunes a few times a second, not
                     // per frame, and keep a wider ring of tiles around the view.
-                    tileUpdateTransformer: TileUpdateTransformers.throttle(const Duration(milliseconds: 300)),
+                    tileUpdateTransformer: _tracedThrottle,
                     keepBuffer: 3,
                     panBuffer: 1,
                     maxNativeZoom: 18,
@@ -1428,7 +1435,7 @@ class _MapScreenState extends State<MapScreen>
                       urlTemplate: kTileUrl,
                       userAgentPackageName: 'app.openfamily',
                       tileProvider: _tiles,
-                      tileUpdateTransformer: TileUpdateTransformers.throttle(const Duration(milliseconds: 300)),
+                      tileUpdateTransformer: _tracedThrottle,
                       keepBuffer: 3,
                       panBuffer: 1,
                       // Bo 21:28: the loaded tiles of the last zoom stay under a new zoom's until its own

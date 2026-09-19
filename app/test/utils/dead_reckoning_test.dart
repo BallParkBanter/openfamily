@@ -88,4 +88,20 @@ void main() {
     tr.drawnAt('p', t0.add(const Duration(seconds: 4)));
     expect(tr.activeAt(t0.add(const Duration(seconds: 4))), isFalse);
   });
+
+  test('2026-09-18 (Charlie\'s relay): a frame with the SAME position and a newer lastSeen is the same fix - the reckoning is not re-based and the drawn point never goes back', () {
+    final MotionTracker tr = MotionTracker();
+    // the primary fix at t0, 25 m/s north; the relay bumps lastSeen every 10 s without moving the position
+    double lastNorth = -1;
+    for (double sec = 0; sec <= 30; sec += 0.5) {
+      final DateTime now = t0.add(Duration(milliseconds: (sec * 1000).round()));
+      final DateTime seen = t0.add(Duration(seconds: (sec ~/ 10) * 10));
+      tr.observe([mk('charlie', north(0), seen, mph: 56, heading: 0)], now);
+      final double n = (tr.drawnAt('charlie', now)!.latitude - start.latitude) * mPerDegLat;
+      expect(n, greaterThanOrEqualTo(lastNorth - 0.01), reason: 'went back at $sec s: $lastNorth -> $n');
+      lastNorth = n;
+    }
+    expect(lastNorth, closeTo(250, 5));   // 10 s of reckoning (the cap), then held - never 3 x 250
+    expect(tr.isReckoning('charlie', t0.add(const Duration(seconds: 30))), isFalse);
+  });
 }
