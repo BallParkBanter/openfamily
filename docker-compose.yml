@@ -58,6 +58,8 @@ services:
       # Raster tile templates on GET /config. Empty uses OSM street + Esri satellite.
       TILE_URL: ${TILE_URL:-}
       SATELLITE_TILE_URL: ${SATELLITE_TILE_URL:-}
+      # bray 2026-09-18: the offline-maps region index the app reads (tiles nginx /vector/regions.json)
+      VECTOR_MAPS_URL: ${VECTOR_MAPS_URL:-}
       # APNs (iOS push). Empty disables APNs; Android still works via ntfy.
       # To enable iOS push, add a volume mount to this service:
       #   volumes:
