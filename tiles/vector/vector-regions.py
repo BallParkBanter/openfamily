@@ -74,12 +74,13 @@ BUNDLES = {
  "ga-neighbors": ("Georgia + neighbors", union(["ga", "al", "tn", "nc", "sc", "fl"])),
  "atlanta-metro": ("Atlanta metro", [-85.20, 33.20, -83.40, 34.50]),
 }
-# what each Geofabrik set covers (its bbox); a region is offered when its bbox lies inside
-SETS = {
- "us-south": union(["al", "ar", "fl", "ga", "ky", "la", "ms", "nc", "ok", "sc", "tn", "tx", "va", "wv"]),
- "us": [-179.2, 18.9, -66.9, 71.4],
-}
-def inside(b, s): return b[0] >= s[0] - 0.01 and b[1] >= s[1] - 0.01 and b[2] <= s[2] + 0.01 and b[3] <= s[3] + 0.01
+# what each Geofabrik set contains (state ids); a region is offered when every
+# state it needs is in the set (a bbox test alone offered Kansas/Missouri/DC
+# from us-south: inside the union box, outside the data)
+US_SOUTH = ["al", "ar", "fl", "ga", "ky", "la", "ms", "nc", "ok", "sc", "tn", "tx", "va", "wv"]
+BUNDLE_STATES = {"ga-neighbors": ["ga", "al", "tn", "nc", "sc", "fl"], "atlanta-metro": ["ga"]}
+SETS = {"us-south": (US_SOUTH, union(US_SOUTH)), "us": (list(STATES), [-179.2, 18.9, -66.9, 71.4])}
+def offered(rid, members): return set(BUNDLE_STATES.get(rid, [rid])) <= set(members)
 
 def extract(src, dst, bbox, log):
     tmp = dst + ".part"
@@ -102,10 +103,17 @@ def main():
     by_id = {r["id"]: r for r in idx.get("regions", [])}
     def log(m): print(f"{datetime.now(timezone.utc).isoformat(timespec='seconds')} regions[{name}]: {m}", flush=True)
     os.makedirs(os.path.join(VT, "regions"), exist_ok=True)
-    cover = SETS[name]
+    members, cover = SETS[name]
     n = 0
+    # packs of regions this set no longer offers (an earlier, looser cut) go away
+    for rid in list(by_id):
+        if by_id[rid].get("set") == name and not offered(rid, members):
+            by_id.pop(rid)
+            try: os.remove(os.path.join(VT, "regions", f"{rid}.pmtiles"))
+            except OSError: pass
+            log(f"dropped {rid}: not in {name}")
     for rid, (label, bbox) in {**STATES, **BUNDLES}.items():
-        if not inside(bbox, cover): continue
+        if not offered(rid, members): continue
         dst = os.path.join(VT, "regions", f"{rid}.pmtiles")
         # the full-US set supersedes us-south; us-south never overwrites a newer full-US pack
         old = by_id.get(rid)
