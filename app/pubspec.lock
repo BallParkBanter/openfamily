@@ -1287,10 +1287,9 @@ packages:
   vector_map_tiles:
     dependency: "direct main"
     description:
-      name: vector_map_tiles
-      sha256: "4dc9243195c1a49c7be82cc1caed0d300242bb94381752af5f6868d9d1404e25"
-      url: "https://pub.dev"
-    source: hosted
+      path: "packages/vector_map_tiles"
+      relative: true
+    source: path
     version: "8.0.0"
   vector_map_tiles_pmtiles:
     dependency: "direct main"

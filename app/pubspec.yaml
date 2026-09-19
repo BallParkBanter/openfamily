@@ -89,6 +89,12 @@ dev_dependencies:
 dependency_overrides:
   background_locator_2:
     path: packages/background_locator_2
+  # bray 2026-09-19: vector_map_tiles 8.0.0 with one change - the label layer
+  # (lib/src/grid/tile/delay_painter.dart) stays on screen while the camera
+  # moves instead of blanking until 500 ms of stillness, which the app's
+  # per-frame follow / fit camera never gives it. Everything else is upstream.
+  vector_map_tiles:
+    path: packages/vector_map_tiles
 
 flutter:
   uses-material-design: true
