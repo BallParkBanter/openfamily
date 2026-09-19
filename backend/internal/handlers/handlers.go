@@ -60,6 +60,8 @@ type Server struct {
 	// TileURL and SatelliteTileURL are raster templates advertised on GET /config.
 	TileURL          string
 	SatelliteTileURL string
+	// VectorMapsURL is the regions.json the app's Offline Maps screen reads (bray 2026-09-18).
+	VectorMapsURL string
 
 	// PublicBaseURL is the https origin used to build SMS share links.
 	PublicBaseURL string

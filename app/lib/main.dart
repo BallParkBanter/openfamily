@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'screens/login_screen.dart';
@@ -13,6 +14,8 @@ import 'services/session_gate.dart';
 import 'services/theme_preference.dart';
 import 'services/tile_config.dart';
 import 'services/token_storage.dart';
+import 'services/map_layer_preference.dart';
+import 'services/offline_maps.dart';
 import 'services/tile_cache.dart';
 import 'theme/app_theme.dart';
 import 'widgets/biometric_app_lock.dart';
@@ -30,6 +33,8 @@ Future<void> main() async {
   PushService.initialize();
   await ThemePreferenceService.load();
   await TileCache.init();   // bray: open the on-disk tile cache before the first map paints
+  await MapLayerPreference.load();   // bray 2026-09-18: vector or raster street layer
+  await OfflineMaps.instance.init();   // bray 2026-09-18: the installed map packs, before the first map paints
   runApp(const OpenFamilyApp());
 }
 
@@ -133,6 +138,8 @@ class _SessionGateState extends State<_SessionGate> {
     }
 
     await TileConfig.instance.refresh();
+    // bray 2026-09-18: the server's region list (cached for offline starts), then the weekly Wi-Fi update
+    unawaited(OfflineMaps.instance.refreshIndex().then((_) => OfflineMaps.instance.autoUpdateIfDue()));
 
     try {
       await TokenStorage.syncFromBackgroundStore();

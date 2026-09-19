@@ -2,6 +2,9 @@ import 'package:android_intent_plus/android_intent.dart';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+
+import '../services/tile_cache.dart';
+import '../widgets/street_layer.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../models/member.dart';
@@ -412,10 +415,7 @@ class _AccuracyMapPreview extends StatelessWidget {
             ),
           ),
           children: [
-            TileLayer(
-              urlTemplate: kTileUrl,
-              userAgentPackageName: 'app.openfamily',
-            ),
+            StreetLayer(raster: TileLayer(urlTemplate: kTileUrl, userAgentPackageName: 'app.openfamily', tileProvider: TileCache.instance.provider())),   // bray 2026-09-18: vector packs / stream, raster on the Settings fallback
             CircleLayer(
               circles: [
                 CircleMarker(

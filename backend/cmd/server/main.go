@@ -70,6 +70,7 @@ func main() {
 	srv.Matcher = handlers.NewMatcher(os.Getenv("VALHALLA_URL")) // bray 5b: road snapping; empty = raw only
 	srv.TileURL = cfg.TileURL
 	srv.SatelliteTileURL = cfg.SatelliteTileURL
+	srv.VectorMapsURL = cfg.VectorMapsURL
 	srv.APNsConfigured = cfg.APNsKeyFile != ""
 	srv.SMSEnv = sms.Settings{
 		AccountSID:    cfg.TwilioAccountSID,

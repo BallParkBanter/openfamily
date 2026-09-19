@@ -9,7 +9,10 @@ import '../services/biometric_service.dart';
 import '../services/location_sharing_service.dart';
 import '../services/push_service.dart';
 import '../services/server_config.dart';
+import '../services/map_layer_preference.dart';
+import '../services/offline_maps.dart';
 import '../services/theme_preference.dart';
+import 'offline_maps_screen.dart';
 import '../theme/app_theme.dart';
 import '../widgets/dot_grid.dart';
 import 'profile_screen.dart';
@@ -431,6 +434,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const Divider(height: 1),
             const _SectionHeader('Appearance'),
             const _AppearanceTile(),
+            const Divider(height: 1),
+            const _SectionHeader('Map'),
+            // bray 2026-09-18: offline maps (packs on the device) and the
+            // vector / classic street layer switch (Offline Maps screen).
+            ListTile(
+              leading: const Icon(Icons.map_outlined, color: AppColors.accentInk),
+              title: const Text('Offline maps'),
+              subtitle: ListenableBuilder(
+                listenable: OfflineMaps.instance,
+                builder: (BuildContext context, _) {
+                  final int n = OfflineMaps.instance.installed.length;
+                  return Text(n == 0 ? 'Download regions to use the map without a connection' : '$n region${n == 1 ? '' : 's'} downloaded');
+                },
+              ),
+              trailing: const Icon(Icons.chevron_right, color: AppColors.textMuted),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const OfflineMapsScreen())),
+            ),
+            ValueListenableBuilder<StreetLayerKind>(
+              valueListenable: MapLayerPreference.layer,
+              builder: (BuildContext context, StreetLayerKind kind, _) => SwitchListTile(
+                secondary: const Icon(Icons.layers_outlined, color: AppColors.accentInk),
+                title: const Text('Vector street map'),
+                subtitle: Text(kind == StreetLayerKind.vector ? 'Drawn on the device; works offline with downloaded regions' : 'Off: classic OSM picture tiles from the server'),
+                value: kind == StreetLayerKind.vector,
+                onChanged: (bool v) => MapLayerPreference.set(v ? StreetLayerKind.vector : StreetLayerKind.raster),
+              ),
+            ),
             const Divider(height: 1),
             const _SectionHeader('Privacy & Security'),
           SwitchListTile(
