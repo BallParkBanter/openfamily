@@ -35,6 +35,7 @@ class PlacePickerScreen extends StatefulWidget {
     required this.icon,
     this.type = 'custom',
     this.initial,
+    this.tileProvider,
   });
 
   final String placeName;
@@ -46,6 +47,11 @@ class PlacePickerScreen extends StatefulWidget {
 
   /// When editing an existing place, its current values seed the picker.
   final Place? initial;
+
+  /// The street tiles' source; null = the app's cached, retrying provider.
+  /// Tests hand in one that never touches the network (the retry timers of a
+  /// 400 from flutter_test's HttpClient otherwise outlive the test).
+  final TileProvider? tileProvider;
 
   @override
   State<PlacePickerScreen> createState() => _PlacePickerScreenState();
@@ -241,7 +247,7 @@ class _PlacePickerScreenState extends State<PlacePickerScreen> {
                     },
                   ),
                   children: [
-                    StreetLayer(raster: TileLayer(urlTemplate: kTileUrl, userAgentPackageName: 'app.openfamily', tileProvider: TileCache.instance.provider())),   // bray 2026-09-18: vector packs / stream, raster on the Settings fallback
+                    StreetLayer(raster: TileLayer(urlTemplate: kTileUrl, userAgentPackageName: 'app.openfamily', tileProvider: widget.tileProvider ?? TileCache.instance.provider())),   // bray 2026-09-18: vector packs / stream, raster on the Settings fallback
                     // The geofence radius, drawn live around the pin.
                     CircleLayer(
                       circles: [
