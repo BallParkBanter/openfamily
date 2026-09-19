@@ -14,9 +14,9 @@ import 'package:openfamily/widgets/place_text.dart';
 import 'package:openfamily/widgets/poi_chip.dart';
 
 final DateTime now = DateTime.utc(2026, 9, 14, 15, 30);
-Member m(String name, {int? mph, MemberPlace? place, LatLng? at = const LatLng(34.0074, -83.9116)}) => Member(
+Member m(String name, {int? mph, MemberPlace? place, LatLng? at = const LatLng(34.0074, -83.9116), DateTime? seen}) => Member(
     id: name, name: name, position: at, status: MemberStatus.normal, batteryPercent: 80, address: 'Stationary',
-    movement: mph == null ? MovementType.none : MovementType.car, speedMph: mph, lastSeen: now, place: place);
+    movement: mph == null ? MovementType.none : MovementType.car, speedMph: mph, lastSeen: seen ?? now, place: place);
 MemberPlace poi(String kind, {String name = 'X', Duration parked = const Duration(minutes: 10), String? placeName, bool atHome = false}) =>
     MemberPlace(poiName: name, poiKind: kind, street: 'Dacula Road', city: 'Dacula', homeDistanceM: 16257,
         since: now.subtract(parked), placeName: placeName, atHome: atHome);
@@ -72,6 +72,13 @@ void main() {
     expect(isParkedAtPoi(m('Charlie', place: MemberPlace(poiName: 'X', poiKind: 'school', since: now.subtract(const Duration(hours: 1)))), now: now), isTrue);
     expect(isParkedAtPoi(m('Charlie', place: poi('school'), at: null), now: now), isFalse);
     expect(kPoiChipMinStationary, const Duration(minutes: 5));
+  });
+
+  test("a stale fix is parked whatever speed it carried (Charlie's last fix at school read 2.5 mph for hours)", () {
+    final DateTime old = now.subtract(kStaleAfter + const Duration(seconds: 1));
+    expect(isParkedAtPoi(m('Charlie', mph: 3, place: poi('school'), seen: old), now: now), isTrue);
+    expect(isParkedAtPoi(m('Charlie', mph: 3, place: poi('school')), now: now), isFalse);
+    expect(isParkedAtPoi(m('Charlie', mph: 3, place: poi('school', parked: const Duration(minutes: 1)), seen: old), now: now), isFalse);
   });
 
   testWidgets('PoiChip: the round house chip (44 px white) with the kind emoji', (t) async {

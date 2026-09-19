@@ -108,10 +108,13 @@ bool isParkedAtPoi(Member m, {DateTime? now}) {
   final MemberPlace? place = m.place;
   if (place == null || place.poiName == null || place.atHome || place.placeName != null) return false;
   if (m.position == null) return false;
-  if ((m.speedMph ?? 0) >= 1) return false;
+  // A stale fix is not moving, whatever speed it carried (Member.isStaleAt):
+  // Charlie's last fix at school read 2.5 mph and hid the chip for hours.
+  final DateTime at = now ?? DateTime.now();
+  if (!m.isStaleAt(at) && (m.speedMph ?? 0) >= 1) return false;
   final DateTime? since = place.since;
   if (since == null) return false;
-  return (now ?? DateTime.now()).difference(since) >= kPoiChipMinStationary;
+  return at.difference(since) >= kPoiChipMinStationary;
 }
 
 /// One line saying where the member is (card chip; their address slot).
