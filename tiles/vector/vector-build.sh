@@ -5,7 +5,7 @@
 # packs (regions/*.pmtiles) and write regions.json for the OpenFamily app.
 #   vector-build.sh us-south osm/us-south-latest.osm.pbf     (~1 h)
 #   vector-build.sh us       osm/us-latest.osm.pbf           (hours)
-# Niced, cpus 4, 14g; pause/unpause during the 08:00-09:30 UTC backup window
+# Niced, cpus 4, PLANETILER_MEM (14g; the full US: 18g with PLANETILER_XMX=12g); pause/unpause during the 08:00-09:30 UTC backup window
 # is done by the caller's cron (container name planetiler-NAME).
 # Temp storage (node map, sorted features - random reads) goes on the SSD
 # (/var/tmp/planetiler on /), NOT on DATA3: the first attempt with mmap temp
@@ -22,8 +22,8 @@ log() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" | tee -a "$VT/log/vector.log"
 log "start $NAME from $PBF -> $OUT"
 docker rm -f "planetiler-$NAME" >/dev/null 2>&1 || true
 mkdir -p /var/tmp/planetiler
-docker run --name "planetiler-$NAME" --cpus 4 --cpu-shares 256 --memory 14g --memory-swap 14g \
-  -e JAVA_TOOL_OPTIONS="-Xmx9g" -v "$VT:/data" -v /var/tmp/planetiler:/tmp/planetiler -w /data \
+docker run --name "planetiler-$NAME" --cpus 4 --cpu-shares 256 --memory "${PLANETILER_MEM:-14g}" --memory-swap "${PLANETILER_MEM:-14g}" \
+  -e JAVA_TOOL_OPTIONS="-Xmx${PLANETILER_XMX:-9g}" -v "$VT:/data" -v /var/tmp/planetiler:/tmp/planetiler -w /data \
   --entrypoint sh ghcr.io/onthegomap/planetiler:latest -c \
   "nice -n 19 java -cp @/app/jib-classpath-file com.onthegomap.planetiler.Main --download --download_dir=/data/sources --osm-path=/data/${PBF#$VT/} --output=/data/$NAME-$DATE.pmtiles --storage=mmap --nodemap-type=sparsearray --tmpdir=/tmp/planetiler --force" > "$LOG" 2>&1
 rc=$?
