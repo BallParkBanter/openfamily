@@ -98,14 +98,17 @@ class _StreetLayerState extends State<StreetLayer> {
       key: ValueKey<String>('$_packsVersion|$_streamUrl'),   // a pack added or removed, or a new stream: fresh caches, fresh tiles
       tileProviders: TileProviders(<String, VectorTileProvider>{'openmaptiles': _provider!}),
       theme: _theme!,
-      // Raster mode: each tile is drawn ONCE (labels included) into an image,
-      // in an isolate, and shown like a picture tile. Vector mode paints
-      // labels only after the camera has been still for 500 ms - with the
-      // per-frame follow camera (Bo driving) the map had no labels at all
-      // (BrayTV box, first vector build). Images are re-drawn per zoom
-      // level from the same data, so they stay sharp past the data's z14.
-      layerMode: VectorTileLayerMode.raster,
-      maximumZoom: 19,
+      // Vector mode (Bo: "sharp at every zoom, no fuzzy squares"): roads and
+      // labels are drawn at the exact camera zoom every frame - raster mode
+      // drew each tile once per zoom LEVEL and scaled the image in between
+      // (soft between levels, and the tile squares showed while a level
+      // re-drew). Upstream's vector mode hid every label under a moving
+      // camera (labels painted only after 500 ms of stillness - the
+      // per-frame follow / fit camera never gives it that); the vendored
+      // packages/vector_map_tiles keeps the labels on screen and re-lays them
+      // at most every 300 ms while the camera moves (delay_painter.dart).
+      layerMode: VectorTileLayerMode.vector,
+      textCacheMaxSize: 400,
       fileCacheTtl: const Duration(days: 30),
       fileCacheMaximumSizeInBytes: 200 * 1024 * 1024,
       memoryTileDataCacheMaxSize: 80,
